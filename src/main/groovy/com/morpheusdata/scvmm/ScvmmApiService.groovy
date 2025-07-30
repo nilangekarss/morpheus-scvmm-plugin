@@ -1870,7 +1870,9 @@ foreach(\$share in \$shares) {
     def importScript(content, diskFolder, imageFolderName, opts) {
         log.debug "importScript: ${diskFolder}, ${imageFolderName}, ${opts}"
         def scriptPath
-        InputStream inputStream = new ByteArrayInputStream(opts.cloudConfigBytes)
+        InputStream inputStream = new ByteArrayInputStream(content.getBytes())
+        def command = "\$ignore = mkdir \"${diskFolder}\""
+        def dirResults = wrapExecuteCommand(generateCommandString(command), opts)
         def fileResults = morpheusContext.services.fileCopy.copyToServer(opts.hypervisor, "${opts.fileName}", "${diskFolder}\\${opts.fileName}", inputStream, opts.cloudConfigBytes?.size(), null, true)
         log.debug ("importScript: fileResults.success: ${fileResults.success}")
         if (!fileResults.success) {
