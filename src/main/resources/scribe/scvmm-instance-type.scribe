@@ -1,18 +1,18 @@
 resource "option-type" "provisionType-scvmm-virtual-image" {
-  code         = "instanceType.scvmm.custom.containerType.virtualImageId"
+  code         = "provisionType.scvmm.custom.containerType.virtualImageId"
   type         = "select"
   name         = "virtual image"
-  category     = "instanceType.scvmm.custom"
+  category     = "provisionType.scvmm.custom"
   fieldName    = "template"
   optionSourceType = "scvmm"
   optionSource = "scvmmVirtualImages"
   fieldCode    = "gomorpheus.optiontype.VirtualImage"
   fieldLabel   = "Virtual Image"
   fieldContext = "config"
-  fieldGroup   = "Options"
+  fieldGroup   = "SCVMM Options"
   required     = false
   enabled      = true
-  editable     = false
+  editable     = true
   global       = false
   placeHolder  = null
   helpBlock    = ""
