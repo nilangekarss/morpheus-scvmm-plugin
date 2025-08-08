@@ -1615,7 +1615,7 @@ foreach (\$network in \$networks) {
                         // additionalTemplateDisks are created after VM creation
                         // data disks are created and attached after vm creation
 
-                    // if(serverDetail.server?.Status != 'UnderCreation' && serverDetail.server?.VirtualDiskDrives?.size() == 1 - (opts.additionalTemplateDisks?.size() ?: 0)) {
+                        // if(serverDetail.server?.Status != 'UnderCreation' && serverDetail.server?.VirtualDiskDrives?.size() == 1 - (opts.additionalTemplateDisks?.size() ?: 0)) {
                         // additionalTemplateDisks are created after VM creation
                         rtn.success = true
                         rtn.server = serverDetail.server
@@ -2744,6 +2744,37 @@ For (\$i=0; \$i -le 10; \$i++) {
         getScvmmCloudOpts(morpheusContext, cloud, hypervisor) + getScvmmControllerOpts(cloud, hypervisor)
     }
 
+    def getScvmmController(Cloud cloud) {
+        def sharedControllerId = cloud.getConfigProperty('sharedController')
+        def sharedController = sharedControllerId ? morpheusContext.services.computeServer.get(sharedControllerId.toLong()) : null
+        if (sharedController) {
+            return sharedController
+        }
+        def rtn = morpheusContext.services.computeServer.find(new DataQuery()
+                .withFilter('zone.id', cloud.id)
+                .withFilter('computeServerType.code', 'scvmmController')
+                .withJoin('computeServerType'))
+        if (rtn == null) {
+            //old zone with wrong type
+            rtn = morpheusContext.services.computeServer.find(new DataQuery()
+                    .withFilter('zone.id', cloud.id)
+                    .withFilter('computeServerType.code', 'scvmmController')
+                    .withJoin('computeServerType'))
+            if (rtn == null) {
+                rtn = morpheusContext.services.computeServer.find(new DataQuery()
+                        .withFilter('zone.id', cloud.id)
+                        .withFilter('serverType', 'hypervisor'))
+            }
+            //if we have tye type
+            if (rtn) {
+                def serverType = morpheusContext.async.cloud.findComputeServerTypeByCode("scvmmController").blockingGet()
+                rtn.computeServerType = serverType
+                morpheusContext.async.computeServer.save(rtn).blockingGet()
+            }
+        }
+        return rtn
+    }
+
     def wrapExecuteCommand(String command, Map opts = [:]) {
         def out = executeCommand(command, opts)
 
@@ -2808,10 +2839,10 @@ For (\$i=0; \$i -le 10; \$i++) {
     }
 
     private getUsername(Cloud cloud) {
-		((cloud.accountCredentialLoaded && cloud.accountCredentialData) ? cloud.accountCredentialData?.username : cloud.getConfigProperty('username')) ?: 'dunno'
+        ((cloud.accountCredentialLoaded && cloud.accountCredentialData) ? cloud.accountCredentialData?.username : cloud.getConfigProperty('username')) ?: 'dunno'
     }
 
     private getPassword(Cloud cloud) {
-		(cloud.accountCredentialLoaded && cloud.accountCredentialData) ? cloud.accountCredentialData?.password : cloud.getConfigProperty('password')
+        (cloud.accountCredentialLoaded && cloud.accountCredentialData) ? cloud.accountCredentialData?.password : cloud.getConfigProperty('password')
     }
 }

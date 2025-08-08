@@ -51,7 +51,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
 	@Override
 	List<String> getMethodNames() {
 		return new ArrayList<String>([
-				'scvmmCloud', 'scvmmHostGroup', 'scvmmCluster', 'scvmmLibraryShares', 'scvmmSharedControllers', 'scvmmCapabilityProfile', 'scvmmHost', 'scvmmVirtualImages'
+				'scvmmCloud', 'scvmmHostGroup', 'scvmmCluster', 'scvmmLibraryShares', 'scvmmSharedControllers', 'scvmmCapabilityProfile', 'scvmmVirtualImages'
 		])
 	}
 
@@ -198,9 +198,9 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
 		}
 
 		def sharedControllers = morpheusContext.services.computeServer.find(new DataQuery().withFilters(
-			new DataFilter('enabled', true),
-			new DataFilter('computeServerType.code', 'scvmmController'),
-			new DataOrFilter(orFilters)
+				new DataFilter('enabled', true),
+				new DataFilter('computeServerType.code', 'scvmmController'),
+				new DataOrFilter(orFilters)
 		))
 
 		return sharedControllers?.collect{[name: it.name, value: it.id]}
@@ -223,7 +223,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
 		return profiles
 	}
 
-	def scvmmHost(params) {
+	/*def scvmmHost(params) {
 		params = params instanceof Object[] ? params.getAt(0) : params
 		log.debug("scvmmHost: ${params}")
 
@@ -255,7 +255,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
 		def results = morpheusContext.services.computeServer.listIdentityProjections(query.withSort('name', DataQuery.SortOrder.asc))
 
 		return results.collect { host -> [name: host.name, value: host.id] }
-	}
+	}*/
 
 	def scvmmVirtualImages(Object params) {
 		params = params instanceof Object[] ? params.getAt(0) : params

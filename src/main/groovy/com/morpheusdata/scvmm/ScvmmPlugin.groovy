@@ -31,24 +31,25 @@ class ScvmmPlugin extends Plugin {
                 new ScvmmCloudProvider(this,this.morpheus),
                 new ScvmmProvisionProvider(this,this.morpheus),
                 new ScvmmBackupProvider(this,this.morpheus),
-                new ScvmmOptionSourceProvider(this, this.morpheus)
+                new ScvmmOptionSourceProvider(this, this.morpheus),
+                new ScvmmNetworkPoolProvider(this, this.morpheus)
         )
     }
 
-	/**
-	 * Called when a plugin is being removed from the plugin manager (aka Uninstalled)
-	 */
-	@Override
-	void onDestroy() {
-		List<String> seedsToRun = [
-			"application.ZoneTypesSCVMMSeed",
-			"application.ProvisionTypeScvmmSeed",
-            "application.ScvmmSeed",
-            "application.ComputeServerTypeScvmmSeed",
-            "application.ScvmmComputeTypeSeed",
-		]
-		this.morpheus.services.seed.reinstallSeedData(seedsToRun)
-		// needs to be synchronous to prevent seeds from running during plugin install
-	}
+    /**
+     * Called when a plugin is being removed from the plugin manager (aka Uninstalled)
+     */
+    @Override
+    void onDestroy() {
+        List<String> seedsToRun = [
+                "application.ZoneTypesSCVMMSeed",
+                "application.ProvisionTypeScvmmSeed",
+                "application.ScvmmSeed",
+                "application.ComputeServerTypeScvmmSeed",
+                "application.ScvmmComputeTypeSeed",
+        ]
+        this.morpheus.services.seed.reinstallSeedData(seedsToRun)
+        // needs to be synchronous to prevent seeds from running during plugin install
+    }
 
 }
