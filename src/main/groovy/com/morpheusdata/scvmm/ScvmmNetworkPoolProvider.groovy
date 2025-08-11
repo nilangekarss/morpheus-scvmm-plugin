@@ -17,12 +17,14 @@ import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
 
 class ScvmmNetworkPoolProvider implements IPAMProvider {
-
+    public static final String NETWORK_POOL_PROVIDER_CODE = 'scvmm-plugin-ipam'
+    public static final String NETWORK_POOL_PROVIDER_NAME = 'SCVMM IPAM Plugin'
     protected MorpheusContext context
     protected ScvmmPlugin plugin
     static poolMutex = new Object()
     ScvmmApiService apiService
     private LogInterface log = LogWrapper.instance
+
 
     ScvmmNetworkPoolProvider(ScvmmPlugin plugin, MorpheusContext context) {
         super()
@@ -33,20 +35,17 @@ class ScvmmNetworkPoolProvider implements IPAMProvider {
 
     @Override
     ServiceResponse verifyNetworkPoolServer(NetworkPoolServer poolServer, Map opts) {
-        //ServiceResponse.success(poolServer)
-        return null
+        ServiceResponse.success(poolServer)
     }
 
     @Override
     ServiceResponse createNetworkPoolServer(NetworkPoolServer poolServer, Map opts) {
-        //ServiceResponse.success(poolServer)
-        return null
+        ServiceResponse.success(poolServer)
     }
 
     @Override
     ServiceResponse updateNetworkPoolServer(NetworkPoolServer poolServer, Map opts) {
-        //ServiceResponse.success()
-        return null
+        ServiceResponse.success()
     }
 
     @Override
@@ -56,14 +55,13 @@ class ScvmmNetworkPoolProvider implements IPAMProvider {
     @Override
     ServiceResponse initializeNetworkPoolServer(NetworkPoolServer poolServer, Map opts) {
         ServiceResponse.success(poolServer)
-        //return null
     }
 
     @Override
     ServiceResponse createHostRecord(NetworkPoolServer poolServer, NetworkPool networkPool, NetworkPoolIp networkPoolIp, NetworkDomain domain, Boolean createARecord, Boolean createPtrRecord) {
         synchronized (poolMutex) {
             try {
-                Cloud cloud = context.async.cloud.find(new DataQuery().withFilter('zoneType', domain.zoneType)).blockingGet()
+                Cloud cloud = context.async.cloud.find(new DataQuery().withFilter('networkDomain', domain)).blockingGet()
                 def controller = apiService.getScvmmController(cloud)
                 // Get SCVMM options
                 def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(context, cloud, controller)
@@ -103,22 +101,40 @@ class ScvmmNetworkPoolProvider implements IPAMProvider {
 
     @Override
     ServiceResponse updateHostRecord(NetworkPoolServer poolServer, NetworkPool networkPool, NetworkPoolIp networkPoolIp) {
-        //ServiceResponse.success()
-        return null
+        ServiceResponse.success()
     }
 
     @Override
     ServiceResponse deleteHostRecord(NetworkPool networkPool, NetworkPoolIp poolIp, Boolean deleteAssociatedRecords) {
-        //ServiceResponse.success()
-        return null
+        synchronized(poolMutex) {
+            try {
+                def results = [:]
+                if(poolIp.domain && poolIp.externalId) {
+                    NetworkDomain domain = poolIp.domain
+                    Cloud cloud = context.async.cloud.find(new DataQuery().withFilter('networkDomain', domain)).blockingGet()
+                    def controller = apiService.getScvmmController(cloud)
+                    def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(context, cloud, controller)
+                    results = apiService.releaseIPAddress(scvmmOpts, networkPool.id, poolIp.id)
+                }
+                if(results.success == true) {
+                    context.async.network.pool.poolIp.remove(networkPool.id, [poolIp])
+                    context.async.network.pool.poolIp.remove(poolIp)
+                    context.async.network.pool.save(networkPool)
+                    return ServiceResponse.success()
+                }
+            } catch(e) {
+                log.error("leasePoolAddress error: ${e}", e)
+                return ServiceResponse.error(e.message)
+            }
+        }
     }
 
     @Override
     Collection<NetworkPoolType> getNetworkPoolTypes() {
         Collection<NetworkPoolType> networkPoolType = []
         networkPoolType << new NetworkPoolType(
-                code: 'scvmm-plugin',
-                name: 'SCVMM Plugin',
+                code: 'scvmm',
+                name: 'SCVMM',
                 creatable: false,
                 description: 'SCVMM network ip pool',
                 rangeSupportsCidr: false,
@@ -149,12 +165,12 @@ class ScvmmNetworkPoolProvider implements IPAMProvider {
 
     @Override
     String getCode() {
-        return 'scvmm-plugin-ipam'
+        return NETWORK_POOL_PROVIDER_CODE
     }
 
     @Override
     String getName() {
-        return 'SCVMM IPAM Plugin'
+        return NETWORK_POOL_PROVIDER_NAME
     }
 
     /**
