@@ -110,8 +110,7 @@ class ScvmmNetworkPoolProvider implements IPAMProvider {
             try {
                 def results = [:]
                 if(poolIp.domain && poolIp.externalId) {
-                    NetworkDomain domain = poolIp.domain
-                    Cloud cloud = context.async.cloud.find(new DataQuery().withFilter('networkDomain', domain)).blockingGet()
+                    Cloud cloud = new Cloud() // TBD: how to fetch the cloud here?????
                     def controller = apiService.getScvmmController(cloud)
                     def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(context, cloud, controller)
                     results = apiService.releaseIPAddress(scvmmOpts, networkPool.id, poolIp.id)
