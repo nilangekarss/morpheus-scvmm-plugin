@@ -61,7 +61,7 @@ class ScvmmNetworkPoolProvider implements IPAMProvider {
     ServiceResponse createHostRecord(NetworkPoolServer poolServer, NetworkPool networkPool, NetworkPoolIp networkPoolIp, NetworkDomain domain, Boolean createARecord, Boolean createPtrRecord) {
         synchronized (poolMutex) {
             try {
-                Cloud cloud = context.async.cloud.find(new DataQuery().withFilter('networkDomain', domain)).blockingGet()
+                Cloud cloud = new Cloud() // TBD: how to fetch the cloud here?????
                 def controller = apiService.getScvmmController(cloud)
                 // Get SCVMM options
                 def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(context, cloud, controller)
