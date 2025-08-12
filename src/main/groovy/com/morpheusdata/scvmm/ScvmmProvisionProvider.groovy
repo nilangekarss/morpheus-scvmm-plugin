@@ -706,7 +706,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 server.externalId = scvmmOpts.name
                 server.parentServer = node
                 server.serverOs = server.serverOs ?: virtualImage.osType
-				server.osType = virtualImage.osType ? (virtualImage.osType.platform?.toString() == 'windows' ? 'windows' : (virtualImage.osType.platform?.toString() == 'osx' ? 'osx' : 'linux')) : (virtualImage.platform?.toString() ?: 'linux')
+				def osplatform = virtualImage?.osType?.platform?.toString()?.toLowerCase() ?: virtualImage?.platform?.toString()?.toLowerCase()
+				server.osType = ['windows', 'osx'].contains(osplatform) ? osplatform : 'linux'
                 def newType = this.findVmNodeServerTypeForCloud(cloud.id, server.osType, PROVISION_TYPE_CODE)
                 if (newType && server.computeServerType != newType)
                     server.computeServerType = newType
@@ -1810,7 +1811,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 server.sourceImage = virtualImage
                 server.externalId = scvmmOpts.name
                 server.serverOs = server.serverOs ?: virtualImage.osType
-				server.osType = virtualImage.osType ? (virtualImage.osType.platform?.toString() == 'windows' ? 'windows' : (virtualImage.osType.platform?.toString() == 'osx' ? 'osx' : 'linux')) : (virtualImage.platform?.toString() ?: 'linux')
+				def osplatform = virtualImage?.osType?.platform?.toString()?.toLowerCase() ?: virtualImage?.platform?.toString()?.toLowerCase()
+				server.osType = ['windows', 'osx'].contains(osplatform) ? osplatform : 'linux'
 				server.parentServer = node
                 scvmmOpts.secureBoot = virtualImage?.uefi ?: false
                 scvmmOpts.imageId = imageId
