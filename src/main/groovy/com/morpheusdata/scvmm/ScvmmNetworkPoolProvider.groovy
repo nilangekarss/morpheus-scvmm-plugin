@@ -61,7 +61,10 @@ class ScvmmNetworkPoolProvider implements IPAMProvider {
     ServiceResponse createHostRecord(NetworkPoolServer poolServer, NetworkPool networkPool, NetworkPoolIp networkPoolIp, NetworkDomain domain, Boolean createARecord, Boolean createPtrRecord) {
         synchronized (poolMutex) {
             try {
-                Cloud cloud = new Cloud() // TBD: how to fetch the cloud here?????
+                Cloud cloud = context.async.cloud.find(new DataQuery()
+                        .withFilter('id',networkPool.refId)
+                        .withFilter('type', networkPool.refType)
+                ).blockingGet()
                 def controller = apiService.getScvmmController(cloud)
                 // Get SCVMM options
                 def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(context, cloud, controller)
@@ -82,7 +85,6 @@ class ScvmmNetworkPoolProvider implements IPAMProvider {
                     networkPoolIp.dnsServer = networkPool.dnsServers?.size() > 0 ? networkPool.dnsServers.first() : null
                     networkPoolIp.interfaceName = 'eth0' // check it
                     networkPoolIp.startDate = new Date()
-                    networkPoolIp.fqdn = domain.fqdn
 
                     context.async.network.pool.poolIp.save(networkPoolIp)
                     context.async.network.pool.poolIp.create(networkPool, [networkPoolIp])
@@ -110,7 +112,10 @@ class ScvmmNetworkPoolProvider implements IPAMProvider {
             try {
                 def results = [:]
                 if(poolIp.domain && poolIp.externalId) {
-                    Cloud cloud = new Cloud() // TBD: how to fetch the cloud here?????
+                    Cloud cloud = context.async.cloud.find(new DataQuery()
+                            .withFilter('id',networkPool.refId)
+                            .withFilter('type', networkPool.refType)
+                    ).blockingGet()
                     def controller = apiService.getScvmmController(cloud)
                     def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(context, cloud, controller)
                     results = apiService.releaseIPAddress(scvmmOpts, networkPool.id, poolIp.id)
