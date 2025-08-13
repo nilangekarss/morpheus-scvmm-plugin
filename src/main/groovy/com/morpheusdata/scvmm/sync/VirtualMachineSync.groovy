@@ -1,8 +1,5 @@
-
-
 package com.morpheusdata.scvmm.sync
 
-import com.morpheusdata.core.providers.ProvisionProvider
 import com.morpheusdata.scvmm.ScvmmApiService
 import com.morpheusdata.core.MorpheusContext
 import com.morpheusdata.core.data.DataFilter
@@ -359,7 +356,6 @@ class VirtualMachineSync {
     def addMissingStorageVolumes(itemsToAdd, server, int diskNumber, maxStorage, changes) {
         def provisionProvider = cloudProvider.getProvisionProvider('morpheus-scvmm-plugin.provision')
         def serverVolumeNames = server.volumes.collect{ it.name }
-        def volumeDeviceNames = server.volumes.collect{ it.deviceDisplayName }
         itemsToAdd?.eachWithIndex { diskData, index ->
             log.debug("adding new volume: ${diskData}")
             def originalVolumeName = serverVolumeNames?.getAt(index)
@@ -370,7 +366,6 @@ class VirtualMachineSync {
                     rootVolume: diskData.VolumeType == 'BootAndSystem' || !server.volumes?.size(),
                     //deviceName: (diskData.deviceName ?: provisionProvider.getDiskName(diskNumber)),
                     deviceName: diskData.deviceName,
-                    //deviceName: volumeDeviceNames?.getAt(index),
                     externalId: diskData.ID,
                     internalId: diskData.Name,
                     storageType: getStorageVolumeType("scvmm-${diskData?.VHDType}-${diskData?.VHDFormat}".toLowerCase()),
