@@ -72,6 +72,9 @@ class ScvmmCloudProvider implements CloudProvider {
 		return new Icon(path:'scvmm-circular.svg', darkPath:'scvmm-circular.svg')
 	}
 
+
+
+
 	/**
 	 * Provides a Collection of OptionType inputs that define the required input fields for defining a cloud integration
 	 * @return Collection of OptionType
@@ -268,8 +271,8 @@ class ScvmmCloudProvider implements CloudProvider {
 				fieldContext: 'config',
 				fieldCode: 'gomorpheus.label.installAgent',
 				fieldLabel: 'Install Agent',
-				fieldGroup: 'Advanced',
-				displayOrder: 999,
+				fieldGroup: 'Advancedend',
+				displayOrder: displayOrder += 10,
 				required: false,
 				enabled: true,
 				editable: false,
@@ -747,7 +750,7 @@ class ScvmmCloudProvider implements CloudProvider {
 	 */
 	@Override
 	Boolean hasComputeZonePools() {
-		return false
+		return true
 	}
 
 	/**
