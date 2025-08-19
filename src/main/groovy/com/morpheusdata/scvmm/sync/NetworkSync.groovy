@@ -70,7 +70,7 @@ class NetworkSync {
                     return morpheusContext.async.cloud.network.listById(updateItems.collect { it.existingItem.id } as List<Long>)
                 }.start()
             } else {
-                log.error("Error not getting the listNetworks")
+                log.info("Not getting the listNetworks")
             }
         } catch (e) {
             log.error("cacheNetworks error: ${e}", e)
