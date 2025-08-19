@@ -29,6 +29,13 @@ plugins {
 	id 'maven-publish'
 }
 
+// Include required files in the JAR
+processResources {
+	from('NOTICE') {
+		into('META-INF')
+	}
+}
+
 apply plugin: 'com.morpheusdata.morpheus-plugin-gradle'
 group = 'com.hpe.scvmm'
 ext.isReleaseVersion = !version.endsWith("SNAPSHOT")
