@@ -510,7 +510,7 @@ class VirtualMachineSync {
             return 'root'
         } else {
             // Extract disk letter from device name (e.g., 'sdb' -> 'b')
-            if (deviceName && deviceName.length() > 0) {
+            /*if (deviceName && deviceName.length() > 0) {
                 def diskLetter = deviceName[-1]
                 if (diskLetter.matches(/[a-z]/)) {
                     // Convert letter to number (a=0, b=1, etc.) and add 1 to start from 1
@@ -518,9 +518,8 @@ class VirtualMachineSync {
                     def diskNum = (diskIndex - ('a' as char)) + 1
                     return "data-${diskNum}"
                 }
-            } else {
-                return "data-${index}"
-            }
+            }*/
+            return "data-${index}"
         }
     }
 }
