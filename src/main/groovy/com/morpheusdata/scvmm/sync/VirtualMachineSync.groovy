@@ -360,7 +360,7 @@ class VirtualMachineSync {
             log.debug("adding new volume: ${diskData}")
             def datastore = diskData.datastore ?: loadDatastoreForVolume(diskData.HostVolumeId, diskData.FileShareId, diskData.PartitionUniqueId) ?: null
             def deviceName = diskData.deviceName ?: apiService.getDiskName(diskNumber)
-            def volumeName = serverVolumeNames?.getAt(index) ?: getVolumeName(diskData, deviceName, server)
+            def volumeName = serverVolumeNames?.getAt(index) ?: getVolumeName(diskData, deviceName, server, index)
             def volumeConfig = [
                     name      : volumeName,
                     size      : diskData.TotalSize?.toLong() ?: 0,
@@ -383,7 +383,7 @@ class VirtualMachineSync {
 
     def updateMatchedStorageVolumes(updateItems, server, maxStorage, changes) {
         def savedVolumes = []
-        updateItems?.each { updateMap ->
+        updateItems?.eachWithIndex { updateMap, index ->
             log.debug("updating volume: ${updateMap.masterItem}")
             StorageVolume volume = updateMap.existingItem
             def masterItem = updateMap.masterItem
@@ -405,7 +405,7 @@ class VirtualMachineSync {
                 save = true
             }
             if (volume.name == null) {
-                volume.name = getVolumeName(masterItem, volume.deviceName, server)
+                volume.name = getVolumeName(masterItem, volume.deviceName, server, index)
                 save = true
             }
             if (save) {
@@ -503,7 +503,7 @@ class VirtualMachineSync {
         return storageVolumeType.id
     }
 
-    def getVolumeName(diskData, String deviceName, ComputeServer server) {
+    def getVolumeName(diskData, String deviceName, ComputeServer server, int index) {
         // Check if root volume
         boolean isRootVolume = diskData.VolumeType == 'BootAndSystem' || !server.volumes?.size()
         if (isRootVolume) {
@@ -516,11 +516,11 @@ class VirtualMachineSync {
                     // Convert letter to number (a=0, b=1, etc.) and add 1 to start from 1
                     def diskIndex = diskLetter as char
                     def diskNum = (diskIndex - ('a' as char)) + 1
-                    return "data ${diskNum}"
+                    return "data-${diskNum}"
                 }
+            } else {
+                return "data-${index}"
             }
-            // Fallback if we can't determine from device name
-            return "data"
         }
     }
 }
