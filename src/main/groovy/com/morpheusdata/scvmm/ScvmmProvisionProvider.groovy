@@ -1204,7 +1204,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
      */
     @Override
     ServiceResponse<ProvisionResponse> getServerDetails(ComputeServer server) {
-        return new ServiceResponse<ProvisionResponse>(true, null, null, new ProvisionResponse(success: true))
+        return new ServiceResponse<ProvisionResponse>(true, null, null,
+				new ProvisionResponse(privateIp:server.internalIp, publicIp:server.externalIp, success: true))
     }
 
     /**
