@@ -1577,7 +1577,7 @@ foreach (\$network in \$networks) {
             return "disk ${index+1}"
         // return windowsDiskNames[index]
         else
-            return '/dev/' + getDiskNameList()[index]
+            return getDiskNameList()[index]
     }
 
     def getDiskNameList() {
