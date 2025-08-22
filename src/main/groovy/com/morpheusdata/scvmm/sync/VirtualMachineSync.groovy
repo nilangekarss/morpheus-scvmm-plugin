@@ -284,7 +284,7 @@ class VirtualMachineSync {
                                     } else {
                                         def containerStatus = currentServer.powerState == ComputeServer.PowerState.paused ? 'suspended' : 'stopped'
                                         def instanceStatus = currentServer.powerState == ComputeServer.PowerState.paused ? 'suspended' : 'stopped'
-                                        context.services.computeServer.list(new DataQuery().withFilter('server.id', currentServer.id)
+                                        context.services.computeServer.list(new DataQuery().withFilter('id', currentServer.id)
                                                 .withFilter('status', '!=', 'provisioning'))?.each { server ->
                                             server.status = containerStatus
                                             context.services.computeServer.save(server)
