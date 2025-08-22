@@ -406,6 +406,7 @@ class VirtualMachineSync {
             }
             if (volume.name == null) {
                 volume.name = getVolumeName(masterItem, volume.deviceName, server)
+                save = true
             }
             if (save) {
                 savedVolumes << volume
