@@ -250,6 +250,70 @@ class VirtualMachineSync {
                                 currentServer.platform = osType?.platform
                                 save = true
                             }
+
+                            def powerState = masterItem.VirtualMachineState == 'Running' ? ComputeServer.PowerState.on : ComputeServer.PowerState.off
+                            if(powerState != currentServer.powerState) {
+                                currentServer.powerState = powerState
+                                if(currentServer.computeServerType?.guestVm) {
+                                    if(currentServer.powerState == ComputeServer.PowerState.on) {
+                                        context.services.computeServer.list(new DataQuery().withFilter('id', currentServer.id)
+                                                .withFilter('status', '!=', 'provisioning'))?.each { compServer ->
+                                            compServer.status = 'running'
+                                            context.services.computeServer.save(compServer)
+                                        }
+                                        def instanceIds = context.services.computeServer.list(new DataQuery()
+                                                .withFilters(
+                                                        new DataFilter('status', '!=', 'failed'),
+                                                        new DataFilter('status', '!=', 'provisioning'),
+                                                        new DataFilter('status', 'notIn', [
+                                                                'pending',
+                                                                'pendingRemoval',
+                                                                'removing',
+                                                                'restarting',
+                                                                'finishing',
+                                                                'resizing'
+                                                        ]),
+                                                        new DataFilter('id', currentServer.id)
+                                                ))?.collect { it.id }?.unique()
+                                        if(instanceIds) {
+                                            context.services.computeServer.list(new DataQuery().withFilter('id', 'in', instanceIds))?.each { server ->
+                                                server.status = 'running'
+                                                context.services.computeServer.save(server)
+                                            }
+                                        }
+                                    } else {
+                                        def containerStatus = currentServer.powerState == ComputeServer.PowerState.paused ? 'suspended' : 'stopped'
+                                        def instanceStatus = currentServer.powerState == ComputeServer.PowerState.paused ? 'suspended' : 'stopped'
+                                        context.services.computeServer.list(new DataQuery().withFilter('server.id', currentServer.id)
+                                                .withFilter('status', '!=', 'provisioning'))?.each { server ->
+                                            server.status = containerStatus
+                                            context.services.computeServer.save(server)
+                                        }
+                                        def instanceIds = context.services.computeServer.list(new DataQuery()
+                                                .withFilters(
+                                                        new DataFilter('status', '!=', 'failed'),
+                                                        new DataFilter('status', '!=', 'provisioning'),
+                                                        new DataFilter('status', 'notIn', [
+                                                                'pending',
+                                                                'pendingRemoval',
+                                                                'removing',
+                                                                'restarting',
+                                                                'finishing',
+                                                                'resizing'
+                                                        ]),
+                                                        new DataFilter('id', currentServer.id)
+                                                ))?.collect { it.id }?.unique()
+                                        if(instanceIds) {
+                                            context.services.computeServer.list(new DataQuery().withFilter('id', 'in', instanceIds))?.each { server ->
+                                                server.status = instanceStatus
+                                                context.services.computeServer.save(server)
+                                            }
+                                        }
+                                    }
+                                }
+                                save = true
+                            }
+
                             //plan
                             ServicePlan plan = SyncUtils.findServicePlanBySizing(availablePlans, currentServer.maxMemory, currentServer.maxCores,
                                     null, fallbackPlan, currentServer.plan, currentServer.account, [])
