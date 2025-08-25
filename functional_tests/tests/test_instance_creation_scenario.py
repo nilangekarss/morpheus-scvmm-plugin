@@ -443,3 +443,95 @@ class TestSCVMMPlugin:
         except Exception as e:
             log.error(f"Test failed with exception: {e}")
             pytest.fail(f"Test failed with exception: {e}")
+
+    def test_validate_reconfigure_operation_on_deployed_windows_instance(
+            self, morpheus_session
+    ):
+        """3. Test case to validate the reconfigure operation on a deployed windows instance."""
+        instance_id = TestSCVMMPlugin.instance_id
+        try:
+
+            log.info(f"Reconfiguring instance with id '{instance_id}'...")
+            update_payload = {
+                "instance": {
+                    "labels": ["Test1"]
+                }
+            }
+            reconfigure_payload = {
+                "instance": {
+                    "volumes": [
+                        {
+                            "size": 90,
+                            "rootVolume": True,
+                            "volumeCategory": "disk",
+                            "datastoreId": "2",
+                            "storageType": 1
+                        },
+                    ],
+                    "interfaces": [{"network": {"id": 1}}],
+                },
+            }
+            update_response = morpheus_session.instances.update_instance(
+                id=instance_id, update_instance_request=update_payload
+            )
+            assert (
+                update_response.status_code == 200
+            ), f"Instance update operation failed: {update_response.text}"
+            #  Wait for instance to be stable (e.g., 'running') before resizing
+            log.info("Waiting for instance to reach 'running' state after label update...")
+            intermediate_status = ResourcePoller.poll_instance_status(
+                instance_id, "running", morpheus_session
+            )
+            assert intermediate_status == "running", (
+                f"Instance didn't reach 'running' after label update. Current status: {intermediate_status}"
+            )
+            # Step 2: Resize root volume
+            existing_instance = morpheus_session.instances.get_instance(id=instance_id).json()
+
+            log.info(f"Existing volumes: {existing_instance['instance']['volumes']}")
+            name = existing_instance["instance"]["volumes"][0]["name"]
+            reconfigure_payload["instance"]["volumes"][0]["name"] = name
+            vol_id = existing_instance["instance"]["volumes"][0]["id"]
+            reconfigure_payload["instance"]["volumes"][0]["id"] = vol_id
+
+            resize_response = morpheus_session.instances.resize_instance(
+                id=instance_id, resize_instance_request=reconfigure_payload
+            )
+            assert (
+                    resize_response.status_code == 200
+            ), f"Instance resize operation failed: {resize_response.text}"
+            log.info(
+                f"Instance '{instance_id}' reconfigured successfully. Waiting for status..."
+            )
+            final_status = ResourcePoller.poll_instance_status(
+                instance_id, "running", morpheus_session,
+            )
+            assert (
+                    final_status == "running"
+            ), f"Instance reconfigure failed with status: {final_status}"
+            # Validating label updation
+            final_instance_details = morpheus_session.instances.get_instance(id=instance_id)
+            assert (
+                    final_instance_details.status_code == 200
+            ), "Failed to retrieve instance details after reconfigure!"
+            final_details = final_instance_details.json()
+            final_labels = final_details["instance"]["labels"]
+            assert "Test1" in final_labels, "Instance label update failed during reconfigure."
+
+            log.info(
+                f"Instance '{instance_id}' reconfigured successfully with new volume size and labels."
+            )
+        except Exception as e:
+            log.error(f"Test failed with exception: {e}")
+            pytest.fail(f"Test failed with exception: {e}")
+
+        finally:
+            # Cleanup: Delete the instance if it was created
+            log.info(f"Cleaning up instance '{instance_id}'...")
+            try:
+                delete_response = morpheus_session.instances.delete_instance(id=instance_id)
+                assert delete_response.status_code == 200, f"Failed to delete instance '{instance_id}': {delete_response.text}"
+                log.info(f"Instance '{instance_id}' deleted successfully.")
+            except Exception as e:
+                log.error(f"Cleanup failed with exception: {e}")
+                pytest.fail(f"Cleanup failed with exception: {e}")
