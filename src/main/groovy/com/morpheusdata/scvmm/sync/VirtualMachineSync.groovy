@@ -250,6 +250,70 @@ class VirtualMachineSync {
                                 currentServer.platform = osType?.platform
                                 save = true
                             }
+
+                            def powerState = masterItem.VirtualMachineState == 'Running' ? ComputeServer.PowerState.on : ComputeServer.PowerState.off
+                            if(powerState != currentServer.powerState) {
+                                currentServer.powerState = powerState
+                                if(currentServer.computeServerType?.guestVm) {
+                                    if(currentServer.powerState == ComputeServer.PowerState.on) {
+                                        context.services.computeServer.list(new DataQuery().withFilter('id', currentServer.id)
+                                                .withFilter('status', '!=', 'provisioning'))?.each { compServer ->
+                                            compServer.status = 'running'
+                                            context.services.computeServer.save(compServer)
+                                        }
+                                        def instanceIds = context.services.computeServer.list(new DataQuery()
+                                                .withFilters(
+                                                        new DataFilter('status', '!=', 'failed'),
+                                                        new DataFilter('status', '!=', 'provisioning'),
+                                                        new DataFilter('status', 'notIn', [
+                                                                'pending',
+                                                                'pendingRemoval',
+                                                                'removing',
+                                                                'restarting',
+                                                                'finishing',
+                                                                'resizing'
+                                                        ]),
+                                                        new DataFilter('id', currentServer.id)
+                                                ))?.collect { it.id }?.unique()
+                                        if(instanceIds) {
+                                            context.services.computeServer.list(new DataQuery().withFilter('id', 'in', instanceIds))?.each { server ->
+                                                server.status = 'running'
+                                                context.services.computeServer.save(server)
+                                            }
+                                        }
+                                    } else {
+                                        def containerStatus = currentServer.powerState == ComputeServer.PowerState.paused ? 'suspended' : 'stopped'
+                                        def instanceStatus = currentServer.powerState == ComputeServer.PowerState.paused ? 'suspended' : 'stopped'
+                                        context.services.computeServer.list(new DataQuery().withFilter('id', currentServer.id)
+                                                .withFilter('status', '!=', 'provisioning'))?.each { server ->
+                                            server.status = containerStatus
+                                            context.services.computeServer.save(server)
+                                        }
+                                        def instanceIds = context.services.computeServer.list(new DataQuery()
+                                                .withFilters(
+                                                        new DataFilter('status', '!=', 'failed'),
+                                                        new DataFilter('status', '!=', 'provisioning'),
+                                                        new DataFilter('status', 'notIn', [
+                                                                'pending',
+                                                                'pendingRemoval',
+                                                                'removing',
+                                                                'restarting',
+                                                                'finishing',
+                                                                'resizing'
+                                                        ]),
+                                                        new DataFilter('id', currentServer.id)
+                                                ))?.collect { it.id }?.unique()
+                                        if(instanceIds) {
+                                            context.services.computeServer.list(new DataQuery().withFilter('id', 'in', instanceIds))?.each { server ->
+                                                server.status = instanceStatus
+                                                context.services.computeServer.save(server)
+                                            }
+                                        }
+                                    }
+                                }
+                                save = true
+                            }
+
                             //plan
                             ServicePlan plan = SyncUtils.findServicePlanBySizing(availablePlans, currentServer.maxMemory, currentServer.maxCores,
                                     null, fallbackPlan, currentServer.plan, currentServer.account, [])
@@ -358,14 +422,15 @@ class VirtualMachineSync {
         def serverVolumeNames = server.volumes.collect{ it.name }
         itemsToAdd?.eachWithIndex { diskData, index ->
             log.debug("adding new volume: ${diskData}")
-            def originalVolumeName = serverVolumeNames?.getAt(index)
             def datastore = diskData.datastore ?: loadDatastoreForVolume(diskData.HostVolumeId, diskData.FileShareId, diskData.PartitionUniqueId) ?: null
+            def deviceName = diskData.deviceName ?: apiService.getDiskName(diskNumber)
+            def volumeName = serverVolumeNames?.getAt(index) ?: getVolumeName(diskData, deviceName, server, index)
             def volumeConfig = [
-                    name      : originalVolumeName,
+                    name      : volumeName,
                     size      : diskData.TotalSize?.toLong() ?: 0,
                     rootVolume: diskData.VolumeType == 'BootAndSystem' || !server.volumes?.size(),
                     //deviceName: (diskData.deviceName ?: provisionProvider.getDiskName(diskNumber)),
-                    deviceName: diskData.deviceName,
+                    deviceName: deviceName,
                     externalId: diskData.ID,
                     internalId: diskData.Name,
                     storageType: getStorageVolumeType("scvmm-${diskData?.VHDType}-${diskData?.VHDFormat}".toLowerCase()),
@@ -382,7 +447,7 @@ class VirtualMachineSync {
 
     def updateMatchedStorageVolumes(updateItems, server, maxStorage, changes) {
         def savedVolumes = []
-        updateItems?.each { updateMap ->
+        updateItems?.eachWithIndex { updateMap, index ->
             log.debug("updating volume: ${updateMap.masterItem}")
             StorageVolume volume = updateMap.existingItem
             def masterItem = updateMap.masterItem
@@ -401,6 +466,10 @@ class VirtualMachineSync {
             def isRootVolume = (masterItem?.VolumeType == 'BootAndSystem') || (server.volumes.size() == 1)
             if (volume.rootVolume != isRootVolume) {
                 volume.rootVolume = isRootVolume
+                save = true
+            }
+            if (volume.name == null) {
+                volume.name = getVolumeName(masterItem, volume.deviceName, server, index)
                 save = true
             }
             if (save) {
@@ -496,5 +565,25 @@ class VirtualMachineSync {
         log.debug("getStorageVolumeTypeId - Looking up volumeTypeCode ${storageVolumeTypeCode}")
         def storageVolumeType = context.async.storageVolume.storageVolumeType.find(new DataQuery().withFilter('code', storageVolumeTypeCode ?: 'standard')).blockingGet()
         return storageVolumeType.id
+    }
+
+    def getVolumeName(diskData, String deviceName, ComputeServer server, int index) {
+        // Check if root volume
+        boolean isRootVolume = diskData.VolumeType == 'BootAndSystem' || !server.volumes?.size()
+        if (isRootVolume) {
+            return 'root'
+        } else {
+            // Extract disk letter from device name (e.g., 'sdb' -> 'b')
+            /*if (deviceName && deviceName.length() > 0) {
+                def diskLetter = deviceName[-1]
+                if (diskLetter.matches(/[a-z]/)) {
+                    // Convert letter to number (a=0, b=1, etc.) and add 1 to start from 1
+                    def diskIndex = diskLetter as char
+                    def diskNum = (diskIndex - ('a' as char)) + 1
+                    return "data-${diskNum}"
+                }
+            }*/
+            return "data-${index}"
+        }
     }
 }

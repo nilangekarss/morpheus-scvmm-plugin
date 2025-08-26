@@ -223,15 +223,14 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         Collection<OptionType> nodeOptions = []
 		nodeOptions << new OptionType(
 			name: 'virtual image type',
-			category:'provisionType.scvmm.custom',
-			code: 'provisionType.scvmm.custom.containerType.virtualImageType',
-			fieldContext: 'domain',
+			code: 'scvmm-node-virtual-image-type',
+			fieldContext: 'config',
 			fieldName: 'virtualImageSelect',
 			fieldCode: null,
 			fieldLabel: null,
 			fieldGroup: null,
 			inputType: OptionType.InputType.RADIO,
-			displayOrder:10,
+			displayOrder:9,
 			fieldClass:'inline',
 			required: false,
 			editable: true,
@@ -239,40 +238,15 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 		)
 
 		nodeOptions << new OptionType(
-				code: 'provisionType.scvmm.custom.containerType.config.logVolume',
-				inputType: OptionType.InputType.TEXT,
-				name: 'log volume',
-				category: 'provisionType.scvmm.custom',
-				optionSourceType: 'scvmm',
-				optionSource: 'scvmmVirtualImages',
-				fieldName: 'logVolume',
-				fieldCode: 'gomorpheus.optiontype.LogVolume',
-				fieldLabel: 'Log Volume',
-				fieldContext: 'containerType.config',
-				fieldGroup: 'SCVMM Options',
-				noSelection: 'Select',
-				required: false,
-				enabled: true,
-				editable: true,
-				global: false,
-				defaultValue: null,
-				custom: false,
-				displayOrder: 4,
-				fieldClass: null,
-		)
-
-		nodeOptions << new OptionType(
-			code: 'provisionType.scvmm.custom.containerType.virtualImageId',
+			code: 'scvmm-node-image',
 			inputType: OptionType.InputType.SELECT,
 			name: 'virtual image',
-			category: 'provisionType.scvmm.custom',
 			optionSourceType: 'scvmm',
 			optionSource: 'scvmmVirtualImages',
 			fieldName: 'virtualImage.id',
-			fieldCode: 'gomorpheus.optiontype.VirtualImage',
-			fieldLabel: 'Virtual Image',
+			fieldCode: 'gomorpheus.label.vmImage',
+			fieldLabel: 'VM Image',
 			fieldContext: 'domain',
-			fieldGroup: 'SCVMM VM Options',
 			noSelection: 'Select',
 			required: false,
 			enabled: true,
@@ -280,35 +254,32 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 			global: false,
 			defaultValue: null,
 			custom: false,
-			displayOrder: 3,
+			displayOrder: 10,
 			fieldClass: null,
-			visibleOnCode: 'virtualImageSelect:vi',
+			visibleOnCode: 'config.virtualImageSelect:vi',
 		)
 
 		nodeOptions << new OptionType(
 			name: 'osType',
-			category:'provisionType.scvmm.custom',
-			code: 'provisionType.scvmm.custom.containerType.osTypeId',
+			code: 'scvmm-node-os-type',
 			fieldContext: 'domain',
 			fieldName: 'osType.id',
 			fieldCode: 'gomorpheus.optiontype.OsType',
 			fieldLabel: 'OsType',
-			fieldGroup: 'SCVMM Options',
 			inputType: OptionType.InputType.SELECT,
-			displayOrder:2,
+			displayOrder:11,
 			fieldClass:null,
 			required: false,
 			editable: true,
 			noSelection: 'Select',
 			global: false,
 			optionSource: 'osTypes',
-			visibleOnCode: 'virtualImageSelect:os'
+			visibleOnCode: 'config.virtualImageSelect:os'
 		)
 
 		nodeOptions << new OptionType(
-			name: 'mount logs',
-			category: "provisionType.scvmm.custom",
-			code: 'provisionType.scvmm.custom.containerType.mountLogs',
+			name: 'log folder',
+			code: 'scvmm-node-log-folder',
 			fieldContext: 'domain',
 			fieldName: 'mountLogs',
 			fieldCode: 'gomorpheus.optiontype.LogFolder',
@@ -326,9 +297,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 			fieldClass:null
 		)
 		nodeOptions << new OptionType(
-			name: 'mount config',
-			category: "provisionType.scvmm.custom",
-			code: 'provisionType.scvmm.custom.containerType.mountConfig',
+			name: 'config folder',
+			code: 'scvmm-node-config-folder',
 			fieldContext: 'domain',
 			fieldName: 'mountConfig',
 			fieldCode: 'gomorpheus.optiontype.ConfigFolder',
@@ -346,9 +316,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 			fieldClass:null,
 		)
 		nodeOptions << new OptionType(
-			name: 'mount data',
-			category: "provisionType.scvmm.custom",
-			code: 'provisionType.scvmm.custom.containerType.mountData',
+			name: 'deploy folder',
+			code: 'scvmm-node-deploy-folder',
 			fieldContext: 'domain',
 			fieldName: 'mountData',
 			fieldCode: 'gomorpheus.optiontype.DeployFolder',
@@ -376,7 +345,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 			fieldCode: 'gomorpheus.optiontype.StatTypeCode',
 			fieldLabel:'Stat Type Code',
 			fieldContext:'containerType',
-			fieldGroup: 'SCVMM Options',
 			required:false,
 			enabled:true,
 			editable:false,
@@ -396,7 +364,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 			fieldCode: 'gomorpheus.optiontype.LogTypeCode',
 			fieldLabel:'Log Type Code',
 			fieldContext:'containerType',
-			fieldGroup:	'SCVMM Options',
 			required:false,
 			enabled:true,
 			editable:false,
@@ -416,7 +383,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 			fieldCode: 'gomorpheus.optiontype.LayoutDescription',
 			fieldLabel: 'Layout Description',
 			fieldContext: 'instanceTypeLayout',
-			fieldGroup: 'SCVMM Options',
 			required: false,
 			enabled: true,
 			editable: false,
@@ -436,7 +402,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 			fieldCode: 'gomorpheus.optiontype.BackupType',
 			fieldLabel: 'Backup Type',
 			fieldContext: 'instanceType',
-			fieldGroup: 'SCVMM Options',
 			required: false,
 			enabled: true,
 			editable: false,
@@ -1204,7 +1169,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
      */
     @Override
     ServiceResponse<ProvisionResponse> getServerDetails(ComputeServer server) {
-        return new ServiceResponse<ProvisionResponse>(true, null, null, new ProvisionResponse(success: true))
+        return new ServiceResponse<ProvisionResponse>(true, null, null,
+				new ProvisionResponse(privateIp:server.internalIp, publicIp:server.externalIp, success: true))
     }
 
     /**
