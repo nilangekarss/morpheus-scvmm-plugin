@@ -2204,7 +2204,7 @@ For (\$i=0; \$i -le 10; \$i++) {
         ]
 
         if (findByKey) {
-            return SCVMM_OS_TYPE_MAP[searchFor] ?: defaultOsType ?: 'other'
+            return SCVMM_OS_TYPE_MAP[searchFor] ?: SCVMM_OS_TYPE_MAP[defaultOsType] ?: 'other'
         } else {
             // Passed in the value... find the key
             def found = SCVMM_OS_TYPE_MAP.find { k, v -> v == searchFor }
