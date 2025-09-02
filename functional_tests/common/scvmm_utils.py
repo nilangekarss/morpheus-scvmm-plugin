@@ -1,20 +1,18 @@
-
+import json
 import os
 import glob
 import pytest
 import logging
 
 from hpe_glcp_automation_lib.libs.commons.utils.random_gens import RandomGenUtils
-
+from dotenv import load_dotenv
 from functional_tests.common.cloud_helper import ResourcePoller
 
 log = logging.getLogger(__name__)
 
-from functional_tests.common.configs.config_reader import ConfigHandler
+load_dotenv()
 
-config_data = ConfigHandler().read_testcase_variable_config()
-
-def get_create_instance_payload(instance_name, group_id, cloud_id, host_id=None):
+def get_create_instance_payload(instance_name, template, group_id, cloud_id, host_id=None):
     """Helper function to create the payload for instance creation."""
     return {
         "instance": {
@@ -22,40 +20,34 @@ def get_create_instance_payload(instance_name, group_id, cloud_id, host_id=None)
             "site": {"id": group_id},
             "instanceType": {"code": "scvmm"},
             "layout": {
-                "id": config_data["templates"]["vm_creation_window_image"][
-                    "layout_id"
-                ]
+                "id": int(os.getenv("SCVMM_LAYOUT_ID"))
+
             },
             "plan": {
-                "id": config_data["templates"]["vm_creation_window_image"][
-                    "plan_id"
-                ]
+                "id": int(os.getenv("PLAN_ID"))
             },
         },
         "zoneId": cloud_id,
         "networkInterfaces": [
             {
                 "network": {
-                    "id": config_data["templates"]["vm_creation_window_image"][
-                        "network_id"
-                    ],
+                    "id": str(os.getenv("NETWORK_ID"))
                 }
             }
         ],
         "config": {
-            "template": config_data["templates"]["vm_creation_window_image"][
-                "template_id"
-            ],
+            "noAgent": False,
+            "hostId": int(os.getenv("HOST_ID")),
+            "template": int(template),
             "scvmmCapabilityProfile": "Hyper-V",
             "createUser": False,
-            "noAgent": False,
-            "hostId": 96,
+
         },
         "labels": ["TEST"],
-        "volumes": config_data["templates"]["vm_creation_window_image"]["volumes"],
+        "volumes": json.loads(os.getenv("VOLUMES")) if os.getenv("VOLUMES") else [],
     }
 
-def get_create_cloud_payload(self, cloud_name, group_id, zone_type_id):
+def get_create_cloud_payload(cloud_name, group_id, zone_type_id):
     """Helper function to create the payload for cloud creation."""
     return {
         "zone": {
@@ -65,10 +57,10 @@ def get_create_cloud_payload(self, cloud_name, group_id, zone_type_id):
             "groups": {"id": group_id},
             "groupId": group_id,
             "config": {
-                "host": config_data["cloud_config"]["host"],
-                "username": config_data["cloud_config"]["username"],
-                "password": config_data["cloud_config"]["password"],
-                "sharedController": config_data["cloud_config"]["shared_controller"],
+                "host": os.getenv("HOST"),
+                "username": os.getenv("HOST_USERNAME"),
+                "password": os.getenv("HOST_PASSWORD"),
+                "sharedController": os.getenv("SHARED_CONTROLLER"),
             },
         }
     }
@@ -127,7 +119,7 @@ def create_scvmm_cloud(morpheus_session, group_id):
 
     # 2. Build payload
     cloud_payload = get_create_cloud_payload(
-        cloud_name, group_id=group_id, zone_type_id=zone_type_id
+        cloud_name=cloud_name, group_id=group_id, zone_type_id=zone_type_id
     )
 
     # 3. Create cloud
@@ -171,7 +163,7 @@ def create_scvmm_cluster(morpheus_session, cloud_id, group_id):
     layouts = layout_response.json().get("layouts", [])
     layout_id = None
     for layout in layouts:
-        if layout.get("name") == "SCVMM Docker Host Ubuntu 22.04":
+        if layout.get("name") == "SCVMM Docker Host":
             layout_id = layout.get("id")
             log.info(f"Layout ID: {layout_id}")
             break
@@ -184,10 +176,10 @@ def create_scvmm_cluster(morpheus_session, cloud_id, group_id):
             "type": {"id": cluster_type_id},
             "layout": {"id": layout_id},
             "server": {
-                "id": config_data["templates"]["cluster_creation"]["server"]["id"],
+                "id": int(os.getenv("SERVER_ID")),
                 "name": cluster_name,
                 "plan": {
-                    "id": config_data["templates"]["cluster_creation"]["server"]["plan"]["id"]
+                    "id": int(os.getenv("PLAN_ID"))
                 },
                 "config": {},
             },
@@ -223,6 +215,7 @@ def create_instance(morpheus_session, instance_name=None, group_id=None, cloud_i
 
     :param morpheus_session: Active Morpheus session
     :param instance_name: Optional name; if None, random name will be generated
+    :param template: Template ID for instance (optional)
     :param group_id: Group ID for instance
     :param cloud_id: Cloud ID for instance
     :param host_id: Host ID for instance (optional)
@@ -234,13 +227,24 @@ def create_instance(morpheus_session, instance_name=None, group_id=None, cloud_i
     if not instance_name:
         instance_name = "test-scvmm-instance-" + RandomGenUtils.random_string_of_chars(3)
 
+    # Fetching template
+    template_name = os.getenv("SCVMM_TEMPLATE_NAME")
+    filter_type = "Synced"
+    template_response = morpheus_session.library.list_virtual_images(name=template_name, filter_type=filter_type)
+    assert template_response.status_code == 200, "Failed to retrieve templates!"
+    template_data = template_response.json()
+    log.info(f"template_data: {template_data}")
+    template_id = template_data["virtualImages"][0]["id"]
+    log.info(f"template_id: {template_id}")
+
     # Generate payload
     log.info("Generating instance payload...")
     create_instance_payload =get_create_instance_payload(
-        instance_name=instance_name, group_id=group_id, cloud_id=cloud_id, host_id=host_id
+        instance_name=instance_name, template= template_id, group_id=group_id, cloud_id=cloud_id, host_id=host_id
     )
     log.info("Payload generated successfully")
-    # log.info(f"Instance payload: {json.dumps(create_instance_payload, indent=2)}")
+
+    log.info(f"Instance payload: {json.dumps(create_instance_payload, indent=2)}")
 
     # Send request
     instance_response = morpheus_session.instances.add_instance(

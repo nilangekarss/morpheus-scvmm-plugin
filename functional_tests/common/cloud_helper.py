@@ -125,6 +125,46 @@ class ResourcePoller:
         log.info(f"Final status after polling: {final_status}")
         return final_status
 
+    @staticmethod
+    def poll_backup_status(backup_id: int, target_state: str, morpheus_session, timeout: int = 30,
+                           sleep_time: int = 10):
+        """Polls the status of a backup until it reaches the target state or times out."""
+        for attempt in range(timeout):
+            response = morpheus_session.backups.get_backups(id=backup_id)
+            assert response.status_code == 200, "Failed to retrieve backup status!"
+            backup_status = response.json()["backup"]["lastResult"]["status"]
+            log.info(f"Polling attempt {attempt + 1}: Backup Status = {backup_status}")
+
+            if backup_status == target_state:
+                log.info(f"Backup reached target state: {target_state}")
+                return backup_status
+            elif backup_status == "failed":
+                log.error("Backup operation failed.")
+                return backup_status
+
+            sleep(sleep_time)
+
+        final_status = morpheus_session.backups.get_backups(id=backup_id).json()["backup"]["lastResult"]["status"]
+        log.info(f"Final backup status after polling: {final_status}")
+        return final_status
+
+    def poll_backup_restore_status(restore_id: int, target_state: str, morpheus_session, timeout: int = 30,):
+        """Polls the status of a backup restore until it reaches the target state or times out."""
+        sleep_time = 10
+        for attempt in range(timeout):
+            response = morpheus_session.backups.get_backup_restores(id=restore_id)
+            assert response.status_code == 200, "Failed to retrieve backup restore status!"
+            restore_status = response.json()["restore"]["status"]
+            log.info(f"Polling attempt {attempt + 1}: Backup Restore Status = {restore_status}")
+
+            if restore_status == target_state:
+                log.info(f"Backup restore reached target state: {target_state}")
+                return restore_status
+            elif restore_status == "failed":
+                log.error("Backup restore operation failed.")
+                return restore_status
+
+            sleep(sleep_time)
 
     def poll_until_condition(
             poll_function,

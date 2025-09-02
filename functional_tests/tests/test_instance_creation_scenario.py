@@ -13,11 +13,8 @@ from hpe_glcp_automation_lib.libs.commons.utils.random_gens import RandomGenUtil
 from hpe_morpheus_automation_libs.api.external_api.plugins.plugin_api import PluginAPI
 
 from functional_tests.common.cloud_helper import ResourcePoller
-from functional_tests.common.configs.config_reader import ConfigHandler
 from functional_tests.common.scvmm_utils import upload_scvmm_plugin, create_scvmm_cloud, create_scvmm_cluster, \
     create_instance, perform_instance_operation
-
-config_data = ConfigHandler().read_testcase_variable_config()
 
 
 logging.basicConfig(level=logging.INFO)
@@ -25,9 +22,9 @@ log = logging.getLogger(__name__)
 
 load_dotenv()
 
-host = config_data["host"]
-admin_username = list(config_data["role"]["admin"].keys())[0]
-admin_password = list(config_data["role"]["admin"].values())[0]
+host = os.getenv("BASE_URL")
+admin_username = os.getenv("USERNAME")
+admin_password = os.getenv("PASSWORD")
 
 
 class TestSCVMMPlugin:
@@ -68,7 +65,6 @@ class TestSCVMMPlugin:
             TestSCVMMPlugin.cloud_id = create_scvmm_cloud(
                 morpheus_session,
                 group_id=TestSCVMMPlugin.group_id,
-
             )
             # 4. register a scvmm cluster under the created cloud
             create_scvmm_cluster(morpheus_session, TestSCVMMPlugin.cloud_id, TestSCVMMPlugin.group_id)
@@ -79,7 +75,6 @@ class TestSCVMMPlugin:
                 morpheus_session,
                 group_id=TestSCVMMPlugin.group_id,
                 cloud_id=TestSCVMMPlugin.cloud_id
-
             )
             assert instance_id is not None, "Instance creation failed!"
             log.info(f"Instance '{instance_name}' created successfully.")
@@ -201,6 +196,10 @@ class TestSCVMMPlugin:
         try:
 
             log.info(f"Reconfiguring instance with id '{instance_id}'...")
+            #fetching volume_id
+            instance_res= morpheus_session.instances.get_instance(id=instance_id)
+            instance_res_json= instance_res.json()
+            volume_id= instance_res_json["instance"]["volumes"][0]["id"]
             update_payload = {
                 "instance": {
                     "labels": ["Test1"]
@@ -208,17 +207,24 @@ class TestSCVMMPlugin:
             }
             reconfigure_payload = {
                 "instance": {
-                    "volumes": [
-                        {
-                            "size": 90,
-                            "rootVolume": True,
-                            "volumeCategory": "disk",
-                            "datastoreId": "2",
-                            "storageType": 1
-                        },
-                    ],
-                    "interfaces": [{"network": {"id": 1}}],
+                    "plan": {
+                        "id": 164
+                    }
                 },
+                "volumes": [
+                    {
+                        "size": 85,
+                        "id": volume_id,
+                        "name": "root",
+                        "rootVolume": True,
+                        "storageType": 1,
+                    }
+                ],
+                "networkInterfaces": [
+                    {
+                        "network": {"id": "2"}
+                    }
+                ]
             }
             update_response = morpheus_session.instances.update_instance(
                 id=instance_id, update_instance_request=update_payload
@@ -234,15 +240,7 @@ class TestSCVMMPlugin:
             assert intermediate_status == "running", (
                 f"Instance didn't reach 'running' after label update. Current status: {intermediate_status}"
             )
-            # Step 2: Resize root volume
-            existing_instance = morpheus_session.instances.get_instance(id=instance_id).json()
-
-            log.info(f"Existing volumes: {existing_instance['instance']['volumes']}")
-            name = existing_instance["instance"]["volumes"][0]["name"]
-            reconfigure_payload["instance"]["volumes"][0]["name"] = name
-            vol_id = existing_instance["instance"]["volumes"][0]["id"]
-            reconfigure_payload["instance"]["volumes"][0]["id"] = vol_id
-
+            # Proceed with resize operation
             resize_response = morpheus_session.instances.resize_instance(
                 id=instance_id, resize_instance_request=reconfigure_payload
             )
@@ -258,15 +256,37 @@ class TestSCVMMPlugin:
             assert (
                     final_status == "running"
             ), f"Instance reconfigure failed with status: {final_status}"
-            # Validating label updation
-            final_instance_details = morpheus_session.instances.get_instance(id=instance_id)
-            assert (
-                    final_instance_details.status_code == 200
-            ), "Failed to retrieve instance details after reconfigure!"
-            final_details = final_instance_details.json()
-            final_labels = final_details["instance"]["labels"]
-            assert "Test1" in final_labels, "Instance label update failed during reconfigure."
 
+            # Capture expected values dynamically from payloads
+            expected_plan_id = reconfigure_payload["instance"]["plan"]["id"]
+            expected_volume_size = reconfigure_payload["volumes"][0]["size"]
+            expected_labels = update_payload["instance"]["labels"]
+            # Fetch final instance details
+            final_instance_details = morpheus_session.instances.get_instance(id=instance_id)
+            assert final_instance_details.status_code == 200, "Failed to retrieve instance details after reconfigure!"
+            final_details = final_instance_details.json()
+
+            # Validate label update (if label update was part of your update_payload)
+            final_labels = final_details["instance"].get("labels", [])
+            for label in expected_labels:
+                assert label in final_labels, f"Expected label '{label}' not found in {final_labels}"
+
+            # Validate volume size
+            final_volume_size = final_details["instance"]["volumes"][0]["size"]
+            assert (
+                    final_volume_size == expected_volume_size
+            ), f"Expected volume size {expected_volume_size}, but got {final_volume_size}"
+
+            # Validate plan
+            final_plan_id = final_details["instance"]["plan"]["id"]
+            assert (
+                    final_plan_id == expected_plan_id
+            ), f"Expected plan ID {expected_plan_id}, but got {final_plan_id}"
+
+            log.info(
+                f"Instance '{instance_id}' reconfigured successfully with plan={final_plan_id}, "
+                f"volume_size={final_volume_size}, labels={final_labels}"
+            )
             log.info(
                 f"Instance '{instance_id}' reconfigured successfully with new volume size and labels."
             )
@@ -274,13 +294,139 @@ class TestSCVMMPlugin:
             log.error(f"Test failed with exception: {e}")
             pytest.fail(f"Test failed with exception: {e}")
 
-        finally:
-            # Cleanup: Delete the instance if it was created
-            log.info(f"Cleaning up instance '{instance_id}'...")
-            try:
-                delete_response = morpheus_session.instances.delete_instance(id=instance_id)
-                assert delete_response.status_code == 200, f"Failed to delete instance '{instance_id}': {delete_response.text}"
-                log.info(f"Instance '{instance_id}' deleted successfully.")
-            except Exception as e:
-                log.error(f"Cleanup failed with exception: {e}")
-                pytest.fail(f"Cleanup failed with exception: {e}")
+
+    def test_validate_clone_instance_operation_on_windows_instance_with_agent_install_not_skipped(self,
+                                                                                                  morpheus_session):
+        """9. Test case to validate clone windows instance with agent install not skipped operation."""
+        instance_id = TestSCVMMPlugin.instance_id
+        try:
+
+            clone_instance_name= f"clone-instance-{instance_id}"
+
+            log.info(f"Cloning instance with id '{instance_id}'...")
+            clone_payload = {
+
+                "name": clone_instance_name,
+                "plan": {
+                    "id": 163
+                },
+                "volumes": [
+                    {
+                        "datastoreId": "auto",
+                        "name": "root",
+                        "size": 80,
+                        "rootVolume": True
+
+                    }]
+
+            }
+            clone_response = morpheus_session.instances.clone_instance(
+                id=instance_id, clone_instance_request=clone_payload
+            )
+            assert clone_response.status_code == 200, "Instance clone operation failed!"
+            final_status = ResourcePoller.poll_instance_status(
+                instance_id=instance_id,
+                target_state="running",
+                morpheus_session=morpheus_session,
+            )
+            assert (
+                    final_status == "running"
+            ), f"Cloned instance creation started: {final_status}"
+
+            clone_ins_response= morpheus_session.instances.list_instances(name=clone_instance_name)
+            cloned_instance_id = clone_ins_response.json()["instances"][0]["id"]
+
+            # Polling for cloned instance status
+            final_status = ResourcePoller.poll_instance_status(
+                instance_id=cloned_instance_id,
+                target_state="running",
+                morpheus_session=morpheus_session,
+            )
+            assert (
+                    final_status == "running"
+            ), f"Cloned instance creation failed with status: {final_status}"
+            log.info(f"Cloned instance '{cloned_instance_id}' is running successfully.")
+
+        except Exception as e:
+            log.error(f"Test failed with exception: {e}")
+            pytest.fail(f"Test failed with exception: {e}")
+
+    def test_validate_backup_and_restore_operation_on_windows_instance(self, morpheus_session):
+        """4. Test case to validate the backup and restore operation on a windows instance."""
+
+        instance_id = TestSCVMMPlugin.instance_id
+        backup_name= f"backup-instance-{instance_id}" + RandomGenUtils.random_string_of_chars(2)
+        backup_job_name= f"backup-job-{instance_id}"+ RandomGenUtils.random_string_of_chars(2)
+        backup_id = None
+
+        try:
+            log.info(f"Creating backup for instance with id {instance_id}")
+            #fetching containerId
+            instance_res= morpheus_session.instances.get_instance(id=instance_id)
+            instance_res_json= instance_res.json()
+            container_id= instance_res_json["instance"]["containers"][0]
+            backup_payload = { "backup": {
+                            "locationType": "instance",
+                            "backupType": "scvmmSnapshot",
+                            "jobAction": "new",
+                            "name": backup_name,
+                            "instanceId": instance_id,
+                            "retentionCount": 2,
+                            "jobName": backup_job_name,
+                            "containerId": container_id
+                 } }
+            backup_response = morpheus_session.backups.add_backups(add_backups_request=backup_payload)
+            assert backup_response.status_code == 200, "Instance backup operation failed!"
+            backup_id = backup_response.json()["backup"]["id"]
+            log.info(f"Backup job created with id {backup_id}, waiting for completion...")
+
+            # Execute backup job
+            backup_job_response = morpheus_session.session.post(
+                f"{morpheus_session.base_url}/api/backups/jobs/{backup_id}/execute",
+                headers=morpheus_session.session.headers,
+                json={}
+            )
+            assert backup_job_response.status_code == 200, "Failed to execute backup job!"
+
+            #polling backup result
+            final_backup_status = ResourcePoller.poll_backup_status(
+                backup_id=backup_id,
+                target_state="SUCCEEDED",
+                morpheus_session=morpheus_session,
+            )
+            assert (
+                    final_backup_status == "SUCCEEDED"
+            ), f"Instance backup failed with status: {final_backup_status}"
+
+            #fetching last backup result id to trigger restore
+            backup_results_response = morpheus_session.backups.get_backups(id=backup_id)
+            assert backup_results_response.status_code == 200, "Failed to retrieve backup results!"
+            backup_result= backup_results_response.json()
+            last_backup_result_id= backup_result["backup"]["lastResult"]["id"]
+
+            #executing backup restore
+            log.info(f"Restoring backup for instance with id {instance_id}")
+            restore_payload= {"restore": {
+                    "restoreInstance": "existing",
+                    "backupResultId": last_backup_result_id,
+                    "instanceId": instance_id
+                } }
+            restore_response= morpheus_session.backups.execute_backup_restore(execute_backup_restore_request=restore_payload)
+            assert restore_response.status_code == 200, "Instance restore operation failed!"
+            log.info(f"Restore job initiated for instance with id {instance_id}, waiting for completion...")
+
+            #fetchng backup_restore_id
+            restore_id= restore_response.json()["restore"]["id"]
+            #polling restore result
+            final_restore_status = ResourcePoller.poll_backup_restore_status(
+                restore_id=restore_id,
+                target_state="SUCCEEDED",
+                morpheus_session=morpheus_session,
+            )
+            assert (
+                    final_restore_status == "SUCCEEDED"
+            ), f"Instance restore failed with status: {final_restore_status}"
+            log.info(f"Instance '{instance_id}' restored successfully from backup.")
+        except Exception as e:
+            log.error(f"Test failed with exception: {e}")
+            pytest.fail(f"Test failed with exception: {e}")
