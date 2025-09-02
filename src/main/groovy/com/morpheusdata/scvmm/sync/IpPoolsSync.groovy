@@ -188,6 +188,10 @@ class IpPoolsSync {
                     network.netmask = pool.netmask
                     doSave = true
                 }
+                if(network.allowStaticOverride != true) {
+                    network.allowStaticOverride = true
+                    doSave = true
+                }
 
                 if(doSave) {
                     morpheusContext.async.cloud.network.save(network).blockingGet()

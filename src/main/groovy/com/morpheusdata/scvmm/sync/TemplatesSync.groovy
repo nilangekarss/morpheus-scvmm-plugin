@@ -386,9 +386,9 @@ class TemplatesSync {
                 if (it.Location)
                     imageConfig.remotePath = it.Location
                 def osTypeCode = apiService.getMapScvmmOsType(it.OperatingSystem, true, "Other Linux (64 bit)")
-                log.debug "cacheTemplates osTypeCode: ${osTypeCode}"
+                log.info "cacheTemplates osTypeCode: ${osTypeCode}"
                 def osType = context.services.osType.find(new DataQuery().withFilter('code', osTypeCode ?: 'other'))
-                log.debug "osType: ${osType}"
+                log.info "osType: ${osType}"
                 imageConfig.osType = osType
                 imageConfig.platform = osType?.platform
                 if (imageConfig.platform == 'windows') {
