@@ -38,7 +38,7 @@ class TestSCVMMPlugin:
     def test_validate_windows_instance_creation_and_agent_installation_behaviour(
         self, morpheus_session
     ):
-        """1. Test case to validate the creation of windows instance and agent installation behavior."""
+        """Test case to validate the creation of windows instance and agent installation behavior."""
         # This test case assumes that the SCVMM plugin is already registered and the necessary configurations are in place.
 
         instance_id = None  # Initialize instance_id to None for cleanup purposes
@@ -135,7 +135,7 @@ class TestSCVMMPlugin:
     def test_validate_windows_instance_creation_with_selected_storage_and_host(
         self, morpheus_session
     ):
-        """2. Test case to validate the creation of windows instance with selected storage and host."""
+        """Test case to validate the creation of windows instance with selected storage and host."""
         # This test case assumes that the SCVMM plugin is already registered and the necessary configurations are in place.
 
         try:
@@ -191,7 +191,7 @@ class TestSCVMMPlugin:
     def test_validate_reconfigure_operation_on_deployed_windows_instance(
             self, morpheus_session
     ):
-        """3. Test case to validate the reconfigure operation on a deployed windows instance."""
+        """Test case to validate the reconfigure operation on a deployed windows instance."""
         instance_id = TestSCVMMPlugin.instance_id
         try:
 
@@ -297,7 +297,7 @@ class TestSCVMMPlugin:
 
     def test_validate_clone_instance_operation_on_windows_instance_with_agent_install_not_skipped(self,
                                                                                                   morpheus_session):
-        """9. Test case to validate clone windows instance with agent install not skipped operation."""
+        """ Test case to validate clone windows instance with agent install not skipped operation."""
         instance_id = TestSCVMMPlugin.instance_id
         try:
 
@@ -352,7 +352,7 @@ class TestSCVMMPlugin:
             pytest.fail(f"Test failed with exception: {e}")
 
     def test_validate_backup_and_restore_operation_on_windows_instance(self, morpheus_session):
-        """4. Test case to validate the backup and restore operation on a windows instance."""
+        """Test case to validate the backup and restore operation on a windows instance."""
 
         instance_id = TestSCVMMPlugin.instance_id
         backup_name= f"backup-instance-{instance_id}" + RandomGenUtils.random_string_of_chars(2)
@@ -430,3 +430,21 @@ class TestSCVMMPlugin:
         except Exception as e:
             log.error(f"Test failed with exception: {e}")
             pytest.fail(f"Test failed with exception: {e}")
+        finally:
+            # delete backup if created
+            if backup_id:
+                log.info(f"Cleaning up backup '{backup_id}'...")
+                try:
+                    delete_response = morpheus_session.backups.remove_backups(
+                        id=backup_id
+                    )
+                    if delete_response.status_code == 200:
+                        log.info(f"Backup '{backup_id}' deleted successfully.")
+                    else:
+                        log.warning(
+                            f"Failed to delete backup '{backup_id}': {delete_response.text}"
+                        )
+                except Exception as e:
+                    log.error(f"Cleanup failed with exception: {e}")
+            else:
+                log.info("No backup was created, so nothing to clean up.")
