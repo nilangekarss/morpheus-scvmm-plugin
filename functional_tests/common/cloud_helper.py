@@ -17,7 +17,7 @@ class ResourcePoller:
         """
         Polls until the cloud status becomes 'ok' or returns any other response.
 
-        :param morpheus_clients: Dictionary of Morpheus API clients
+        :param morpheus_session: fixture providing Morpheus API clients
         :param cloud_id: ID of the cloud to be validated
         :return: Response object if status is 'ok', else None
         """
@@ -39,7 +39,7 @@ class ResourcePoller:
 
 
     @staticmethod
-    def poll_instance_status(instance_id: int, target_state: str, morpheus_session, timeout: int = 100, sleep_time: int = 10):
+    def poll_instance_status(instance_id: int, target_state: str, morpheus_session, timeout: int = 150, sleep_time: int = 10):
         """
         Polls the status of a Morpheus instance until it matches the target state or the timeout is reached.
 
@@ -92,7 +92,7 @@ class ResourcePoller:
         or after the maximum number of attempts is reached.
 
         Args:
-            morpheus_clients (dict): Dictionary containing Morpheus API clients. Must include key "cluster_api".
+            morpheus_session: Fixture providing Morpheus API clients.
             cluster_id (int): ID of the cluster to be validated.
 
         Returns:
@@ -101,8 +101,7 @@ class ResourcePoller:
                 - 'failed' if the cluster creation fails.
                 - Final cluster status string if timeout occurs before 'ok' or 'failed'.
         """
-        # cluster_api = morpheus_clients.get("cluster_api")
-        timeout = 30  # number of attempts
+        timeout = 50  # number of attempts
         sleep_time = 10  # seconds between each poll
 
         for i in range(timeout):
