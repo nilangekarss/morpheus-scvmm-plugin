@@ -154,9 +154,7 @@ class SCVMMUtils:
 
         # Fetching cluster-type ID for SCVMM
         cluster_type_response = morpheus_session.clusters.list_cluster_types()
-        assert (
-            cluster_type_response.status_code == 200
-        ), "Failed to retrieve cluster types!"
+        assert (cluster_type_response.status_code == 200), "Failed to retrieve cluster types!"
         cluster_types = cluster_type_response.json().get("clusterTypes", [])
         cluster_type_id = None
         for cluster in cluster_types:
@@ -168,9 +166,7 @@ class SCVMMUtils:
 
         # Fetching layout ID for SCVMM
         layout_response = morpheus_session.cluster_layouts.list_cluster_layouts()
-        assert (
-            layout_response.status_code == 200
-        ), "Failed to retrieve cluster layouts!"
+        assert (layout_response.status_code == 200), "Failed to retrieve cluster layouts!"
         layouts = layout_response.json().get("layouts", [])
         layout_id = None
         for layout in layouts:
@@ -204,19 +200,11 @@ class SCVMMUtils:
             cluster_id = cluster_response.json()["cluster"]["id"]
             log.info(f"cluster_id: {cluster_id}")
 
-            final_status = ResourcePoller.poll_cluster_status(
-                cluster_id=cluster_id,
-                morpheus_session=morpheus_session,
-            )
-
+            final_status = ResourcePoller.poll_cluster_status(cluster_id=cluster_id,morpheus_session=morpheus_session)
             if final_status == "ok":
-                log.info(
-                    f"Cluster '{cluster_name}' registered successfully with ID: {cluster_id}"
-                )
+                log.info(f"Cluster '{cluster_name}' registered successfully with ID: {cluster_id}")
             else:
-                log.warning(
-                    f"Cluster registration failed with status: {final_status}"
-                )
+                log.warning(f"Cluster registration failed with status: {final_status}")
         else:
             log.warning("Cluster registration failed! Could not create cluster.")
 
@@ -234,8 +222,6 @@ class SCVMMUtils:
         :return: (instance_id, instance_name)
         """
         log.info("Creating instance...")
-
-        # Generate name if not provided
         if not instance_name:
             instance_name = "test-scvmm-instance-" + RandomGenUtils.random_string_of_chars(3)
 
@@ -245,9 +231,7 @@ class SCVMMUtils:
         template_response = morpheus_session.library.list_virtual_images(name=template_name, filter_type=filter_type)
         assert template_response.status_code == 200, "Failed to retrieve templates!"
         template_data = template_response.json()
-        log.info(f"template_data: {template_data}")
         template_id = template_data["virtualImages"][0]["id"]
-        log.info(f"template_id: {template_id}")
 
         # Generate payload
         log.info("Generating instance payload...")
@@ -256,18 +240,12 @@ class SCVMMUtils:
         )
         log.info("Payload generated successfully")
 
-        log.info(f"Instance payload: {json.dumps(create_instance_payload, indent=2)}")
-
         # Send request
-        instance_response = morpheus_session.instances.add_instance(
-            add_instance_request=create_instance_payload
-        )
+        instance_response = morpheus_session.instances.add_instance(add_instance_request=create_instance_payload)
 
         if instance_response.status_code == 200:
             instance_id = instance_response.json()["instance"]["id"]
-            log.info(f"Instance ID: {instance_id}")
 
-            # Poll for instance status
             final_status = ResourcePoller.poll_instance_status(
                 instance_id=instance_id,
                 target_state="running",
@@ -308,17 +286,10 @@ class SCVMMUtils:
         else:
             raise ValueError(f"Unsupported operation: {operation}")
 
-        # Validate initial API response
         assert response.status_code == 200, f"Instance {operation} operation failed!"
 
-        # Poll until instance reaches expected state
-        final_status = ResourcePoller.poll_instance_status(
-            instance_id, expected_status, morpheus_session
-        )
-
-        assert (
-            final_status == expected_status
-        ), f"Instance failed to {operation}, current status: {final_status}"
+        final_status = ResourcePoller.poll_instance_status(instance_id, expected_status, morpheus_session)
+        assert final_status == expected_status, f"Instance {operation} failed, current status: {final_status}"
 
         log.info(f"Instance '{instance_id}' {operation}ed successfully.")
         return final_status
@@ -487,4 +458,3 @@ class SCVMMUtils:
                 )
         except Exception as e:
             log.error(f"Cleanup of {resource_type} failed with exception: {e}")
-
