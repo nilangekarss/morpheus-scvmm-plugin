@@ -115,7 +115,7 @@ class VirtualMachineSync {
                     add.internalIp = cloudItem.InternalIp
                 }
                 // Operating System
-                def osTypeCode = apiService.getMapScvmmOsType(cloudItem.OperatingSystem, true, cloudItem.OperatingSystemWindows?.toString() == 'true' ? 'windows' : null)
+                def osTypeCode = apiService.getMapScvmmOsType(cloudItem.OperatingSystem, true, "Other Linux (64 bit)")
                 def osTypeCodeStr = osTypeCode ?: 'other'
                 def osType = context.services.osType.find(new DataQuery().withFilter('code', osTypeCodeStr))
                 if (osType) {

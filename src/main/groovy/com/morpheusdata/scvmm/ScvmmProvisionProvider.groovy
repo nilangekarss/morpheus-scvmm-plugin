@@ -804,6 +804,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                             storageVolumes = server.volumes
                             rootVolume = storageVolumes.find { it.rootVolume == true }
                             rootVolume.externalId = serverDisks.diskMetaData[serverDisks.osDisk?.externalId]?.VhdID
+							context.services.storageVolume.save(rootVolume)
                             // Fix up the externalId.. initially set to the VirtualDiskDrive ID.. now setting to VirtualHardDisk ID
                             rootVolume.datastore = loadDatastoreForVolume(cloud, serverDisks.diskMetaData[rootVolume.externalId]?.HostVolumeId, serverDisks.diskMetaData[rootVolume.externalId]?.FileShareId, serverDisks.diskMetaData[rootVolume.externalId]?.PartitionUniqueId) ?: rootVolume.datastore
                             storageVolumes.each { storageVolume ->
