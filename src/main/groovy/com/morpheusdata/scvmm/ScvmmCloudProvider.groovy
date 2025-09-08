@@ -575,8 +575,8 @@ class ScvmmCloudProvider implements CloudProvider {
 				newServer.setConfigProperty('diskPath', cloud.getConfigProperty('diskPath'))
 			}
 
-			def maxStorage = serverInfo?.disks? serverInfo.disks.toLong()  :0L
-			def maxMemory = serverInfo?.memory? serverInfo.memory.toLong() : 0L
+			def maxStorage = getMaxStorage(serverInfo)
+			def maxMemory = getMaxMemory(serverInfo)
 			def maxCores = 1
 			newServer.serverOs = context.async.osType.find(new DataQuery().withFilter('code', versionCode)).blockingGet()
 			newServer.platform = 'windows'
@@ -863,6 +863,30 @@ class ScvmmCloudProvider implements CloudProvider {
 	ServiceResponse stopServer(ComputeServer computeServer) {
 		ScvmmProvisionProvider provisionProvider = new ScvmmProvisionProvider(plugin, context)
 		return provisionProvider.stopServer(computeServer)
+	}
+
+	private long getMaxMemory(serverInfo) {
+		def maxMemory = 0L
+		if (serverInfo?.memory && serverInfo?.memory?.toString()?.trim()) {
+			try {
+				maxMemory = serverInfo?.memory?.toString()?.toLong()
+			} catch (NumberFormatException e) {
+				log.warn("Invalid memory value '${serverInfo.memory}', defaulting to 0")
+			}
+		}
+		return maxMemory
+	}
+
+	private long getMaxStorage(serverInfo) {
+		def maxStorage = 0L
+		if (serverInfo?.disks && serverInfo?.disks?.toString()?.trim()) {
+			try {
+				maxStorage = serverInfo?.disks?.toString()?.toLong()
+			} catch (NumberFormatException e) {
+				log.warn("Invalid disk value '${serverInfo.disks}', defaulting to 0")
+			}
+		}
+		return maxStorage
 	}
 
 	/**
