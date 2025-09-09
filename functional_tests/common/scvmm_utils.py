@@ -3,6 +3,7 @@ import os
 import glob
 import pytest
 import logging
+import time
 
 from hpe_glcp_automation_lib.libs.commons.utils.random_gens import RandomGenUtils
 from dotenv import load_dotenv
@@ -324,20 +325,20 @@ class SCVMMUtils:
     @staticmethod
     def create_reconfigure_payload(instance_details):
         """Create payload for reconfiguring an instance."""
-        volume_id = instance_details["instance"]["volumes"][0]["id"]
+        volume = instance_details["instance"]["volumes"][0]
 
         return {
             "instance": {
                 "plan": {
-                    "id": 164
+                    "id": 163
                 }
             },
             "volumes": [
                 {
                     "size": 85,
-                    "id": volume_id,
-                    "name": "root",
-                    "rootVolume": True,
+                    "id": volume["id"],
+                    "name": volume["name"],
+                    "rootVolume": volume.get("rootVolume", True),
                     "storageType": 1,
                 }
             ],
@@ -388,15 +389,13 @@ class SCVMMUtils:
             "volumes": [
                 {
                     "datastoreId": "auto",
-                    "name": "root",
-                    "size": 80,
-                    "rootVolume": True
+                    "size": 90,
                 }
             ]
         }
 
     @staticmethod
-    def create_backup_payload(instance_id, container_id, backup_name, backup_job_name):
+    def create_backup_payload(instance_id, container_id, backup_name, backup_job_name, schedule_id):
         """
         Create payload for backup creation.
         """
@@ -405,6 +404,7 @@ class SCVMMUtils:
                 "locationType": "instance",
                 "backupType": "scvmmSnapshot",
                 "jobAction": "new",
+                "jobSchedule": schedule_id,
                 "name": backup_name,
                 "instanceId": instance_id,
                 "retentionCount": 2,
@@ -446,6 +446,12 @@ class SCVMMUtils:
                 delete_response = morpheus_session.backups.remove_backups(id=resource_id)
             elif resource_type == "clone":
                 delete_response = morpheus_session.instances.delete_instance(id=resource_id)
+            elif resource_type == "cloud":
+                delete_response = morpheus_session.clouds.remove_clouds(id=resource_id)
+            elif resource_type == "cluster":
+                delete_response = morpheus_session.clusters.delete_cluster(cluster_id=resource_id)
+            elif resource_type == "group":
+                delete_response = morpheus_session.groups.remove_groups(id=resource_id)
             else:
                 log.warning(f"Cleanup for resource type '{resource_type}' is not supported.")
                 return
@@ -458,3 +464,132 @@ class SCVMMUtils:
                 )
         except Exception as e:
             log.error(f"Cleanup of {resource_type} failed with exception: {e}")
+
+    @staticmethod
+    def create_execute_schedule(morpheus_session):
+        """
+        Create a schedule to run every minute.
+        """
+        schedule_payload = {
+            "schedule": {
+                "name": "test-schedule-" + RandomGenUtils.random_string_of_chars(3),
+                "enabled": True,
+                "cron": "*/5  * * * *",
+            }
+        }
+        response = morpheus_session.automation.add_execute_schedules(add_execute_schedules_request=schedule_payload)
+        assert response.status_code == 200, "Failed to create schedule!"
+        schedule_id = response.json()["schedule"]["id"]
+        log.info(f"Schedule created successfully with ID: {schedule_id}")
+        return schedule_id
+
+    @staticmethod
+    def wait_for_agent_installation(morpheus_session, instance_id, retries=30, interval=10):
+        """
+        Poll until agent is installed on the instance.
+        :param morpheus_session: API session
+        :param instance_id: ID of the instance
+        :param retries: Number of retries
+        :param interval: Sleep interval (seconds) between retries
+        :return: server details dict if agent is installed
+        """
+        for attempt in range(retries):
+            details = SCVMMUtils.get_instance_details(morpheus_session, instance_id)
+            container_details = details["instance"].get("containerDetails", [])
+            if container_details and container_details[0]["server"].get("agentInstalled"):
+                log.info(
+                    f"Agent installed on instance {instance_id} "
+                    f"(attempt {attempt + 1}/{retries})"
+                )
+                return container_details[0]["server"]
+            time.sleep(interval)
+
+        pytest.fail(f"Agent installation did not complete within {retries * interval} seconds")
+
+    @staticmethod
+    def wait_for_backup_job_completion(morpheus_session, backup_job_id, timeout=7 * 60, interval=30):
+        """
+        Wait for a scheduled backup job to complete.
+        """
+        end_time = time.time() + timeout
+        last_result = None
+
+        while time.time() < end_time:
+            job_details = SCVMMUtils.get_backup_job_details(morpheus_session, backup_job_id)
+            last_result = job_details["job"].get("lastResult")
+
+            if last_result:
+                job_result_id = last_result["id"]
+                status = last_result["status"]
+                log.info(f"Backup job result {job_result_id} status: {status}")
+
+                if status in ["SUCCEEDED", "FAILED"]:
+                    break
+            time.sleep(interval)
+
+        assert last_result, "No backup job result found after schedule!"
+        assert last_result["status"] == "SUCCEEDED", f"Backup job failed with status {last_result['status']}"
+
+        return last_result
+
+    @staticmethod
+    def get_backup_job_details(morpheus_session, backup_id):
+        """Fetch backup job details by backup ID."""
+        response = morpheus_session.session.get(
+            f"{morpheus_session.base_url}/api/backups/{backup_id}",
+            headers=morpheus_session.session.headers
+        )
+        response.raise_for_status()
+        return response.json()
+
+    @staticmethod
+    def poll_backup_job_execution(morpheus_session, backup_id, timeout=600, interval=30):
+        """
+        Poll until backup job executes and produces a result.
+
+        Returns:
+            (last_result_id, status)
+        """
+        start = time.time()
+        while time.time() - start < timeout:
+            job_details = SCVMMUtils.get_backup_job_details(morpheus_session, backup_id)
+            last_result = job_details["backup"].get("lastResult")
+
+            if last_result:
+                job_result_id = last_result["id"]
+                status = last_result["status"]
+                log.info(f"Backup job result {job_result_id} status: {status}")
+                if status in ["SUCCEEDED", "FAILED"]:
+                    return job_result_id, status
+            time.sleep(interval)
+
+        pytest.fail("Backup job did not execute within expected time")
+
+    @staticmethod
+    def verify_delete_resource(morpheus_session, resource_type, list_func, resource_id, key, retries=5, delay=3):
+        """
+        Generic function to clean up and verify resource deletion with polling.
+        """
+        if not resource_id:
+            return
+
+        # Trigger deletion
+        SCVMMUtils.cleanup_resource(resource_type, morpheus_session, resource_id)
+
+        # Poll for deletion
+        for attempt in range(1, retries + 1):
+            resp = list_func()
+            assert resp.status_code == 200, f"Failed to fetch {resource_type} list!"
+            resources = resp.json().get(key, []) or []
+            ids = [r["id"] for r in resources]
+
+            if resource_id not in ids:
+                log.info(f"{resource_type.capitalize()} {resource_id} deleted successfully.")
+                return
+
+            log.warning(
+                f"{resource_type.capitalize()} {resource_id} still present, retry {attempt}/{retries}..."
+            )
+            time.sleep(delay)
+
+        pytest.fail(f"{resource_type.capitalize()} {resource_id} still exists after {retries * delay}s!")
