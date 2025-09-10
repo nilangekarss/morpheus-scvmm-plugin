@@ -6,12 +6,20 @@ import logging
 import time
 
 from hpe_glcp_automation_lib.libs.commons.utils.random_gens import RandomGenUtils
+from hpe_morpheus_automation_libs.api.external_api.cloud.clouds_api import CloudAPI
 from dotenv import load_dotenv
+from hpe_morpheus_automation_libs.api.external_api.cloud.clouds_payload import DeleteCloud
+from hpe_morpheus_automation_libs.api.external_api.plugins.plugin_api import PluginAPI
+
 from functional_tests.common.cloud_helper import ResourcePoller
 
 log = logging.getLogger(__name__)
 
 load_dotenv()
+
+host = os.getenv("BASE_URL")
+admin_username = os.getenv("USERNAME")
+admin_password = os.getenv("PASSWORD")
 
 class SCVMMUtils:
     """Helper methods for SCVMM operations."""
@@ -72,14 +80,13 @@ class SCVMMUtils:
         }
 
     @staticmethod
-    def upload_scvmm_plugin(plugin_api, version="0.1.0"):
+    def upload_scvmm_plugin(version="0.1.0"):
         """
         Uploads the SCVMM plugin JAR file using the provided PluginAPI instance.
-
-        :param plugin_api: Instance of PluginAPI (already authenticated)
         :param version: Version of the plugin to upload (default: 0.1.0)
         :return: Response object from upload_plugin
         """
+        plugin_api = PluginAPI(host=host, username=admin_username, password=admin_password)
         current_dir = os.getcwd()
         jar_dir = os.path.join(current_dir, "build", "libs")
         log.info(f"Searching for plugin JAR in {jar_dir}")
@@ -446,12 +453,13 @@ class SCVMMUtils:
                 delete_response = morpheus_session.backups.remove_backups(id=resource_id)
             elif resource_type == "clone":
                 delete_response = morpheus_session.instances.delete_instance(id=resource_id)
-            elif resource_type == "cloud":
-                delete_response = morpheus_session.clouds.remove_clouds(id=resource_id)
             elif resource_type == "cluster":
                 delete_response = morpheus_session.clusters.delete_cluster(cluster_id=resource_id)
             elif resource_type == "group":
                 delete_response = morpheus_session.groups.remove_groups(id=resource_id)
+            elif resource_type == "cloud":
+                cloud_api= CloudAPI(host=host, username=admin_username, password=admin_password)
+                delete_response= cloud_api.delete_cloud(cloud_id= str(resource_id), qparams=DeleteCloud(force="true"))
             else:
                 log.warning(f"Cleanup for resource type '{resource_type}' is not supported.")
                 return
@@ -568,15 +576,15 @@ class SCVMMUtils:
     @staticmethod
     def verify_delete_resource(morpheus_session, resource_type, list_func, resource_id, key, retries=5, delay=3):
         """
-        Generic function to clean up and verify resource deletion with polling.
+        Verify that a resource is deleted by polling the list API.
         """
         if not resource_id:
+            log.info(f"No {resource_type} was created, skipping cleanup.")
             return
 
-        # Trigger deletion
-        SCVMMUtils.cleanup_resource(resource_type, morpheus_session, resource_id)
+        delete_response = SCVMMUtils.cleanup_resource(resource_type, morpheus_session, resource_id)
 
-        # Poll for deletion
+        # Poll to check if resource is really gone
         for attempt in range(1, retries + 1):
             resp = list_func()
             assert resp.status_code == 200, f"Failed to fetch {resource_type} list!"
@@ -584,12 +592,10 @@ class SCVMMUtils:
             ids = [r["id"] for r in resources]
 
             if resource_id not in ids:
-                log.info(f"{resource_type.capitalize()} {resource_id} deleted successfully.")
+                log.info(f"{resource_type.capitalize()} {resource_id} already absent or deleted successfully.")
                 return
 
-            log.warning(
-                f"{resource_type.capitalize()} {resource_id} still present, retry {attempt}/{retries}..."
-            )
+            log.warning(f"{resource_type.capitalize()} {resource_id} still present, retry {attempt}/{retries}...")
             time.sleep(delay)
 
         pytest.fail(f"{resource_type.capitalize()} {resource_id} still exists after {retries * delay}s!")

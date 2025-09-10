@@ -18,10 +18,6 @@ log = logging.getLogger(__name__)
 
 load_dotenv()
 
-host = os.getenv("BASE_URL")
-admin_username = os.getenv("USERNAME")
-admin_password = os.getenv("PASSWORD")
-
 class TestSCVMMPlugin:
     """Test class for SCVMM plugin related functionalities."""
 
@@ -33,8 +29,7 @@ class TestSCVMMPlugin:
         """Validate Windows instance creation, agent installation, and basic operations."""
         try:
             # Upload SCVMM plugin
-            plugin_api = PluginAPI(host=host, username=admin_username, password=admin_password)
-            SCVMMUtils.upload_scvmm_plugin(plugin_api)
+            SCVMMUtils.upload_scvmm_plugin()
 
             # Create a SCVMM group
             group_name = "test-scvmm-group-" + RandomGenUtils.random_string_of_chars(4)
@@ -253,3 +248,29 @@ class TestSCVMMPlugin:
         finally:
             if backup_id:
                 SCVMMUtils.cleanup_resource("backup", morpheus_session, backup_id)
+
+    def test_validate_infrastructure_delete(self, morpheus_session):
+        """Test case to validate the cleanup of created resources."""
+        try:
+            SCVMMUtils.verify_delete_resource(morpheus_session,
+                "instance",
+                morpheus_session.instances.list_instances,
+                TestSCVMMPlugin.instance_id,
+                "instances"
+            )
+            SCVMMUtils.verify_delete_resource(morpheus_session,
+                "cloud",
+                morpheus_session.clouds.list_clouds,
+                TestSCVMMPlugin.cloud_id,
+                "clouds"
+            )
+            SCVMMUtils.verify_delete_resource(morpheus_session,
+                "group",
+                morpheus_session.groups.list_groups,
+                TestSCVMMPlugin.group_id,
+                "groups"
+            )
+
+            log.info("Cleanup of created resources completed successfully.")
+        except Exception as e:
+            pytest.fail(f"Cleanup test failed: {e}")
