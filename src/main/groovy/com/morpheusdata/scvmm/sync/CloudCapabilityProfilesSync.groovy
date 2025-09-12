@@ -24,20 +24,21 @@ class CloudCapabilityProfilesSync {
     def execute() {
         log.debug "CloudCapabilityProfilesSync"
         try {
-            def server = morpheusContext.services.computeServer.find(new DataQuery().withFilter('cloud.id', cloud.id))
-            def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(morpheusContext, cloud, server)
+            def scvmmCloud = morpheusContext.services.cloud.get(cloud.id)
+            def server = morpheusContext.services.computeServer.find(new DataQuery().withFilter('cloud.id', scvmmCloud.id))
+            def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(morpheusContext, scvmmCloud, server)
 
-            if(cloud.regionCode) {
+            if(scvmmCloud.regionCode) {
                 def cloudResults = apiService.getCloud(scvmmOpts)
                 if(cloudResults.success == true && cloudResults?.cloud?.CapabilityProfiles) {
-                    cloud.setConfigProperty('capabilityProfiles', cloudResults?.cloud.CapabilityProfiles)
-                    morpheusContext.services.cloud.save(cloud)
+                    scvmmCloud.setConfigProperty('capabilityProfiles', cloudResults?.cloud?.CapabilityProfiles)
+                    morpheusContext.services.cloud.save(scvmmCloud)
                 }
             } else {
                 def capabilityProfileResults = apiService.getCapabilityProfiles(scvmmOpts)
                 if(capabilityProfileResults.success == true && capabilityProfileResults?.capabilityProfiles) {
-                    cloud.setConfigProperty('capabilityProfiles', capabilityProfileResults.capabilityProfiles.collect { it.Name })
-                    morpheusContext.services.cloud.save(cloud)
+                    scvmmCloud.setConfigProperty('capabilityProfiles', capabilityProfileResults.capabilityProfiles.collect { it.Name })
+                    morpheusContext.services.cloud.save(scvmmCloud)
                 }
             }
         } catch (e) {
