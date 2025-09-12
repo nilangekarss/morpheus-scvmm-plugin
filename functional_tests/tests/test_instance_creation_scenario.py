@@ -261,6 +261,8 @@ class TestSCVMMPlugin:
                 TestSCVMMPlugin.group_id,
                 "groups"
             )
+            # delete plugin
+            SCVMMUtils.delete_scvmm_plugin(morpheus_session)
 
             log.info("Cleanup of created resources completed successfully.")
         except Exception as e:

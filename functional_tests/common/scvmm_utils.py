@@ -610,3 +610,23 @@ class SCVMMUtils:
             time.sleep(delay)
 
         pytest.fail(f"{resource_type.capitalize()} {resource_id} still exists after {retries * delay}s!")
+
+    @staticmethod
+    def delete_scvmm_plugin(self):
+        """Deletes the SCVMM plugin."""
+        plugin_api = PluginAPI(host=host, username=admin_username, password=admin_password)
+        response = plugin_api.get_all_plugins()
+        assert response.status_code == 200, "Failed to retrieve plugins!"
+
+        plugins = response.json().get("plugins", [])
+        scvmm_plugin = next((p for p in plugins if p.get("code") == "morpheus-scvmm-plugin"), None)
+
+        if not scvmm_plugin:
+            log.info("SCVMM plugin not found, nothing to delete.")
+            return
+
+        plugin_id = scvmm_plugin["id"]
+        log.info(f"Deleting SCVMM plugin with ID {plugin_id}...")
+        delete_response = plugin_api.delete_plugin(plugin_id=plugin_id)
+        assert delete_response.status_code == 200, "Failed to delete SCVMM plugin!"
+        log.info(f"SCVMM plugin with ID {plugin_id} deleted successfully.")
