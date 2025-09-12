@@ -264,6 +264,6 @@ class TestSCVMMPlugin:
             # delete plugin
             SCVMMUtils.delete_scvmm_plugin(morpheus_session)
 
-            log.info("Cleanup of created resources completed successfully.")
+            log.info("Cleanup of created resources and plugin deletion completed successfully.")
         except Exception as e:
             pytest.fail(f"Cleanup test failed: {e}")
