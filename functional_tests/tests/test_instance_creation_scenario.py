@@ -9,7 +9,6 @@ import json
 import pytest
 from dotenv import load_dotenv
 from hpe_glcp_automation_lib.libs.commons.utils.random_gens import RandomGenUtils
-from hpe_morpheus_automation_libs.api.external_api.plugins.plugin_api import PluginAPI
 from functional_tests.common.cloud_helper import ResourcePoller
 from functional_tests.common.scvmm_utils import SCVMMUtils
 
@@ -70,6 +69,7 @@ class TestSCVMMPlugin:
                 assert av and av["size"] == ev["size"], f"Volume {ev['name']} size mismatch"
 
             # Verify agent
+            log.info("Checking whether agent is installed..")
             assert server.get("agentInstalled"), "Agent installation failed!"
             log.info(f"Agent version: {server.get('agentVersion')} on instance {instance_id}")
 
@@ -87,7 +87,7 @@ class TestSCVMMPlugin:
         instance_id= None
         try:
             # Fetch host
-            hosts_response = morpheus_session.hosts.list_hosts(name="hyperv-node-44")
+            hosts_response = morpheus_session.hosts.list_hosts(name=os.getenv("HOST_NAME"))
             assert hosts_response.status_code == 200, "Failed to retrieve hosts!"
             servers = hosts_response.json().get("servers", [])
             assert servers, "No hosts found in the response."
@@ -182,12 +182,6 @@ class TestSCVMMPlugin:
             # Verify agent installation on cloned instance
             assert server.get("agentInstalled"), f"Agent not installed on cloned instance {cloned_instance_id}"
             log.info(f"Agent version: {server.get('agentVersion')} on cloned instance {cloned_instance_id}")
-
-            # Verify plan ID
-            expected_plan = clone_payload["plan"]["id"]
-            actual_plan = instance["plan"]["id"]
-            assert actual_plan == expected_plan, f"Plan mismatch! Expected {expected_plan}, got {actual_plan}"
-
             # Verify storage size
             expected_size = clone_payload["volumes"][0]["size"]
             cloned_volumes = instance.get("volumes", [])

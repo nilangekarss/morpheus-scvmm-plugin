@@ -1,6 +1,8 @@
 import json
 import os
 import glob
+import subprocess
+
 import pytest
 import logging
 import time
@@ -50,11 +52,12 @@ class SCVMMUtils:
             ],
             "config": {
                 "noAgent": False,
-                "hostId": int(os.getenv("HOST_ID")),
+                "hostId": host_id,
                 "template": int(template),
                 "scvmmCapabilityProfile": "Hyper-V",
                 "createUser": False,
-
+                "backup": {  "providerBackupType": int(os.getenv("BACKUP_TYPE_ID"))
+                }
             },
             "labels": ["TEST"],
             "volumes": json.loads(os.getenv("VOLUMES")) if os.getenv("VOLUMES") else [],
@@ -80,35 +83,44 @@ class SCVMMUtils:
         }
 
     @staticmethod
-    def upload_scvmm_plugin(version="0.1.0"):
+    def upload_scvmm_plugin():
         """
-        Uploads the SCVMM plugin JAR file using the provided PluginAPI instance.
-        :param version: Version of the plugin to upload (default: 0.1.0)
-        :return: Response object from upload_plugin
+        Builds and uploads the SCVMM plugin JAR file using the provided PluginAPI instance.
+        Automatically detects the generated JAR file without requiring version input.
         """
         plugin_api = PluginAPI(host=host, username=admin_username, password=admin_password)
         current_dir = os.getcwd()
         jar_dir = os.path.join(current_dir, "build", "libs")
-        log.info(f"Searching for plugin JAR in {jar_dir}")
 
-        pattern = os.path.join(jar_dir, f"morpheus-scvmm-plugin-{version}-*.jar")
+        # --- Step 1: Build the JAR ---
+        try:
+            log.info("Running './gradlew shadowJar' to build plugin JAR...")
+            subprocess.run(["./gradlew", "shadowJar"], cwd=current_dir, check=True)
+            log.info("Build completed successfully.")
+        except subprocess.CalledProcessError as e:
+            log.error(f"Gradle build failed: {e}")
+            pytest.fail(f"Gradle build failed: {e}")
+
+        # --- Step 2: Search for JAR ---
+        log.info(f"Searching for plugin JAR in {jar_dir}")
+        pattern = os.path.join(jar_dir, "morpheus-scvmm-plugin-*.jar")
         matching_files = glob.glob(pattern)
 
-        if len(matching_files) != 1:
-            raise FileNotFoundError(
-                f"Expected one JAR file, found {len(matching_files)}"
-            )
+        if not matching_files:
+            raise FileNotFoundError("No plugin JAR file found in build/libs")
+        elif len(matching_files) > 1:
+            log.warning(f"Multiple JARs found: {matching_files}, using latest.")
 
-        jar_file_path = matching_files[0]
+        # Pick the newest JAR by modified time
+        jar_file_path = max(matching_files, key=os.path.getmtime)
         log.info(f"Found plugin JAR: {jar_file_path}")
         log.info("Uploading plugin...")
 
+        # --- Step 3: Upload ---
         try:
             plugin_response = plugin_api.upload_plugin(jar_file_path=jar_file_path)
             log.info(f"Response Status Code: {plugin_response.status_code}")
-            assert (
-                plugin_response.status_code == 200
-            ), f"Plugin upload failed: {plugin_response.text}"
+            assert plugin_response.status_code == 200, f"Plugin upload failed: {plugin_response.text}"
             log.info("Plugin uploaded successfully.")
             return plugin_response
         except Exception as e:
@@ -351,7 +363,7 @@ class SCVMMUtils:
             ],
             "networkInterfaces": [
                 {
-                    "network": {"id": "2"}
+                    "network": {"id": os.getenv("NETWORK_ID")},
                 }
             ]
         }
@@ -392,7 +404,6 @@ class SCVMMUtils:
         """
         return {
             "name": clone_instance_name,
-            "plan": {"id": 163},
             "volumes": [
                 {
                     "datastoreId": "auto",
