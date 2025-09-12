@@ -159,20 +159,16 @@ class TestSCVMMPlugin:
         try:
             clone_name = f"clone-{instance_id}" + RandomGenUtils.random_string_of_chars(2)
             log.info(f"Cloning instance with id '{instance_id}'...")
-            clone_payload = SCVMMUtils.create_clone_payload(clone_instance_name=clone_name,)
+            clone_payload = SCVMMUtils.create_clone_payload(clone_instance_name=clone_name)
             clone_response = morpheus_session.instances.clone_instance(id=instance_id, clone_instance_request=clone_payload)
             assert clone_response.status_code == 200, "Instance clone operation failed!"
 
             # Verify original instance is still running
             assert ResourcePoller.poll_instance_status(instance_id, "running", morpheus_session) == "running"
 
-            # Fetch cloned instance ID
-            clone_ins_response = morpheus_session.instances.list_instances(name=clone_name)
-            cloned_instance_id = clone_ins_response.json()["instances"][0]["id"]
-
             # Fetch cloned instance ID & verify it's running
-            clone_id = morpheus_session.instances.list_instances(name=clone_name).json()["instances"][0]["id"]
-            assert ResourcePoller.poll_instance_status(clone_id, "running", morpheus_session) == "running"
+            cloned_instance_id = morpheus_session.instances.list_instances(name=clone_name).json()["instances"][0]["id"]
+            assert ResourcePoller.poll_instance_status(cloned_instance_id, "running", morpheus_session) == "running"
 
             # Fetch cloned instance details
             details = SCVMMUtils.get_instance_details(morpheus_session, cloned_instance_id)
@@ -180,6 +176,7 @@ class TestSCVMMPlugin:
             server = instance["containerDetails"][0]["server"]
 
             # Verify agent installation on cloned instance
+            log.info("Checking whether agent is installed on cloned instance..")
             assert server.get("agentInstalled"), f"Agent not installed on cloned instance {cloned_instance_id}"
             log.info(f"Agent version: {server.get('agentVersion')} on cloned instance {cloned_instance_id}")
             # Verify storage size
