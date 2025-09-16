@@ -342,12 +342,27 @@ class ScvmmCloudProvider implements CloudProvider {
 	}
 
 	/**
+	 * Create the SSH options.
+	 *
+	 * @return The SSH options.
+	 */
+	private static Collection<OptionType> createSshOptions() {
+		Collection<OptionType> sshOptions = []
+		sshOptions << new OptionType(code: 'computeServerType.global.sshHost')
+		sshOptions << new OptionType(code: 'computeServerType.global.sshPort')
+		sshOptions << new OptionType(code: 'computeServerType.global.sshUsername')
+		sshOptions << new OptionType(code: 'computeServerType.global.sshPassword')
+		return sshOptions
+	}
+
+	/**
 	 * Grabs all {@link ComputeServerType} objects that this CloudProvider can represent during a sync or during a provision.
 	 * @return collection of ComputeServerType
 	 */
 	@Override
 	Collection<ComputeServerType> getComputeServerTypes() {
 		Collection<ComputeServerType> serverTypes = []
+		Collection<OptionType> sshOptions = createSshOptions()
 
 		// Host option type is used by multiple compute server types.
 		OptionType hostOptionType = new OptionType(code:'computeServerType.scvmm.capabilityProfile', inputType: OptionType.InputType.SELECT,
@@ -355,6 +370,12 @@ class ScvmmCloudProvider implements CloudProvider {
 				fieldCode: 'gomorpheus.optiontype.CapabilityProfile', fieldLabel:'Capability Profile', fieldContext:'config', fieldGroup:'Options',
 				required:true, enabled:true, optionSource:'scvmmCapabilityProfile', editable:true, global:false, placeHolder:null, helpBlock:'',
 				defaultValue:null, custom:false, displayOrder:10, fieldClass:null
+		)
+
+		serverTypes << new ComputeServerType( code: 'unmanaged', name: 'Linux VM', description: 'vm', platform: PlatformType.linux, nodeType: 'unmanaged',
+				enabled: true, selectable: false, externalDelete: false, managed: false, controlPower: false, controlSuspend: false, creatable: true,
+				computeService: 'unmanagedComputeService', displayOrder: 100, hasAutomation: false, containerHypervisor: false, bareMetalHost: false,
+				vmHypervisor: false, agentType: null, managedServerType: 'managed', guestVm: true, provisionTypeCode: 'unmanaged', optionTypes: sshOptions
 		)
 
 		//scvmm
@@ -554,8 +575,8 @@ class ScvmmCloudProvider implements CloudProvider {
 				newServer.setConfigProperty('diskPath', cloud.getConfigProperty('diskPath'))
 			}
 
-			def maxStorage = serverInfo?.disks? serverInfo.disks.toLong()  :0L
-			def maxMemory = serverInfo?.memory? serverInfo.memory.toLong() : 0L
+			def maxStorage = getMaxStorage(serverInfo)
+			def maxMemory = getMaxMemory(serverInfo)
 			def maxCores = 1
 			newServer.serverOs = context.async.osType.find(new DataQuery().withFilter('code', versionCode)).blockingGet()
 			newServer.platform = 'windows'
@@ -842,6 +863,30 @@ class ScvmmCloudProvider implements CloudProvider {
 	ServiceResponse stopServer(ComputeServer computeServer) {
 		ScvmmProvisionProvider provisionProvider = new ScvmmProvisionProvider(plugin, context)
 		return provisionProvider.stopServer(computeServer)
+	}
+
+	private long getMaxMemory(serverInfo) {
+		def maxMemory = 0L
+		if (serverInfo?.memory && serverInfo?.memory?.toString()?.trim()) {
+			try {
+				maxMemory = serverInfo?.memory?.toString()?.toLong()
+			} catch (NumberFormatException e) {
+				log.warn("Invalid memory value '${serverInfo.memory}', defaulting to 0")
+			}
+		}
+		return maxMemory
+	}
+
+	private long getMaxStorage(serverInfo) {
+		def maxStorage = 0L
+		if (serverInfo?.disks && serverInfo?.disks?.toString()?.trim()) {
+			try {
+				maxStorage = serverInfo?.disks?.toString()?.toLong()
+			} catch (NumberFormatException e) {
+				log.warn("Invalid disk value '${serverInfo.disks}', defaulting to 0")
+			}
+		}
+		return maxStorage
 	}
 
 	/**

@@ -804,9 +804,11 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                             storageVolumes = server.volumes
                             rootVolume = storageVolumes.find { it.rootVolume == true }
                             rootVolume.externalId = serverDisks.diskMetaData[serverDisks.osDisk?.externalId]?.VhdID
+							context.services.storageVolume.save(rootVolume)
                             // Fix up the externalId.. initially set to the VirtualDiskDrive ID.. now setting to VirtualHardDisk ID
                             rootVolume.datastore = loadDatastoreForVolume(cloud, serverDisks.diskMetaData[rootVolume.externalId]?.HostVolumeId, serverDisks.diskMetaData[rootVolume.externalId]?.FileShareId, serverDisks.diskMetaData[rootVolume.externalId]?.PartitionUniqueId) ?: rootVolume.datastore
-                            storageVolumes.each { storageVolume ->
+							context.services.storageVolume.save(rootVolume)
+							storageVolumes.each { storageVolume ->
                                 def dataDisk = serverDisks.dataDisks.find { it.id == storageVolume.id }
                                 if (dataDisk) {
                                     def newExternalId = serverDisks.diskMetaData[dataDisk.externalId]?.VhdID
@@ -815,7 +817,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                                     }
                                     // Ensure the datastore is set
                                     storageVolume.datastore = loadDatastoreForVolume(cloud, serverDisks.diskMetaData[storageVolume.externalId]?.HostVolumeId, serverDisks.diskMetaData[storageVolume.externalId]?.FileShareId, serverDisks.diskMetaData[storageVolume.externalId]?.PartitionUniqueId) ?: storageVolume.datastore
-                                }
+									context.services.storageVolume.save(storageVolume)
+								}
                             }
                         }
 

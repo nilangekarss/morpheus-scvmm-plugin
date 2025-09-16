@@ -115,7 +115,7 @@ class VirtualMachineSync {
                     add.internalIp = cloudItem.InternalIp
                 }
                 // Operating System
-                def osTypeCode = apiService.getMapScvmmOsType(cloudItem.OperatingSystem, true, cloudItem.OperatingSystemWindows?.toString() == 'true' ? 'windows' : null)
+                def osTypeCode = apiService.getMapScvmmOsType(cloudItem.OperatingSystem, true, "Other Linux (64 bit)")
                 def osTypeCodeStr = osTypeCode ?: 'other'
                 def osType = context.services.osType.find(new DataQuery().withFilter('code', osTypeCodeStr))
                 if (osType) {
@@ -417,7 +417,7 @@ class VirtualMachineSync {
         return changes
     }
 
-    def addMissingStorageVolumes(itemsToAdd, server, int diskNumber, maxStorage, changes) {
+    def addMissingStorageVolumes(itemsToAdd, ComputeServer server, int diskNumber, maxStorage, changes) {
         def provisionProvider = cloudProvider.getProvisionProvider('morpheus-scvmm-plugin.provision')
         def serverVolumeNames = server.volumes.collect{ it.name }
         itemsToAdd?.eachWithIndex { diskData, index ->
@@ -438,11 +438,13 @@ class VirtualMachineSync {
             if (datastore)
                 volumeConfig.datastoreId = "${datastore.id}"
             def storageVolume = buildStorageVolume(server.account ?: cloud.account, server, volumeConfig)
-            context.async.storageVolume.create([storageVolume], server).blockingGet()
+            context.services.storageVolume.create(storageVolume)
+            server.volumes.add(storageVolume)
             maxStorage += storageVolume.maxStorage ?: 0l
             diskNumber++
             log.debug("added volume: ${storageVolume?.dump()}")
         }
+        context.async.computeServer.bulkSave([server]).blockingGet()
     }
 
     def updateMatchedStorageVolumes(updateItems, server, maxStorage, changes) {
