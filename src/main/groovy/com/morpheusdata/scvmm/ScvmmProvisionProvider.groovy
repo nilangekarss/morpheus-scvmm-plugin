@@ -517,13 +517,14 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         def server = workload.server
         def containerId = workload?.id
         Cloud cloud = server.cloud
+		def scvmmOpts = [:]
         try {
             def containerConfig = workload.getConfigMap()
 			WorkloadType workloadType = context.services.workloadType.get(workload.workloadType.id)
             opts.server = workload.server
 
             def controllerNode = pickScvmmController(cloud)
-            def scvmmOpts = apiService.getScvmmZoneOpts(context, cloud)
+            scvmmOpts = apiService.getScvmmZoneOpts(context, cloud)
             scvmmOpts.name = server.name
             def imageId
             def virtualImage = server.sourceImage
@@ -761,31 +762,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                         }
                     }
 
-                    if (scvmmOpts.cloneVMId && scvmmOpts.cloneContainerId) {
-                        // Restart the VM being cloned
-                        if (scvmmOpts.startClonedVM) {
-                            log.debug "Handling startup of the original VM"
-                            Workload cloneContainer = context.services.workload.get(opts.cloneContainerId?.toLong())
-                            if (cloneContainer && cloneContainer.status != Workload.Status.running.toString()) {
-                                log.debug "stopping/starting original VM: ${scvmmOpts.cloneVMId}"
-                                def startServerOpts = [async: true]
-								if (scvmmOpts.cloneBaseOpts?.clonedScvmmOpts) {
-									startServerOpts += scvmmOpts.cloneBaseOpts.clonedScvmmOpts
-								}
-								apiService.startServer(startServerOpts, scvmmOpts.cloneVMId)
-                                Workload savedContainer = context.services.workload.find(new DataQuery().withFilter("id", cloneContainer.server?.id))
-                                if (savedContainer) {
-                                    savedContainer.userStatus = Workload.Status.running.toString()
-                                    context.services.workload.save(savedContainer)
-                                }
-                                ComputeServer savedServer = context.services.computeServer.get(cloneContainer.server?.id)
-                                if (savedServer) {
-                                    context.async.computeServer.updatePowerState(savedServer.id, ComputeServer.PowerState.on)
-                                }
-                            }
-                        }
-                    }
-
                     node = context.services.computeServer.get(nodeId)
                     if (createResults.server) {
                         server.externalId = createResults.server.id
@@ -867,7 +843,33 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             log.error("runWorkload error:${e}", e)
             provisionResponse.setError(e.message)
             return new ServiceResponse(success: false, msg: e.message, error: e.message, data: provisionResponse)
-        }
+        } finally {
+			// Always power on the parent VM in case of a clone operation
+			if (scvmmOpts.cloneVMId && scvmmOpts.cloneContainerId) {
+				if (scvmmOpts.startClonedVM) {
+					log.debug "Handling startup of the original VM: ${scvmmOpts.cloneVMId}"
+					def startServerOpts = [async: true]
+					if (scvmmOpts.cloneBaseOpts?.clonedScvmmOpts) {
+						startServerOpts += scvmmOpts.cloneBaseOpts.clonedScvmmOpts
+					}
+					apiService.startServer(startServerOpts, scvmmOpts.cloneVMId)
+				}
+				// Always check for DVD/ISO cleanup on the parent VM
+				try {
+					if (scvmmOpts.cloneBaseOpts?.clonedScvmmOpts) {
+						log.debug "Checking for DVD/ISO cleanup on parent VM"
+						apiService.setCdrom(scvmmOpts.cloneBaseOpts.clonedScvmmOpts)
+
+						if (scvmmOpts.deleteDvdOnComplete?.deleteIso) {
+							log.debug "Deleting ISO from parent VM: ${scvmmOpts.deleteDvdOnComplete.deleteIso}"
+							apiService.deleteIso(scvmmOpts.cloneBaseOpts.clonedScvmmOpts, scvmmOpts.deleteDvdOnComplete.deleteIso)
+						}
+					}
+				} catch (ex) {
+					log.error("Error cleaning up DVD/ISO on parent VM: ${ex.message}", ex)
+				}
+			}
+		}
     }
 
     def additionalTemplateDisksConfig(Workload workload, scvmmOpts) {
