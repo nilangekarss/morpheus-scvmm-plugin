@@ -117,7 +117,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 
     /**
      * Some older clouds have a provision type code that is the exact same as the cloud code. This allows one to set it
-     * to match and in doing so the provider will be fetched via the cloud providers {@linkCloudProvider#getDefaultProvisionTypeCode()} method.
+     * to match and in doing so the provider will be fetched via the cloud providers {@link CloudProvider#getDefaultProvisionTypeCode()} method.
      * @return code for overriding the ProvisionType record code property
      */
     @Override
