@@ -10,6 +10,7 @@ import pytest
 from dotenv import load_dotenv
 from hpe_glcp_automation_lib.libs.commons.utils.random_gens import RandomGenUtils
 from functional_tests.common.cloud_helper import ResourcePoller
+from functional_tests.common.create_payloads import SCVMMpayloads
 from functional_tests.common.scvmm_utils import SCVMMUtils
 
 logging.basicConfig(level=logging.INFO)
@@ -128,8 +129,8 @@ class TestSCVMMPlugin:
             details = SCVMMUtils.get_instance_details(morpheus_session, instance_id)
 
             # Build payloads
-            update_payload = SCVMMUtils.create_update_payload(labels=["Test1"])
-            reconfig_payload = SCVMMUtils.create_reconfigure_payload(details)
+            update_payload = SCVMMpayloads.create_update_payload(labels=["Test1"])
+            reconfig_payload = SCVMMpayloads.create_reconfigure_payload(details)
 
             # Update labels
             resp = morpheus_session.instances.update_instance(id=instance_id, update_instance_request=update_payload)
@@ -159,7 +160,7 @@ class TestSCVMMPlugin:
         try:
             clone_name = f"clone-{instance_id}" + RandomGenUtils.random_string_of_chars(2)
             log.info(f"Cloning instance with id '{instance_id}'...")
-            clone_payload = SCVMMUtils.create_clone_payload(clone_instance_name=clone_name)
+            clone_payload = SCVMMpayloads.create_clone_payload(clone_instance_name=clone_name)
             clone_response = morpheus_session.instances.clone_instance(id=instance_id, clone_instance_request=clone_payload)
             assert clone_response.status_code == 200, "Instance clone operation failed!"
 
@@ -207,7 +208,7 @@ class TestSCVMMPlugin:
 
             # Create schedule (after 5 min cron)
             schedule_id = SCVMMUtils.create_execute_schedule(morpheus_session)
-            backup_payload = SCVMMUtils.create_backup_payload(instance_id, container_id, backup_name, backup_job_name, schedule_id)
+            backup_payload = SCVMMpayloads.create_backup_payload(instance_id, container_id, backup_name, backup_job_name, schedule_id)
 
             backup_response = morpheus_session.backups.add_backups(add_backups_request=backup_payload)
             assert backup_response.status_code == 200, "Instance backup operation failed!"
@@ -219,7 +220,7 @@ class TestSCVMMPlugin:
             )
             assert status == "SUCCEEDED", f"Backup job failed with status {status}"
             #  Restore backup
-            restore_payload = SCVMMUtils.create_restore_payload(instance_id, job_result_id)
+            restore_payload = SCVMMpayloads.create_restore_payload(instance_id, job_result_id)
             restore_response = morpheus_session.backups.execute_backup_restore(
                 execute_backup_restore_request=restore_payload
             )

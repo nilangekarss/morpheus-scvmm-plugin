@@ -2,6 +2,9 @@ import time
 from time import sleep
 import logging
 
+import pytest
+
+from functional_tests.common.common_utils import CommonUtils
 from functional_tests.tests.conftest import morpheus_session
 
 log = logging.getLogger(__name__)
@@ -200,3 +203,26 @@ class ResourcePoller:
 
             log.info(f"{description} not met, retrying in {poll_interval} seconds...")
             time.sleep(poll_interval)
+
+    @staticmethod
+    def poll_backup_job_execution(morpheus_session, backup_id, timeout=600, interval=30):
+        """
+        Poll until backup job executes and produces a result.
+
+        Returns:
+            (last_result_id, status)
+        """
+        start = time.time()
+        while time.time() - start < timeout:
+            job_details = CommonUtils.get_backup_job_details(morpheus_session, backup_id)
+            last_result = job_details["backup"].get("lastResult")
+
+            if last_result:
+                job_result_id = last_result["id"]
+                status = last_result["status"]
+                log.info(f"Backup job result {job_result_id} status: {status}")
+                if status in ["SUCCEEDED", "FAILED"]:
+                    return job_result_id, status
+            time.sleep(interval)
+
+        pytest.fail("Backup job did not execute within expected time")
