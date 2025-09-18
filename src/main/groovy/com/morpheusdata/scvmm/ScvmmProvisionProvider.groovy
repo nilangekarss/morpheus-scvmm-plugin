@@ -117,7 +117,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 
     /**
      * Some older clouds have a provision type code that is the exact same as the cloud code. This allows one to set it
-     * to match and in doing so the provider will be fetched via the cloud providers {@link CloudProvider#getDefaultProvisionTypeCode()} method.
+     * to match and in doing so the provider will be fetched via the cloud providers {@linkCloudProvider#getDefaultProvisionTypeCode()} method.
      * @return code for overriding the ProvisionType record code property
      */
     @Override
@@ -514,6 +514,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 				installAgent: !opts?.noAgent,
 				noAgent: opts?.noAgent
 		)
+		ServiceResponse<ProvisionResponse> rtn = new ServiceResponse()
         def server = workload.server
         def containerId = workload?.id
         Cloud cloud = server.cloud
@@ -835,42 +836,63 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             }
 
 			if (provisionResponse.success != true) {
-                return new ServiceResponse(success: false, msg: provisionResponse.message ?: 'vm config error', error: provisionResponse.message, data: provisionResponse)
+				rtn.success = false
+				rtn.msg = provisionResponse.message ?: 'vm config error'
+				rtn.error = provisionResponse.message
+				rtn.data = provisionResponse
             } else {
-                return new ServiceResponse<ProvisionResponse>(success: true, data: provisionResponse)
+				rtn.success = true
+				rtn.data = provisionResponse
             }
         } catch (e) {
             log.error("runWorkload error:${e}", e)
             provisionResponse.setError(e.message)
-            return new ServiceResponse(success: false, msg: e.message, error: e.message, data: provisionResponse)
+			rtn.success = false
+			rtn.msg = e.message
+			rtn.error = e.message
+			rtn.data = provisionResponse
         } finally {
-			// Always power on the parent VM in case of a clone operation
-			if (scvmmOpts.cloneVMId && scvmmOpts.cloneContainerId) {
+			// Handle cleanup operations for a clone VM
+			cloneParentCleanup(scvmmOpts, rtn)
+		}
+		return rtn
+    }
+
+	private cloneParentCleanup(Map<String, Object> scvmmOpts, ServiceResponse rtn) {
+		if (scvmmOpts.cloneVMId && scvmmOpts.cloneContainerId) {
+			try {
+				// Start the parent VM if needed
 				if (scvmmOpts.startClonedVM) {
 					log.debug "Handling startup of the original VM: ${scvmmOpts.cloneVMId}"
 					def startServerOpts = [async: true]
 					if (scvmmOpts.cloneBaseOpts?.clonedScvmmOpts) {
 						startServerOpts += scvmmOpts.cloneBaseOpts.clonedScvmmOpts
 					}
-					apiService.startServer(startServerOpts, scvmmOpts.cloneVMId)
-				}
-				// Always check for DVD/ISO cleanup on the parent VM
-				try {
-					if (scvmmOpts.cloneBaseOpts?.clonedScvmmOpts) {
-						log.debug "Checking for DVD/ISO cleanup on parent VM"
-						apiService.setCdrom(scvmmOpts.cloneBaseOpts.clonedScvmmOpts)
-
-						if (scvmmOpts.deleteDvdOnComplete?.deleteIso) {
-							log.debug "Deleting ISO from parent VM: ${scvmmOpts.deleteDvdOnComplete.deleteIso}"
-							apiService.deleteIso(scvmmOpts.cloneBaseOpts.clonedScvmmOpts, scvmmOpts.deleteDvdOnComplete.deleteIso)
-						}
+					def startResults = apiService.startServer(startServerOpts, scvmmOpts.cloneVMId)
+					if (!startResults.success) {
+						log.error "Failed to start the parent VM ${scvmmOpts.cloneVMId}: ${startResults.msg}"
 					}
-				} catch (ex) {
-					log.error("Error cleaning up DVD/ISO on parent VM: ${ex.message}", ex)
 				}
+
+				// Always check for DVD/ISO cleanup on the parent VM
+				if (scvmmOpts.cloneBaseOpts?.clonedScvmmOpts) {
+					log.debug "Checking for DVD/ISO cleanup on parent VM: ${scvmmOpts.cloneVMId}"
+					def setCdromResults = apiService.setCdrom(scvmmOpts.cloneBaseOpts.clonedScvmmOpts)
+					if (!setCdromResults.success) {
+						log.error "Failed to unmount DVD of parent VM. Please unmount manually as this may cause issues for further clone operations."
+					}
+					if (scvmmOpts.deleteDvdOnComplete?.deleteIso) {
+						log.debug "Deleting ISO of parent VM: ${scvmmOpts.deleteDvdOnComplete.deleteIso}"
+						apiService.deleteIso(scvmmOpts.cloneBaseOpts.clonedScvmmOpts, scvmmOpts.deleteDvdOnComplete.deleteIso)
+					}
+				}
+			} catch (Exception ex) {
+				log.error("Error during parent VM cleanup for ${scvmmOpts.cloneVMId}: ${ex.message}", ex)
+				rtn.warning = true
+				rtn.msg = "Error during parent VM cleanup for ${scvmmOpts.cloneVMId}: ${ex.message}"
 			}
 		}
-    }
+	}
 
     def additionalTemplateDisksConfig(Workload workload, scvmmOpts) {
         // Determine what additional disks need to be added after provisioning
