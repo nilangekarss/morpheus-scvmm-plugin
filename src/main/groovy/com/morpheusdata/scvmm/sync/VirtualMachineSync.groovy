@@ -485,13 +485,15 @@ class VirtualMachineSync {
         }
     }
 
-    def removeMissingStorageVolumes(removeItems, server, changes) {
+    def removeMissingStorageVolumes(removeItems, ComputeServer server, Boolean changes) {
         removeItems?.each { currentVolume ->
             log.debug "removing volume: ${currentVolume}"
             changes = true
             currentVolume.controller = null
             currentVolume.datastore = null
-            context.async.storageVolume.remove(removeItems, server, false).blockingGet()
+            server.volumes.remove(currentVolume)
+            context.async.computeServer.save(server).blockingGet()
+            context.async.storageVolume.remove(currentVolume).blockingGet()
         }
     }
 
