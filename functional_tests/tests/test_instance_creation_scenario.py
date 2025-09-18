@@ -42,14 +42,16 @@ class TestSCVMMPlugin:
             TestSCVMMPlugin.cloud_id = SCVMMUtils.create_scvmm_cloud(morpheus_session, TestSCVMMPlugin.group_id)
             SCVMMUtils.create_scvmm_cluster(morpheus_session, TestSCVMMPlugin.cloud_id, TestSCVMMPlugin.group_id)
 
-            template_id = CommonUtils.get_template_id(morpheus_session)
+            template_name= os.getenv("SCVMM_TEMPLATE_NAME")
+            template_id = CommonUtils.get_template_id(morpheus_session, template_name)
 
             # Create instance
             instance_id, _ = SCVMMUtils.create_instance(
                 morpheus_session,
+                template_id=template_id,
                 group_id= TestSCVMMPlugin.group_id,
                 cloud_id= TestSCVMMPlugin.cloud_id,
-                template_id= template_id
+
             )
             assert instance_id, "Instance creation failed!"
             TestSCVMMPlugin.instance_id= instance_id
@@ -98,16 +100,18 @@ class TestSCVMMPlugin:
             assert servers, "No hosts found in the response."
             host_id = servers[0]["id"]
 
-            template_id = CommonUtils.get_template_id(morpheus_session)
+            template_name = os.getenv("SCVMM_TEMPLATE_NAME")
+            template_id = CommonUtils.get_template_id(morpheus_session, template_name)
 
            # Create Instance
             instance_id, created_instance_name = SCVMMUtils.create_instance(
                 morpheus_session=morpheus_session,
+                template_id=template_id,
                 instance_name= "test-instance-" + RandomGenUtils.random_string_of_chars(5),
                 group_id= TestSCVMMPlugin.group_id,
                 cloud_id= TestSCVMMPlugin.cloud_id,
                 host_id=host_id,
-                template_id= template_id
+
             )
 
             # Validate host assignment
