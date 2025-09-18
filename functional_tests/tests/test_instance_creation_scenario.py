@@ -12,6 +12,7 @@ from hpe_glcp_automation_lib.libs.commons.utils.random_gens import RandomGenUtil
 from functional_tests.common.cloud_helper import ResourcePoller
 from functional_tests.common.create_payloads import SCVMMpayloads
 from functional_tests.common.scvmm_utils import SCVMMUtils
+from functional_tests.common.common_utils import CommonUtils
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -41,11 +42,14 @@ class TestSCVMMPlugin:
             TestSCVMMPlugin.cloud_id = SCVMMUtils.create_scvmm_cloud(morpheus_session, TestSCVMMPlugin.group_id)
             SCVMMUtils.create_scvmm_cluster(morpheus_session, TestSCVMMPlugin.cloud_id, TestSCVMMPlugin.group_id)
 
+            template_id = CommonUtils.get_template_id(morpheus_session)
+
             # Create instance
             instance_id, _ = SCVMMUtils.create_instance(
                 morpheus_session,
                 group_id= TestSCVMMPlugin.group_id,
-                cloud_id= TestSCVMMPlugin.cloud_id
+                cloud_id= TestSCVMMPlugin.cloud_id,
+                template_id= template_id
             )
             assert instance_id, "Instance creation failed!"
             TestSCVMMPlugin.instance_id= instance_id
@@ -94,6 +98,8 @@ class TestSCVMMPlugin:
             assert servers, "No hosts found in the response."
             host_id = servers[0]["id"]
 
+            template_id = CommonUtils.get_template_id(morpheus_session)
+
            # Create Instance
             instance_id, created_instance_name = SCVMMUtils.create_instance(
                 morpheus_session=morpheus_session,
@@ -101,6 +107,7 @@ class TestSCVMMPlugin:
                 group_id= TestSCVMMPlugin.group_id,
                 cloud_id= TestSCVMMPlugin.cloud_id,
                 host_id=host_id,
+                template_id= template_id
             )
 
             # Validate host assignment

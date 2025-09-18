@@ -41,3 +41,13 @@ class CommonUtils:
         )
         response.raise_for_status()
         return response.json()
+
+    @staticmethod
+    def get_template_id(morpheus_session, template_name=None):
+        if not template_name:
+            template_name = os.getenv("SCVMM_TEMPLATE_NAME")
+        response = morpheus_session.library.list_virtual_images(name=template_name, filter_type="Synced")
+        assert response.status_code == 200, "Failed to retrieve templates!"
+        templates = response.json().get("virtualImages", [])
+        assert templates, f"No template found for {template_name}"
+        return templates[0]["id"]

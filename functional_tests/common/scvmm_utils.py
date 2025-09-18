@@ -166,7 +166,7 @@ class SCVMMUtils:
             log.warning("Cluster registration failed! Could not create cluster.")
 
     @staticmethod
-    def create_instance(morpheus_session, instance_name=None, group_id=None, cloud_id=None, host_id=None):
+    def create_instance(morpheus_session, instance_name=None, template_id=None, group_id=None, cloud_id=None, host_id=None):
         """
         Generic method to create an instance and wait until it's running.
 
@@ -182,13 +182,14 @@ class SCVMMUtils:
         if not instance_name:
             instance_name = "test-scvmm-instance-" + RandomGenUtils.random_string_of_chars(3)
 
-        # Fetching template
-        template_name = os.getenv("SCVMM_TEMPLATE_NAME")
-        filter_type = "Synced"
-        template_response = morpheus_session.library.list_virtual_images(name=template_name, filter_type=filter_type)
-        assert template_response.status_code == 200, "Failed to retrieve templates!"
-        template_data = template_response.json()
-        template_id = template_data["virtualImages"][0]["id"]
+            # If template_id not passed, fall back to env/config
+            if not template_id:
+                template_name = os.getenv("SCVMM_TEMPLATE_NAME")
+                template_response = morpheus_session.library.list_virtual_images(name=template_name,
+                                                                                 filter_type="Synced")
+                assert template_response.status_code == 200, "Failed to retrieve templates!"
+                template_data = template_response.json()
+                template_id = template_data["virtualImages"][0]["id"]
 
         # Generate payload
         log.info("Generating instance payload...")
