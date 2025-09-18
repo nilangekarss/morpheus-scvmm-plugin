@@ -1,107 +1,62 @@
 import json
 import os
 import glob
+import subprocess
+
 import pytest
 import logging
 import time
 
+from hpe_glcp_automation_lib.libs.commons.utils.common_utils.common_utils import CommonUtils
 from hpe_glcp_automation_lib.libs.commons.utils.random_gens import RandomGenUtils
+from hpe_morpheus_automation_libs.api.external_api.cloud.clouds_api import CloudAPI
 from dotenv import load_dotenv
+from hpe_morpheus_automation_libs.api.external_api.cloud.clouds_payload import DeleteCloud
+from hpe_morpheus_automation_libs.api.external_api.plugins.plugin_api import PluginAPI
+
 from functional_tests.common.cloud_helper import ResourcePoller
+from functional_tests.common.create_payloads import SCVMMpayloads
+from functional_tests.common.common_utils import CommonUtils
 
 log = logging.getLogger(__name__)
 
 load_dotenv()
 
+host = os.getenv("BASE_URL")
+admin_username = os.getenv("USERNAME")
+admin_password = os.getenv("PASSWORD")
+
 class SCVMMUtils:
     """Helper methods for SCVMM operations."""
 
     @staticmethod
-    def get_create_instance_payload(instance_name, template, group_id, cloud_id, host_id=None):
-        """Helper function to create the payload for instance creation."""
-        return {
-            "instance": {
-                "name": instance_name,
-                "site": {"id": group_id},
-                "instanceType": {"code": "scvmm"},
-                "layout": {
-                    "id": int(os.getenv("SCVMM_LAYOUT_ID"))
-
-                },
-                "plan": {
-                    "id": int(os.getenv("PLAN_ID"))
-                },
-            },
-            "zoneId": cloud_id,
-            "networkInterfaces": [
-                {
-                    "network": {
-                        "id": str(os.getenv("NETWORK_ID"))
-                    }
-                }
-            ],
-            "config": {
-                "noAgent": False,
-                "hostId": int(os.getenv("HOST_ID")),
-                "template": int(template),
-                "scvmmCapabilityProfile": "Hyper-V",
-                "createUser": False,
-
-            },
-            "labels": ["TEST"],
-            "volumes": json.loads(os.getenv("VOLUMES")) if os.getenv("VOLUMES") else [],
-        }
-
-    @staticmethod
-    def get_create_cloud_payload(cloud_name, group_id, zone_type_id):
-        """Helper function to create the payload for cloud creation."""
-        return {
-            "zone": {
-                "name": cloud_name,
-                "credential": {"type": "local"},
-                "zoneType": {"id": zone_type_id},
-                "groups": {"id": group_id},
-                "groupId": group_id,
-                "config": {
-                    "host": os.getenv("HOST"),
-                    "username": os.getenv("HOST_USERNAME"),
-                    "password": os.getenv("HOST_PASSWORD"),
-                    "sharedController": os.getenv("SHARED_CONTROLLER"),
-                },
-            }
-        }
-
-    @staticmethod
-    def upload_scvmm_plugin(plugin_api, version="0.1.0"):
+    def upload_scvmm_plugin():
         """
-        Uploads the SCVMM plugin JAR file using the provided PluginAPI instance.
-
-        :param plugin_api: Instance of PluginAPI (already authenticated)
-        :param version: Version of the plugin to upload (default: 0.1.0)
-        :return: Response object from upload_plugin
+        Builds and uploads the SCVMM plugin JAR file using the provided PluginAPI instance.
+        Automatically detects the generated JAR file without requiring version input.
         """
+        plugin_api = PluginAPI(host=host, username=admin_username, password=admin_password)
         current_dir = os.getcwd()
         jar_dir = os.path.join(current_dir, "build", "libs")
-        log.info(f"Searching for plugin JAR in {jar_dir}")
 
-        pattern = os.path.join(jar_dir, f"morpheus-scvmm-plugin-{version}-*.jar")
+        log.info(f"Searching for plugin JAR in {jar_dir}")
+        pattern = os.path.join(jar_dir, "morpheus-scvmm-plugin-*.jar")
         matching_files = glob.glob(pattern)
 
-        if len(matching_files) != 1:
-            raise FileNotFoundError(
-                f"Expected one JAR file, found {len(matching_files)}"
-            )
+        if not matching_files:
+            raise FileNotFoundError("No plugin JAR file found in build/libs")
+        elif len(matching_files) > 1:
+            log.warning(f"Multiple JARs found: {matching_files}, using latest.")
 
-        jar_file_path = matching_files[0]
+        # Pick the newest JAR by modified time
+        jar_file_path = max(matching_files, key=os.path.getmtime)
         log.info(f"Found plugin JAR: {jar_file_path}")
         log.info("Uploading plugin...")
 
         try:
             plugin_response = plugin_api.upload_plugin(jar_file_path=jar_file_path)
             log.info(f"Response Status Code: {plugin_response.status_code}")
-            assert (
-                plugin_response.status_code == 200
-            ), f"Plugin upload failed: {plugin_response.text}"
+            assert plugin_response.status_code == 200, f"Plugin upload failed: {plugin_response.text}"
             log.info("Plugin uploaded successfully.")
             return plugin_response
         except Exception as e:
@@ -129,7 +84,7 @@ class SCVMMUtils:
         assert zone_type_id is not None, "SCVMM zone type not found!"
 
         # 2. Build payload
-        cloud_payload = SCVMMUtils.get_create_cloud_payload(
+        cloud_payload = SCVMMpayloads.get_create_cloud_payload(
             cloud_name=cloud_name, group_id=group_id, zone_type_id=zone_type_id
         )
 
@@ -151,6 +106,7 @@ class SCVMMUtils:
 
     @staticmethod
     def create_scvmm_cluster(morpheus_session, cloud_id, group_id):
+        """ function to create scvmm cluster and wait until it's active"""
         cluster_name = "test-scvmm-cluster-" + RandomGenUtils.random_string_of_chars(5)
 
         # Fetching cluster-type ID for SCVMM
@@ -210,13 +166,13 @@ class SCVMMUtils:
             log.warning("Cluster registration failed! Could not create cluster.")
 
     @staticmethod
-    def create_instance(morpheus_session, instance_name=None, group_id=None, cloud_id=None, host_id=None):
+    def create_instance(morpheus_session, template_id, instance_name=None, group_id=None, cloud_id=None, host_id=None):
         """
         Generic method to create an instance and wait until it's running.
 
         :param morpheus_session: Active Morpheus session
         :param instance_name: Optional name; if None, random name will be generated
-        :param template: Template ID for instance (optional)
+        :param template_id: Template ID for instance
         :param group_id: Group ID for instance
         :param cloud_id: Cloud ID for instance
         :param host_id: Host ID for instance (optional)
@@ -226,18 +182,10 @@ class SCVMMUtils:
         if not instance_name:
             instance_name = "test-scvmm-instance-" + RandomGenUtils.random_string_of_chars(3)
 
-        # Fetching template
-        template_name = os.getenv("SCVMM_TEMPLATE_NAME")
-        filter_type = "Synced"
-        template_response = morpheus_session.library.list_virtual_images(name=template_name, filter_type=filter_type)
-        assert template_response.status_code == 200, "Failed to retrieve templates!"
-        template_data = template_response.json()
-        template_id = template_data["virtualImages"][0]["id"]
-
         # Generate payload
         log.info("Generating instance payload...")
-        create_instance_payload = SCVMMUtils.get_create_instance_payload(
-            instance_name=instance_name, template= template_id, group_id=group_id, cloud_id=cloud_id, host_id=host_id
+        create_instance_payload = SCVMMpayloads.get_create_instance_payload(
+            morpheus_session, instance_name=instance_name, template= template_id, group_id=group_id, cloud_id=cloud_id, host_id=host_id
         )
         log.info("Payload generated successfully")
 
@@ -314,42 +262,6 @@ class SCVMMUtils:
         return response.json()
 
     @staticmethod
-    def create_update_payload(labels):
-        """Create payload for updating instance labels."""
-        return {
-            "instance": {
-                "labels": labels
-            }
-        }
-
-    @staticmethod
-    def create_reconfigure_payload(instance_details):
-        """Create payload for reconfiguring an instance."""
-        volume = instance_details["instance"]["volumes"][0]
-
-        return {
-            "instance": {
-                "plan": {
-                    "id": 163
-                }
-            },
-            "volumes": [
-                {
-                    "size": 85,
-                    "id": volume["id"],
-                    "name": volume["name"],
-                    "rootVolume": volume.get("rootVolume", True),
-                    "storageType": 1,
-                }
-            ],
-            "networkInterfaces": [
-                {
-                    "network": {"id": "2"}
-                }
-            ]
-        }
-
-    @staticmethod
     def validate_labels(final_details: dict, expected_labels: list[str]) -> None:
         """Validate that all expected labels exist in the instance details."""
         final_labels = final_details["instance"].get("labels", [])
@@ -376,55 +288,6 @@ class SCVMMUtils:
         log.info(f"Volume size validated successfully: {final_volume_size}")
 
     @staticmethod
-    def create_clone_payload(clone_instance_name: str):
-        """
-        Create payload for cloning an instance.
-
-        :param clone_instance_name: Name for the cloned instance
-        :return: Clone payload dictionary
-        """
-        return {
-            "name": clone_instance_name,
-            "plan": {"id": 163},
-            "volumes": [
-                {
-                    "datastoreId": "auto",
-                    "size": 90,
-                }
-            ]
-        }
-
-    @staticmethod
-    def create_backup_payload(instance_id, container_id, backup_name, backup_job_name, schedule_id):
-        """
-        Create payload for backup creation.
-        """
-        return {
-            "backup": {
-                "locationType": "instance",
-                "backupType": "scvmmSnapshot",
-                "jobAction": "new",
-                "jobSchedule": schedule_id,
-                "name": backup_name,
-                "instanceId": instance_id,
-                "retentionCount": 2,
-                "jobName": backup_job_name,
-                "containerId": container_id
-            }
-        }
-
-    @staticmethod
-    def create_restore_payload(instance_id, last_backup_result_id):
-        """Generate payload for restoring a backup."""
-        return {
-            "restore": {
-                "restoreInstance": "existing",
-                "backupResultId": last_backup_result_id,
-                "instanceId": instance_id,
-            }
-        }
-
-    @staticmethod
     def cleanup_resource(resource_type: str, morpheus_session, resource_id: int):
         """
         Generic cleanup function to delete a resource (instance/backup/etc.).
@@ -446,12 +309,13 @@ class SCVMMUtils:
                 delete_response = morpheus_session.backups.remove_backups(id=resource_id)
             elif resource_type == "clone":
                 delete_response = morpheus_session.instances.delete_instance(id=resource_id)
-            elif resource_type == "cloud":
-                delete_response = morpheus_session.clouds.remove_clouds(id=resource_id)
             elif resource_type == "cluster":
                 delete_response = morpheus_session.clusters.delete_cluster(cluster_id=resource_id)
             elif resource_type == "group":
                 delete_response = morpheus_session.groups.remove_groups(id=resource_id)
+            elif resource_type == "cloud":
+                cloud_api= CloudAPI(host=host, username=admin_username, password=admin_password)
+                delete_response= cloud_api.delete_cloud(cloud_id= str(resource_id), qparams=DeleteCloud(force="true"))
             else:
                 log.warning(f"Cleanup for resource type '{resource_type}' is not supported.")
                 return
@@ -515,7 +379,7 @@ class SCVMMUtils:
         last_result = None
 
         while time.time() < end_time:
-            job_details = SCVMMUtils.get_backup_job_details(morpheus_session, backup_job_id)
+            job_details = CommonUtils.get_backup_job_details(morpheus_session, backup_job_id)
             last_result = job_details["job"].get("lastResult")
 
             if last_result:
@@ -533,50 +397,17 @@ class SCVMMUtils:
         return last_result
 
     @staticmethod
-    def get_backup_job_details(morpheus_session, backup_id):
-        """Fetch backup job details by backup ID."""
-        response = morpheus_session.session.get(
-            f"{morpheus_session.base_url}/api/backups/{backup_id}",
-            headers=morpheus_session.session.headers
-        )
-        response.raise_for_status()
-        return response.json()
-
-    @staticmethod
-    def poll_backup_job_execution(morpheus_session, backup_id, timeout=600, interval=30):
-        """
-        Poll until backup job executes and produces a result.
-
-        Returns:
-            (last_result_id, status)
-        """
-        start = time.time()
-        while time.time() - start < timeout:
-            job_details = SCVMMUtils.get_backup_job_details(morpheus_session, backup_id)
-            last_result = job_details["backup"].get("lastResult")
-
-            if last_result:
-                job_result_id = last_result["id"]
-                status = last_result["status"]
-                log.info(f"Backup job result {job_result_id} status: {status}")
-                if status in ["SUCCEEDED", "FAILED"]:
-                    return job_result_id, status
-            time.sleep(interval)
-
-        pytest.fail("Backup job did not execute within expected time")
-
-    @staticmethod
     def verify_delete_resource(morpheus_session, resource_type, list_func, resource_id, key, retries=5, delay=3):
         """
-        Generic function to clean up and verify resource deletion with polling.
+        Verify that a resource is deleted by polling the list API.
         """
         if not resource_id:
+            log.info(f"No {resource_type} was created, skipping cleanup.")
             return
 
-        # Trigger deletion
-        SCVMMUtils.cleanup_resource(resource_type, morpheus_session, resource_id)
+        delete_response = SCVMMUtils.cleanup_resource(resource_type, morpheus_session, resource_id)
 
-        # Poll for deletion
+        # Poll to check if resource is really gone
         for attempt in range(1, retries + 1):
             resp = list_func()
             assert resp.status_code == 200, f"Failed to fetch {resource_type} list!"
@@ -584,12 +415,30 @@ class SCVMMUtils:
             ids = [r["id"] for r in resources]
 
             if resource_id not in ids:
-                log.info(f"{resource_type.capitalize()} {resource_id} deleted successfully.")
+                log.info(f"{resource_type.capitalize()} {resource_id} already absent or deleted successfully.")
                 return
 
-            log.warning(
-                f"{resource_type.capitalize()} {resource_id} still present, retry {attempt}/{retries}..."
-            )
+            log.warning(f"{resource_type.capitalize()} {resource_id} still present, retry {attempt}/{retries}...")
             time.sleep(delay)
 
         pytest.fail(f"{resource_type.capitalize()} {resource_id} still exists after {retries * delay}s!")
+
+    @staticmethod
+    def delete_scvmm_plugin(self):
+        """Deletes the SCVMM plugin."""
+        plugin_api = PluginAPI(host=host, username=admin_username, password=admin_password)
+        response = plugin_api.get_all_plugins()
+        assert response.status_code == 200, "Failed to retrieve plugins!"
+
+        plugins = response.json().get("plugins", [])
+        scvmm_plugin = next((p for p in plugins if p.get("code") == "morpheus-scvmm-plugin"), None)
+
+        if not scvmm_plugin:
+            log.info("SCVMM plugin not found, nothing to delete.")
+            return
+
+        plugin_id = scvmm_plugin["id"]
+        log.info(f"Deleting SCVMM plugin with ID {plugin_id}...")
+        delete_response = plugin_api.delete_plugin(plugin_id=plugin_id)
+        assert delete_response.status_code == 200, "Failed to delete SCVMM plugin!"
+        log.info(f"SCVMM plugin with ID {plugin_id} deleted successfully.")
