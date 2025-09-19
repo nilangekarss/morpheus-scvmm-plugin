@@ -2081,13 +2081,15 @@ For (\$i=0; \$i -le 10; \$i++) {
 
     def cleanData(data, ignoreString = null) {
         def rtn = ''
-        def lines = data.tokenize('\n')
-        lines = lines?.findAll { it?.trim()?.length() > 1 }
-        if (lines?.size() > 0) {
-            lines?.each { line ->
-                def trimLine = line.trim()
-                if (rtn == null && ignoreString == null || trimLine != ignoreString)
-                    rtn = trimLine
+        if(data){
+            def lines = data.tokenize('\n')
+            lines = lines?.findAll { it?.trim()?.length() > 1 }
+            if (lines?.size() > 0) {
+                lines?.each { line ->
+                    def trimLine = line.trim()
+                    if (rtn == null && ignoreString == null || trimLine != ignoreString)
+                        rtn = trimLine
+                }
             }
         }
         return rtn
