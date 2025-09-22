@@ -1,20 +1,38 @@
 package com.morpheusdata.scvmm.logging
 
-class SlowLogger {
-    def log
-    long thresholdMs = 1000 // Log if execution takes longer than 1 second
+import com.morpheusdata.scvmm.common.Constants
+import com.morpheusdata.scvmm.tracker.TimeTracker
+import groovy.transform.CompileStatic
 
-    SlowLogger(def log, long thresholdMs = 1000) {
-        this.log = log
-        this.thresholdMs = thresholdMs
+/**
+ * Custom logger class for SCVMM plugin.
+ */
+@CompileStatic
+class SlowLogger {
+    static final Integer SLOW_LOG_MAX_TIME = 5 * Constants.SECOND
+
+    static void printLog(TimeTracker tracker, String activityName) {
+        if (tracker.getOverallTime(activityName) > SLOW_LOG_MAX_TIME) {
+            LogWrapper.instance.info("Activity ${activityName} took " +
+                    "${tracker.getOverallTime(activityName) / Constants.SECOND}s to complete")
+        } else {
+            LogWrapper.instance.debug("Activity ${activityName} execution completed in " +
+                    "${tracker.getOverallTime(activityName) / Constants.SECOND}s")
+        }
     }
 
-    void logIfSlow(String methodName, long startTime, long endTime, Map opts = [:]) {
-        long duration = endTime - startTime
-        if (duration > thresholdMs) {
-            log.warn("SLOW_EXECUTION: ${methodName} took ${duration} ms. opts: ${opts}")
-        } else {
-            log.debug("${methodName} executed in ${duration} ms.")
+    static <T> T execute(String methodName, Closure<T> action) {
+        LogWrapper.instance.debug("Entering ${methodName}")
+        TimeTracker tracker = new TimeTracker(methodName)
+        T result
+
+        try {
+            result = action.call()
+        } finally {
+            printLog(tracker.end(methodName), methodName)
+            LogWrapper.instance.info("Exiting ${methodName}")
         }
+
+        return result
     }
 }

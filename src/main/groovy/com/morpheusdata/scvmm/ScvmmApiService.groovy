@@ -16,7 +16,6 @@ import com.bertramlabs.plugins.karman.CloudFile
 class ScvmmApiService {
     MorpheusContext morpheusContext
     private LogInterface log = LogWrapper.instance
-    def slowLogger = new SlowLogger(log, 1000) // Log if execution takes longer than 2 seconds
 
     ScvmmApiService(MorpheusContext morpheusContext) {
         this.morpheusContext = morpheusContext
@@ -482,8 +481,9 @@ if(\$cloud) {
     def listClouds(opts) {
         def rtn = [success: false, clouds: []]
         def command = generateCommandString('Get-SCCloud -VMMServer localhost | Select ID, Name')
-        def out = wrapExecuteCommandWithTiming("listClouds  -  Get-SCCloud", command, opts)
-        // def out = wrapExecuteCommand(command, opts)
+        def out = SlowLogger.execute("listClouds - Get-SCCloud") {
+            wrapExecuteCommand(command, opts)
+        }
         if (out.success) {
             rtn.clouds = out.data
             rtn.success = true
@@ -2747,14 +2747,6 @@ For (\$i=0; \$i -le 10; \$i++) {
 
     def getScvmmZoneAndHypervisorOpts(morpheusContext, cloud, hypervisor) {
         getScvmmCloudOpts(morpheusContext, cloud, hypervisor) + getScvmmControllerOpts(cloud, hypervisor)
-    }
-
-    def wrapExecuteCommandWithTiming(String callerMethod, String command, Map opts = [:]) {
-        long startTime = System.currentTimeMillis()
-        def out = wrapExecuteCommand(command, opts)
-        long endTime = System.currentTimeMillis()
-        slowLogger.logIfSlow("wrapExecuteCommand (called from : ${callerMethod})", startTime, endTime, opts)
-        return out
     }
 
     def wrapExecuteCommand(String command, Map opts = [:]) {
