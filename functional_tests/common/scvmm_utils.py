@@ -64,7 +64,7 @@ class SCVMMUtils:
             pytest.fail(f"Plugin upload failed: {e}")
 
     @staticmethod
-    def create_scvmm_cloud(morpheus_session, group_id):
+    def create_scvmm_cloud(morpheus_session, group_id, shared_controller):
         """
         function to create scvmm cloud and wait until it's active
         """
@@ -85,7 +85,7 @@ class SCVMMUtils:
 
         # 2. Build payload
         cloud_payload = SCVMMpayloads.get_create_cloud_payload(
-            cloud_name=cloud_name, group_id=group_id, zone_type_id=zone_type_id
+            cloud_name=cloud_name, group_id=group_id, zone_type_id=zone_type_id, shared_controller= shared_controller
         )
 
         # 3. Create cloud
@@ -105,7 +105,7 @@ class SCVMMUtils:
         return cloud_id
 
     @staticmethod
-    def create_scvmm_cluster(morpheus_session, cloud_id, group_id):
+    def create_scvmm_cluster(morpheus_session, cloud_id, group_id, plan_name):
         """ function to create scvmm cluster and wait until it's active"""
         cluster_name = "test-scvmm-cluster-" + RandomGenUtils.random_string_of_chars(5)
 
@@ -115,7 +115,7 @@ class SCVMMUtils:
         cluster_types = cluster_type_response.json().get("clusterTypes", [])
         cluster_type_id = None
         for cluster in cluster_types:
-            if cluster.get("code") == "docker-cluster":
+            if cluster.get("code") == os.getenv("CLUSTER_TYPE"):
                 cluster_type_id = cluster.get("id")
                 break
         assert cluster_type_id is not None, "SCVMM cluster type not found!"
@@ -127,52 +127,45 @@ class SCVMMUtils:
         layouts = layout_response.json().get("layouts", [])
         layout_id = None
         for layout in layouts:
-            if layout.get("name") == "SCVMM Docker Host":
+            if layout.get("name") == os.getenv("CLUSTER_LAYOUT_NAME"):
                 layout_id = layout.get("id")
                 log.info(f"Layout ID: {layout_id}")
                 break
         assert layout_id is not None, "SCVMM cluster layout not found!"
 
-        cluster_payload = {
-            "cluster": {
-                "name": cluster_name,
-                "cloud": {"id": cloud_id},
-                "type": {"id": cluster_type_id},
-                "layout": {"id": layout_id},
-                "server": {
-                    "id": int(os.getenv("SERVER_ID")),
-                    "name": cluster_name,
-                    "plan": {
-                        "id": int(os.getenv("PLAN_ID"))
-                    },
-                    "config": {},
-                },
-                "group": {"id": group_id},
-            }
-        }
+        #fetch plan_id
+        plan_id= CommonUtils.get_plan_id(morpheus_session, plan_name= plan_name, zone_id=cloud_id, group_id=group_id)
 
-        cluster_response = morpheus_session.clusters.add_cluster(cluster_payload)
+        cluster_payload= SCVMMpayloads.get_create_cluster_payload(morpheus_session,cluster_name, group_id, cloud_id, layout_id, cluster_type_id, plan_id)
 
-        if cluster_response.status_code == 200:
-            cluster_id = cluster_response.json()["cluster"]["id"]
-            log.info(f"cluster_id: {cluster_id}")
+        cluster_response = morpheus_session.session.post(
+            f"{morpheus_session.base_url}/api/clusters",
+            headers=morpheus_session.session.headers,
+            json=cluster_payload,
+            verify=False
+        )
+        assert cluster_response.status_code == 200, "Cluster creation failed!"
 
-            final_status = ResourcePoller.poll_cluster_status(cluster_id=cluster_id,morpheus_session=morpheus_session)
-            if final_status == "ok":
-                log.info(f"Cluster '{cluster_name}' registered successfully with ID: {cluster_id}")
-            else:
-                log.warning(f"Cluster registration failed with status: {final_status}")
+        cluster_id = cluster_response.json()["cluster"]["id"]
+        log.info(f"Cluster ID: {cluster_id}")
+
+        final_status = ResourcePoller.poll_cluster_status(cluster_id=cluster_id, morpheus_session=morpheus_session)
+        if final_status == "ok":
+            log.info(f"Cluster '{cluster_name}' registered successfully with ID: {cluster_id}")
+            return cluster_id
         else:
-            log.warning("Cluster registration failed! Could not create cluster.")
+            log.warning(f"Cluster registration failed with status: {final_status}")
+            return None
 
     @staticmethod
-    def create_instance(morpheus_session, template_id, instance_name=None, group_id=None, cloud_id=None, host_id=None):
+    def create_instance(morpheus_session, template_id, plan_name, instance_name=None, group_id=None, cloud_id=None, host_id=None):
         """
         Generic method to create an instance and wait until it's running.
 
         :param morpheus_session: Active Morpheus session
         :param instance_name: Optional name; if None, random name will be generated
         :param template_id: Template ID for instance
+        :param plan_name: Plan name for instance
         :param group_id: Group ID for instance
         :param cloud_id: Cloud ID for instance
         :param host_id: Host ID for instance (optional)
@@ -184,8 +177,9 @@ class SCVMMUtils:
 
         # Generate payload
         log.info("Generating instance payload...")
+        plan_id= CommonUtils.get_plan_id(morpheus_session, plan_name=plan_name, zone_id=cloud_id, group_id=group_id)
         create_instance_payload = SCVMMpayloads.get_create_instance_payload(
-            morpheus_session, instance_name=instance_name, template= template_id, group_id=group_id, cloud_id=cloud_id, host_id=host_id
+            morpheus_session, instance_name=instance_name, template= template_id, group_id=group_id, cloud_id=cloud_id, plan_id=plan_id, host_id=host_id
         )
         log.info("Payload generated successfully")
 
@@ -194,7 +188,6 @@ class SCVMMUtils:
 
         if instance_response.status_code == 200:
             instance_id = instance_response.json()["instance"]["id"]
-
             final_status = ResourcePoller.poll_instance_status(
                 instance_id=instance_id,
                 target_state="running",
@@ -204,6 +197,9 @@ class SCVMMUtils:
             if final_status == "running":
                 instance_name = instance_response.json()["instance"]["name"]
                 log.info(f"Instance '{instance_name}' created successfully with ID: {instance_id}")
+                # Trigger backup creation
+                backup_name= f"test-backup-{instance_id}"
+                SCVMMUtils.create_backup(morpheus_session, instance_id, backup_name)
                 return instance_id, instance_name
             else:
                 log.warning(f"Instance creation failed with status: {final_status}")
@@ -211,6 +207,17 @@ class SCVMMUtils:
         else:
             log.warning("Instance creation failed! Could not create instance.")
             return None, None
+
+    @staticmethod
+    def create_backup(morpheus_session, instance_id, backup_name):
+        """ Create backup"""
+        container_id= CommonUtils.get_container_id(morpheus_session,instance_id)
+        backup_payload= SCVMMpayloads.create_backup_payload(instance_id= instance_id,backup_name= backup_name, container_id= container_id)
+        backup_response = morpheus_session.backups.add_backups(add_backups_request=backup_payload)
+        assert backup_response.status_code == 200, "Instance backup operation failed!"
+        backup_id = backup_response.json()["backup"]["id"]
+        log.info(f"Backup created with ID: {backup_id}")
+        return backup_id
 
     @staticmethod
     def perform_instance_operation(
@@ -244,24 +251,6 @@ class SCVMMUtils:
         return final_status
 
     @staticmethod
-    def get_instance_details(morpheus_session, instance_id, assert_message=None):
-        """
-        Fetch instance details and assert the API call was successful.
-
-        Args:
-            morpheus_session: Active Morpheus session
-            instance_id (int): ID of the instance to fetch
-            assert_message (str, optional): Custom error message if request fails
-
-        Returns:
-            dict: JSON response of the instance details
-        """
-        response = morpheus_session.instances.get_instance(id=instance_id)
-        message = assert_message or f"Failed to retrieve instance details for {instance_id}!"
-        assert response.status_code == 200, message
-        return response.json()
-
-    @staticmethod
     def validate_labels(final_details: dict, expected_labels: list[str]) -> None:
         """Validate that all expected labels exist in the instance details."""
         final_labels = final_details["instance"].get("labels", [])
@@ -270,25 +259,25 @@ class SCVMMUtils:
         log.info(f"Labels validated successfully: {final_labels}")
 
     @staticmethod
-    def validate_plan_id(final_details: dict, expected_plan_id: int) -> None:
+    def validate_plan_id(instance_details: dict, expected_plan_id: int) -> None:
         """Validate that the plan ID matches the expected value."""
-        final_plan_id = final_details["instance"]["plan"]["id"]
+        final_plan_id = instance_details["instance"]["plan"]["id"]
         assert final_plan_id == expected_plan_id, (
             f"Expected plan ID {expected_plan_id}, but got {final_plan_id}"
         )
         log.info(f"Plan ID validated successfully: {final_plan_id}")
 
     @staticmethod
-    def validate_volume_size(final_details: dict, expected_volume_size: int) -> None:
+    def validate_volume_size(instance_details: dict, expected_volume_size: int) -> None:
         """Validate that the volume size matches the expected value."""
-        final_volume_size = final_details["instance"]["volumes"][0]["size"]
+        final_volume_size = instance_details["instance"]["volumes"][0]["size"]
         assert final_volume_size == expected_volume_size, (
             f"Expected volume size {expected_volume_size}, but got {final_volume_size}"
         )
         log.info(f"Volume size validated successfully: {final_volume_size}")
 
     @staticmethod
-    def cleanup_resource(resource_type: str, morpheus_session, resource_id: int):
+    def cleanup_resource(resource_type: str, morpheus_session, resource_id: int, wait_time: int = 10):
         """
         Generic cleanup function to delete a resource (instance/backup/etc.).
 
@@ -296,6 +285,7 @@ class SCVMMUtils:
             resource_type (str): Type of resource ('instance', 'backup', etc.)
             morpheus_session: Active Morpheus session object
             resource_id (int): ID of the resource to delete
+            wait_time (int): Seconds to wait after deletion (default=10)
         """
         if not resource_id:
             log.info(f"No {resource_type} was created, so nothing to clean up.")
@@ -313,6 +303,8 @@ class SCVMMUtils:
                 delete_response = morpheus_session.clusters.delete_cluster(cluster_id=resource_id)
             elif resource_type == "group":
                 delete_response = morpheus_session.groups.remove_groups(id=resource_id)
+            elif resource_type == "schedule":
+                delete_response = morpheus_session.automation.remove_execute_schedules(id=resource_id)
             elif resource_type == "cloud":
                 cloud_api= CloudAPI(host=host, username=admin_username, password=admin_password)
                 delete_response= cloud_api.delete_cloud(cloud_id= str(resource_id), qparams=DeleteCloud(force="true"))
@@ -322,6 +314,9 @@ class SCVMMUtils:
 
             if delete_response.status_code == 200:
                 log.info(f"{resource_type.capitalize()} '{resource_id}' deleted successfully.")
+                if wait_time > 0:
+                    log.info(f"Waiting {wait_time}s for {resource_type} deletion to finalize...")
+                    time.sleep(wait_time)
             else:
                 log.warning(
                     f"Failed to delete {resource_type} '{resource_id}': {delete_response.text}"
@@ -358,7 +353,7 @@ class SCVMMUtils:
         :return: server details dict if agent is installed
         """
         for attempt in range(retries):
-            details = SCVMMUtils.get_instance_details(morpheus_session, instance_id)
+            details = CommonUtils.get_instance_details(morpheus_session, instance_id)
             container_details = details["instance"].get("containerDetails", [])
             if container_details and container_details[0]["server"].get("agentInstalled"):
                 log.info(

@@ -104,7 +104,7 @@ class ResourcePoller:
                 - 'failed' if the cluster creation fails.
                 - Final cluster status string if timeout occurs before 'ok' or 'failed'.
         """
-        timeout = 50  # number of attempts
+        timeout = 100  # number of attempts
         sleep_time = 10  # seconds between each poll
 
         for i in range(timeout):
