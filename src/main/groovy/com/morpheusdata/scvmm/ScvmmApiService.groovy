@@ -8,6 +8,7 @@ import com.morpheusdata.model.ComputeServer
 import com.morpheusdata.model.KeyPair
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
+import com.morpheusdata.scvmm.logging.SlowLogger
 import groovy.json.JsonOutput
 import groovy.util.logging.Slf4j
 import com.bertramlabs.plugins.karman.CloudFile
@@ -15,6 +16,7 @@ import com.bertramlabs.plugins.karman.CloudFile
 class ScvmmApiService {
     MorpheusContext morpheusContext
     private LogInterface log = LogWrapper.instance
+    def slowLogger = new SlowLogger(log, 1000) // Log if execution takes longer than 2 seconds
 
     ScvmmApiService(MorpheusContext morpheusContext) {
         this.morpheusContext = morpheusContext
@@ -480,7 +482,8 @@ if(\$cloud) {
     def listClouds(opts) {
         def rtn = [success: false, clouds: []]
         def command = generateCommandString('Get-SCCloud -VMMServer localhost | Select ID, Name')
-        def out = wrapExecuteCommand(command, opts)
+        def out = wrapExecuteCommandWithTiming("listClouds  -  Get-SCCloud", command, opts)
+        // def out = wrapExecuteCommand(command, opts)
         if (out.success) {
             rtn.clouds = out.data
             rtn.success = true
@@ -2746,9 +2749,16 @@ For (\$i=0; \$i -le 10; \$i++) {
         getScvmmCloudOpts(morpheusContext, cloud, hypervisor) + getScvmmControllerOpts(cloud, hypervisor)
     }
 
+    def wrapExecuteCommandWithTiming(String callerMethod, String command, Map opts = [:]) {
+        long startTime = System.currentTimeMillis()
+        def out = wrapExecuteCommand(command, opts)
+        long endTime = System.currentTimeMillis()
+        slowLogger.logIfSlow("wrapExecuteCommand (called from : ${callerMethod})", startTime, endTime, opts)
+        return out
+    }
+
     def wrapExecuteCommand(String command, Map opts = [:]) {
         def out = executeCommand(command, opts)
-
         if (out.data) {
             def payload = out.data
             if (!out.data.startsWith('[')) {
