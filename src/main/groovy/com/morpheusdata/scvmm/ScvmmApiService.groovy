@@ -56,7 +56,9 @@ class ScvmmApiService {
         def rootSharePath = opts.rootSharePath ?: getRootSharePath(opts)
         def tgtFolder = "${rootSharePath}\\images\\$imageFolderName"
         def tgtFullPath = "${tgtFolder}\\$imageName.$imageType"
-        def out = wrapExecuteCommand(generateCommandString("Get-SCVirtualHardDisk -VMMServer localhost | where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID"), opts)
+        def out = SlowLogger.execute("insertContainerImage - Get-SCVirtualHardDisk") {
+            wrapExecuteCommand(generateCommandString("Get-SCVirtualHardDisk -VMMServer localhost | where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID"), opts)
+        }
 
         if (!out.success) {
             throw new Exception("Error in getting Get-SCVirtualHardDisk")
@@ -86,7 +88,9 @@ class ScvmmApiService {
                 def commands = []
                 commands << "\$ignore = Import-SCLibraryPhysicalResource -SourcePath \"$sourcePath\" -SharePath \"$tgtFolder\" -OverwriteExistingFiles -VMMServer localhost"
                 commands << "Get-SCVirtualHardDisk | where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID"
-                def importRes = wrapExecuteCommand(generateCommandString(commands.join(";")), opts)
+                def importRes = SlowLogger.execute("insertContainerImage - Import-SCLibraryPhysicalResource") {
+                    wrapExecuteCommand(generateCommandString(commands.join(";")), opts)
+                }
                 rtn.imageId = importRes.data?.getAt(0)?.ID
 
                 if (importRes.error != null) {
@@ -95,7 +99,9 @@ class ScvmmApiService {
                     copyCommands << "\$ignore = Copy-Item \"$sourcePath\" \"$tgtFolder\""
                     copyCommands << "\$ignore = Get-SCLibraryShare -VMMServer localhost | Read-SCLibraryShare"
                     copyCommands << "Get-SCVirtualHardDisk | where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID"
-                    def copyResult = wrapExecuteCommand(generateCommandString(copyCommands.join(";")), opts)
+                    def copyResult = SlowLogger.execute("insertContainerImage -  Copy-Item") {
+                        wrapExecuteCommand(generateCommandString(copyCommands.join(";")), opts)
+                    }
                     if (copyResult.error != null) {
                         log.error("Error in Copy-Item: ${copyResult.error}")
                         out.success = false
@@ -156,7 +162,9 @@ class ScvmmApiService {
             launchCommand = createCommands.launchCommand
             log.info("launchCommand: ${launchCommand}")
             // throw new Exception('blah')
-            createData = wrapExecuteCommand(generateCommandString(launchCommand), opts)
+            createData = SlowLogger.execute("createServer  -  launchCommand"){
+                wrapExecuteCommand(generateCommandString(launchCommand), opts)
+            }
             log.debug "run server: ${createData}"
 
             /*if (removeTemplateCommands) {
@@ -195,7 +203,9 @@ class ScvmmApiService {
                 log.info("createServer - removing Temporary Templates and Hardware Profiles")
                 def command = removeTemplateCommands.join(';')
                 command += "@()"
-                wrapExecuteCommand(generateCommandString(command), opts)
+                SlowLogger.execute("createServer - removeTemplateCommands") {
+                    wrapExecuteCommand(generateCommandString(command), opts)
+                }
             }
 
             if (serverCreated.success == true) {
@@ -307,7 +317,9 @@ class ScvmmApiService {
             if (removeTemplateCommands) {
                 def command = removeTemplateCommands.join(';')
                 command += "@()"
-                wrapExecuteCommand(generateCommandString(command), opts)
+                SlowLogger.execute("createServer - removeTemplateCommands") {
+                    wrapExecuteCommand(generateCommandString(command), opts)
+                }
             }
         } catch (e) {
             log.error("createServer error: ${e}", e)
@@ -319,7 +331,8 @@ class ScvmmApiService {
         log.debug "getServerDetails: ${externalId}"
         def rtn = [success: false, server: null, networkAdapters: [], error: null]
         try {
-            def out = wrapExecuteCommand(generateCommandString("""\$vm = Get-SCVirtualMachine -VMMServer localhost -ID \"${externalId}\";
+            def out = SlowLogger.execute("getServerDetails  - Get-SCVirtualMachine") {
+                wrapExecuteCommand(generateCommandString("""\$vm = Get-SCVirtualMachine -VMMServer localhost -ID \"${externalId}\";
 \$report = @()
 if(\$vm) { 
 	\$networkAdapters = Get-SCVirtualNetworkAdapter -VMMServer localhost -VM \$vm | where { \$_.Enabled -eq \$true }; 
@@ -351,6 +364,7 @@ if(\$vm) {
 	\$report += \$data
 }
 \$report """), opts)
+            }
             if (out.success) {
                 def serverData = out.data?.size() > 0 ? out.data.first() : null
                 if (!serverData?.Error) {
@@ -369,8 +383,10 @@ if(\$vm) {
     def refreshVM(opts, externalId) {
         def rtn = [success: false]
         try {
-            def out = wrapExecuteCommand(generateCommandString("""\$vm = Get-SCVirtualMachine -VMMServer localhost -ID \"${externalId}\"; 
+            def out = SlowLogger.execute("refreshVM  - Get-SCVirtualMachine ") {
+                wrapExecuteCommand(generateCommandString("""\$vm = Get-SCVirtualMachine -VMMServer localhost -ID \"${externalId}\"; 
 \$ignore = Read-SCVirtualMachine -VM \$vm """), opts)
+            }
             rtn.success = out.success
         } catch (e) {
             log.error("refreshVM error: ${e}", e)
@@ -451,7 +467,9 @@ if(\$cloud) {
 	\$report += \$data
 }
 \$report """)
-        def out = wrapExecuteCommand(command, opts)
+        def out = SlowLogger.execute("getCloud  -  Get-SCCloud") {
+            wrapExecuteCommand(command, opts)
+        }
         log.debug("out: ${out.data}")
         if (out.success) {
             def cloudBlocks = out.data
@@ -466,7 +484,9 @@ if(\$cloud) {
     def getCapabilityProfiles(opts) {
         def rtn = [success: false, capabilityProfiles: null]
         def command = generateCommandString("Get-SCCapabilityProfile -VMMServer localhost | Select ID,Name")
-        def out = wrapExecuteCommand(command, opts)
+        def out = SlowLogger.execute("getCapabilityProfiles  - Get-SCCapabilityProfile") {
+            wrapExecuteCommand(command, opts)
+        }
         log.debug("out: ${out.data}")
         if (out.success) {
             def cloudBlocks = out.data
@@ -597,7 +617,9 @@ if(\$cloud) {
 
 
             def command = generateCommandString(commandStr)
-            def out = wrapExecuteCommand(command, opts)
+            def out = SlowLogger.execute("listVirtualMachines ") {
+                wrapExecuteCommand(command, opts)
+            }
             log.debug("out: ${out.data}")
             if (out.success) {
                 hasMore = (out.data != '' && out.data != null)
@@ -687,7 +709,9 @@ foreach (\$VHDconf in \$Disks) {
 }
 \$report """
         def command = generateCommandString(commandStr)
-        def out = wrapExecuteCommand(command, opts)
+        def out = SlowLogger.execute("listTemplates  - Get-SCVMTemplate and Get-SCVirtualHardDisk") {
+            wrapExecuteCommand(command, opts)
+        }
         log.debug("out: ${out.data}")
         if (out.success) {
             rtn.templates = out.data
@@ -712,7 +736,9 @@ foreach (\$VHDconf in \$Disks) {
 		}
 		\$report """
         def command = generateCommandString(commandStr)
-        def out = wrapExecuteCommand(command, opts)
+        def out = SlowLogger.execute("list clusters  -  Get-SCVMHostCluster") {
+            wrapExecuteCommand(command, opts)
+        }
         if (out.success) {
             rtn.clusters = out.data
 
@@ -735,7 +761,9 @@ foreach (\$VHDconf in \$Disks) {
         def commandStr = """Get-SCVMHostGroup -VMMServer localhost | Select-Object @{Name="id";Expression={\$_.ID.Guid}}, @{Name="name";Expression={\$_.Name}}, @{Name="path";Expression={\$_.Path}}, @{Name="parent";Expression={\$_.ParentHostGroup.Name}}, @{Name="root";Expression={\$_.IsRoot}}"""
 
         def command = generateCommandString(commandStr)
-        def out = wrapExecuteCommand(command, opts)
+        def out = SlowLogger.execute("internalListHostGroups  -  Get-SCVMHostGroup") {
+            wrapExecuteCommand(command, opts)
+        }
         if (out.success) {
             rtn.hostGroups = out.data
             rtn.success = true
@@ -757,7 +785,9 @@ foreach(\$share in \$shares) {
 }
 \$report"""
 
-        def out = wrapExecuteCommand(generateCommandString(command), opts)
+        def out = SlowLogger.execute("listLibraryShares  -  Get-SCLibraryShare") {
+            wrapExecuteCommand(generateCommandString(command), opts)
+        }
         if (out.success) {
             rtn.libraryShares = out.data
             rtn.success = true
@@ -779,7 +809,9 @@ foreach (\$cloud in \$clouds) {
 }
 \$report"""
             def command = generateCommandString(commandStr)
-            def out = wrapExecuteCommand(command, opts)
+            def out = SlowLogger.execute("listHostGroups  -  Get-SCCloud") {
+                wrapExecuteCommand(command, opts)
+            }
             log.debug("out: ${out.data}")
             if (out.success) {
                 def clouds = out.data
@@ -861,7 +893,9 @@ foreach (\$cloud in \$clouds) {
             // cpuUtilization is percent
 
             def command = generateCommandString(commandStr)
-            def out = wrapExecuteCommand(command, opts)
+            def out = SlowLogger.execute("listHosts  -  Get-SCVMHost") {
+                wrapExecuteCommand(command, opts)
+            }
             if (out.success) {
                 hasMore = (out.data != '' && out.data != null)
                 if (out.data) {
@@ -915,7 +949,9 @@ foreach (\$cloud in \$clouds) {
 				\$report """
 
             def command = generateCommandString(commandStr)
-            def out = wrapExecuteCommand(command, opts)
+            def out = SlowLogger.execute("listDatastores  -  Get-SCStorageVolume") {
+                wrapExecuteCommand(command, opts)
+            }
             log.debug "listDatastores results: ${out}"
             if (out.success) {
                 hasMore = (out.data != '' && out.data != null)
@@ -980,7 +1016,9 @@ foreach (\$FileShare in \$FileShares){
 }
 \$report """
             def command = generateCommandString(commandStr)
-            def out = wrapExecuteCommand(command, opts)
+            def out = SlowLogger.execute("listregisteredFileShares  -  Get-SCStorageFileShare") {
+                wrapExecuteCommand(command, opts)
+            }
             log.debug "listDatastores results: ${out}"
             if (out.success) {
                 hasMore = (out.data != '' && out.data != null)
@@ -1007,7 +1045,9 @@ foreach (\$FileShare in \$FileShares){
         def rtn = [success: true, networks: []]
         try {
             def command = generateCommandString("Get-SCLogicalNetwork -VMMServer localhost | Select ID,Name")
-            def out = wrapExecuteCommand(command, opts)
+            def out = SlowLogger.execute("listAllNetworks - Get-SCLogicalNetwork") {
+                wrapExecuteCommand(command, opts)
+            }
             log.debug("listNetworks: ${out}")
             if (out.success && out.exitCode == '0' && out.data?.size() > 0) {
                 def logicalNetworks = out.data
@@ -1022,7 +1062,9 @@ foreach (\$network in \$networks) {
 	\$report += \$data
 }
 \$report """)
-                out = wrapExecuteCommand(command, opts)
+                out = SlowLogger.execute("listAllNetworks - Get-SCVMNetwork") {
+                    wrapExecuteCommand(command, opts)
+                }
                 log.debug("get of networks: ${out}")
                 if (out.success && out.exitCode == '0') {
                     if (out.data) {
@@ -1058,7 +1100,9 @@ foreach (\$network in \$networks) {
 
 \$Scripts = Get-SCScript -VMMServer localhost | where { (\$_.State -match "Missing") -and (\$_.Directory.ToString() -like "*morpheus_server_*") }
 \$ignore = \$Scripts | Remove-SCScript -RunAsynchronously"""
-        def out = wrapExecuteCommand(generateCommandString(command), opts)
+        def out = SlowLogger.execute("removeOrphanedResourceLibraryItems  -  Get-SCISO and Get-SCScript") {
+            wrapExecuteCommand(generateCommandString(command), opts)
+        }
         if (!out.success) {
             log.warn "Error in removeOrphanedResourceLibraryItems: ${out}"
         }
@@ -1081,7 +1125,9 @@ Get-SCLogicalNetwork -VMMServer localhost -Cloud \$cloud | Select ID,Name"""
                     command = generateCommandString("Get-SCLogicalNetwork -VMMServer localhost | Select ID,Name")
                 }
 
-                def out = wrapExecuteCommand(command, opts)
+                def out = SlowLogger.execute("listNetworks - Get-SCLogicalNetwork") {
+                    wrapExecuteCommand(command, opts)
+                }
                 log.debug("listNetworks: ${out}")
                 if (out.success && out.exitCode == '0' && out.data?.size() > 0) {
                     def logicalNetworks = out.data
@@ -1110,7 +1156,9 @@ foreach (\$network in \$networks) {
 	\$report += \$data
 }
 \$report""")
-                    out = wrapExecuteCommand(command, opts)
+                    out = SlowLogger.execute("listNetworks - Get-SCVMNetwork") {
+                        wrapExecuteCommand(command, opts)
+                    }
                     log.debug("get of networks: ${out}")
                     if (out.success && out.exitCode == '0') {
                         hasMore = (out.data != '' && out.data != null)
@@ -1162,7 +1210,9 @@ Get-SCLogicalNetwork -VMMServer localhost -Cloud \$cloud | Select ID,Name"""
                 } else {
                     command = generateCommandString("Get-SCLogicalNetwork -VMMServer localhost | Select ID,Name")
                 }
-                def out = wrapExecuteCommand(command, opts)
+                def out = SlowLogger.execute("listNoIsolationVLans - Get-SCLogicalNetwork") {
+                    wrapExecuteCommand(command, opts)
+                }
                 log.debug("listNetworks: ${out}")
                 if (out.success && out.exitCode == '0' && out.data?.size() > 0) {
                     def logicalNetworks = out.data
@@ -1189,7 +1239,9 @@ foreach (\$logicalNetwork in \$logicalNetworks) {
     }
 }
 \$report""")
-                    out = wrapExecuteCommand(command, opts)
+                    out = SlowLogger.execute("listNoIsolationVLans - Get-SCLogicalNetworkDefinition and Get-SCVMNetwork") {
+                        wrapExecuteCommand(command, opts)
+                    }
                     log.debug("get of networks: ${out}")
                     if (out.success && out.exitCode == '0') {
                         hasMore = (out.data != '' && out.data != null)
@@ -1253,7 +1305,9 @@ foreach (\$staticPool in \$staticPools) {
 }
 \$report """)
 
-            def out = wrapExecuteCommand(command, opts)
+            def out = SlowLogger.execute("listNetworkIPPools - Get-SCStaticIPAddressPool") {
+                wrapExecuteCommand(command, opts)
+            }
             log.debug("listNetworkIPPools: ${out}")
             if (out.success && out.exitCode == '0') {
                 rtn.ipPools += out.data ?: []
@@ -1275,7 +1329,9 @@ foreach (\$network in \$networks) {
 	\$report += \$data
 }
 \$report """)
-                out = wrapExecuteCommand(command, opts)
+                out = SlowLogger.execute("listNetworkIPPools - Get-SCVMNetwork") {
+                    wrapExecuteCommand(command, opts)
+                }
                 log.debug("fetch network mapping: ${out}")
                 if (out.success && out.exitCode == '0') {
                     rtn.networkMapping += out.data ?: []
@@ -1295,7 +1351,9 @@ foreach (\$network in \$networks) {
         def rtn = [success: true, ipAddress: []]
         try {
             def command = generateCommandString("""\$ippool = Get-SCStaticIPAddressPool -VMMServer localhost -ID \"$poolId\"; Grant-SCIPAddress -GrantToObjectType \"VirtualMachine\" -StaticIPAddressPool \$ippool | Select-Object ID,Address""")
-            def out = wrapExecuteCommand(command, opts)
+            def out = SlowLogger.execute("reserveIPAddress - Get-SCStaticIPAddressPool and Grant-SCIPAddress") {
+                wrapExecuteCommand(command, opts)
+            }
             log.debug("reserveIPAddress: ${out}")
             if (out.success && out.exitCode == '0') {
                 def ipAddressBlock = out.data
@@ -1317,7 +1375,9 @@ foreach (\$network in \$networks) {
         def rtn = [success: true]
         try {
             def command = generateCommandString("\$ippool = Get-SCStaticIPAddressPool -VMMServer localhost -ID \"$poolId\"; \$ipaddress = Get-SCIPAddress -ID \"$ipId\"; \$ignore = Revoke-SCIPAddress \$ipaddress")
-            def out = wrapExecuteCommand(command, opts)
+            def out = SlowLogger.execute("releaseIPAddress - Get-SCStaticIPAddressPool and Get-SCIPAddress and Revoke-SCIPAddress") {
+                wrapExecuteCommand(command, opts)
+            }
             log.info("releaseIPAddress: ${out}")
             if (out.success && out.exitCode == '0') {
                 // Do nothing
@@ -1382,7 +1442,9 @@ foreach (\$network in \$networks) {
                 .replace("<%vmid%>",externalId)
                 .replace("<%vhdname%>",name ?: "")
         //Execute
-        def out = wrapExecuteCommand(generateCommandString(cmd), opts)
+        def out = SlowLogger.execute("listVirtualDiskDrives  -  Get-SCVirtualDiskDrive") {
+            wrapExecuteCommand(generateCommandString(cmd), opts)
+        }
         if (out.success) {
             rtn.disks = out.data
             rtn.success = true
@@ -1434,7 +1496,9 @@ foreach (\$network in \$networks) {
                 .replace("<%sizegb%>","${(int)(diskSizeBytes.toLong()).div(ComputeUtility.ONE_GIGABYTE)}")
 
         log.debug "resizeDisk: ${resizeCmd}"
-        def resizeResults = wrapExecuteCommand(generateCommandString(resizeCmd), opts)
+        def resizeResults = SlowLogger.execute("resizeDisk  -  Expand-SCVirtualDiskDrive") {
+            wrapExecuteCommand(generateCommandString(resizeCmd), opts)
+        }
         //resizeResults.data is json payload array - want only the first item
         if (resizeResults.data) {
             def resizeStatus = resizeResults.data.first()
@@ -1568,7 +1632,9 @@ foreach (\$network in \$networks) {
                 .replace("<%vhdformat%>",diskSpec.vhdFormat ?: "")
                 .replace("<%vhdpath%>",diskSpec.vhdPath ?: "")
         //Execute
-        def out = wrapExecuteCommand(generateCommandString(addDiskCmd), opts)
+        def out = SlowLogger.execute("createAndAttachDisk  -  SCVirtualDiskDrive") {
+            wrapExecuteCommand(generateCommandString(addDiskCmd), opts)
+        }
         if(out.success && returnDiskDrives) {
             def listResults = listVirtualDiskDrives(opts, opts.externalId, diskSpec.vhdName)
             return [success: listResults.success, disk: listResults.disks.first()]
@@ -1596,7 +1662,9 @@ foreach (\$network in \$networks) {
         commands << "\$ignore = Set-SCVirtualMachine -VM \$VM -JobGroup ${diskJobGuid}"
         def cmd = commands.join(';')
         log.debug "removeDisk: ${cmd}"
-        return wrapExecuteCommand(generateCommandString(cmd), opts)
+        return SlowLogger.execute("removeDisk  -  Remove-SCVirtualDiskDrive") {
+            wrapExecuteCommand(generateCommandString(cmd), opts)
+        }
     }
 
     def checkServerCreated(opts, vmId) {
@@ -1686,7 +1754,9 @@ Progress=\$job.Progress
 Status=\$job.Status.toString()
 }
 \$report"""
-            def out = wrapExecuteCommand(generateCommandString(command), opts)
+            def out = SlowLogger.execute("getJobs  -  Get-SCJob") {
+                wrapExecuteCommand(generateCommandString(command), opts)
+            }
             if (!out.success) {
                 throw new Exception("Error in getting job")
             }
@@ -1772,7 +1842,9 @@ Status=\$job.Status.toString()
             def serverDetail = getServerDetails(opts, vmId)
             if (serverDetail.success == true) {
                 if (serverDetail.server?.VirtualMachineState != 'Running') {
-                    def out = wrapExecuteCommand(generateCommandString("\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${vmId}\"; \$ignore = Start-SCVirtualMachine -VM \$VM ${opts.async ? '-RunAsynchronously' : ''}"), opts)
+                    def out = SlowLogger.execute("startServer  -  Start-SCVirtualMachine") {
+                        wrapExecuteCommand(generateCommandString("\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${vmId}\"; \$ignore = Start-SCVirtualMachine -VM \$VM ${opts.async ? '-RunAsynchronously' : ''}"), opts)
+                    }
                     rtn.success = out.success
                 } else {
                     rtn.msg = 'VM is already powered on'
@@ -1792,7 +1864,9 @@ Status=\$job.Status.toString()
 if(\$VM.Status -ne 'PowerOff') { 
 	\$ignore = Stop-SCVirtualMachine -VM \$VM; 
 } \$true """
-            def out = wrapExecuteCommand(generateCommandString(command), opts)
+            def out = SlowLogger.execute("stopServer  -  Stop-SCVirtualMachine") {
+                wrapExecuteCommand(generateCommandString(command), opts)
+            }
             rtn.success = out.success
         } catch (e) {
             log.error("stopServer error: ${e}", e)
@@ -1818,7 +1892,9 @@ if(\$VM) {
 } 
 \$ignore = Remove-Item -Path  \"${serverFolder}\" -Recurse -Force
 \$ignore = Remove-Item -LiteralPath \"${diskFolder}\" -Recurse -Force"""
-                def out = wrapExecuteCommand(generateCommandString(command), opts)
+                def out = SlowLogger.execute("deleteServer  -  Remove-SCVirtualMachine") {
+                    wrapExecuteCommand(generateCommandString(command), opts)
+                }
                 rtn.success = true
             }
         } catch (e) {
@@ -1869,7 +1945,9 @@ foreach(\$share in \$shares) {
 \$report += \$data
 }
 \$report"""
-        def out = wrapExecuteCommand(generateCommandString(command), opts)
+        def out = SlowLogger.execute("getRootSharePath  -  Get-SCLibraryShare") {
+            wrapExecuteCommand(generateCommandString(command), opts)
+        }
         if (!out.success) {
             throw new Exception("Error in getting library share")
         }
@@ -1886,13 +1964,17 @@ foreach(\$share in \$shares) {
         def commands = []
         commands << "\$iso = Get-SCISO -VMMServer localhost | where {\$_.SharePath -eq \"$sharePath\"}"
         commands << "\$ignore = Remove-SCISO -ISO \$iso -Force"
-        return wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
+        return SlowLogger.execute("deleteIso  -  Remove-SCISO") {
+            wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
+        }
     }
 
     def deleteUnattend(opts, unattendPath) {
         def commands = []
         commands << "Remove-Item -Path \"${unattendPath}\" -Force"
-        return wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
+        return SlowLogger.execute("deleteUnattend  -  Remove-Item") {
+            wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
+        }
     }
 
     def setCdrom(opts, cdPath = null) {
@@ -1907,7 +1989,9 @@ foreach(\$share in \$shares) {
         } else {
             commands << "\$ignore = Set-SCVirtualDVDDrive -VirtualDVDDrive \$dvd -Bus \$dvd.Bus -LUN \$dvd.Lun -NoMedia"
         }
-        return wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
+        return SlowLogger.execute("setCdrom  -  Set-SCVirtualDVDDrive") {
+            wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
+        }
     }
 
     def importScript(content, diskFolder, imageFolderName, opts) {
@@ -1915,7 +1999,9 @@ foreach(\$share in \$shares) {
         def scriptPath
         InputStream inputStream = new ByteArrayInputStream(content.getBytes())
         def command = "\$ignore = mkdir \"${diskFolder}\""
-        def dirResults = wrapExecuteCommand(generateCommandString(command), opts)
+        def dirResults = SlowLogger.execute("importScript  -  mkdir") {
+            wrapExecuteCommand(generateCommandString(command), opts)
+        }
         def fileResults = morpheusContext.services.fileCopy.copyToServer(opts.hypervisor, "${opts.fileName}", "${diskFolder}\\${opts.fileName}", inputStream, opts.cloudConfigBytes?.size(), null, true)
         log.debug ("importScript: fileResults.success: ${fileResults.success}")
         if (!fileResults.success) {
@@ -1960,7 +2046,9 @@ For (\$i=0; \$i -le 10; \$i++) {
 	'LUN'=\$lunNumber}
 \$report"""
 
-        def out = wrapExecuteCommand(generateCommandString(command), opts)
+        def out = SlowLogger.execute("createDVD  -  New-SCVirtualDVDDrive") {
+            wrapExecuteCommand(generateCommandString(command), opts)
+        }
         if (!out.success) {
             log.warn "Error in creating a DVD: ${out}"
         }
@@ -1973,7 +2061,9 @@ For (\$i=0; \$i -le 10; \$i++) {
 
         InputStream inputStream = new ByteArrayInputStream(cloudConfigBytes)
         def command = "\$ignore = mkdir \"${diskFolder}\""
-        def dirResults = wrapExecuteCommand(generateCommandString(command), opts)
+        def dirResults = SlowLogger.execute("importAndMountIso  -  mkdir") {
+            wrapExecuteCommand(generateCommandString(command), opts)
+        }
         def fileResults = morpheusContext.services.fileCopy.copyToServer(opts.hypervisor, "config.iso", "${diskFolder}\\config.iso", inputStream, cloudConfigBytes?.size())
         log.debug ("importAndMountIso: fileResults?.success: ${fileResults?.success}")
         if (!fileResults.success) {
@@ -2069,7 +2159,9 @@ For (\$i=0; \$i -le 10; \$i++) {
                 }
 
                 log.debug "updateServer: ${command}"
-                def out = wrapExecuteCommand(generateCommandString(command), opts)
+                def out = SlowLogger.execute("updateServer  -  Set-SCVirtualMachine") {
+                    wrapExecuteCommand(generateCommandString(command), opts)
+                }
                 log.debug "updateServer results: ${out}"
                 rtn.success = out.success && out.exitCode == '0'
             } else {
@@ -2241,7 +2333,9 @@ For (\$i=0; \$i -le 10; \$i++) {
         def imageFolderPath = "${zoneRoot}\\images\\${imageFolder}"
         def command = "Remove-Item -LiteralPath \"${imageFolderPath}\" -Recurse -Force"
         log.debug("deleteImage command: ${command}")
-        def out = wrapExecuteCommand(generateCommandString(command), opts)
+        def out = SlowLogger.execute("deleteImage  -  Remove-Item") {
+            wrapExecuteCommand(generateCommandString(command), opts)
+        }
         log.debug("deleteImage: ${out.data}")
         rtn.success = out.success
         return rtn
@@ -2260,7 +2354,9 @@ For (\$i=0; \$i -le 10; \$i++) {
         def cachePath = opts.cachePath
         def command = "\$ignore = mkdir \"${tgtFolder}\""
         log.debug("command: ${command}")
-        def dirResults = wrapExecuteCommand(generateCommandString(command), opts)
+        def dirResults = SlowLogger.execute("transferImage  -  mkdir") {
+            wrapExecuteCommand(generateCommandString(command), opts)
+        }
 
         if (metadataFile) {
             fileList << [inputStream: metadataFile.inputStream, contentLength: metadataFile.contentLength, targetPath: "${tgtFolder}\\metadata.json".toString(), copyRequestFileName: "metadata.json"]
@@ -2284,7 +2380,9 @@ For (\$i=0; \$i -le 10; \$i++) {
         try {
             def snapshotId = opts.snapshotId ?: "${vmId}.${System.currentTimeMillis()}"
             def command = "\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${vmId}\"; \$ignore = New-SCVMCheckpoint -VM \$VM -Name \"${snapshotId}\""
-            def out = wrapExecuteCommand(generateCommandString(command), opts)
+            def out = SlowLogger.execute("snapshotServer") {
+                wrapExecuteCommand(generateCommandString(command), opts)
+            }
             rtn.success = out.success && out.exitCode == '0'
             rtn.snapshotId = snapshotId
             log.debug("snapshot server: ${out}")
@@ -2302,7 +2400,9 @@ For (\$i=0; \$i -le 10; \$i++) {
             commands << "\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${vmId}\""
             commands << "\$Checkpoint = Get-SCVMCheckpoint -VM \$VM | where {\$_.Name -like \"${snapshotId}\"}"
             commands << "\$ignore = Remove-SCVMCheckpoint -VMCheckpoint \$Checkpoint"
-            def out = wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
+            def out = SlowLogger.execute("deleteSnapshot -  Remove-SCVMCheckpoint") {
+                wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
+            }
             rtn.success = out.success && out.exitCode == '0'
             rtn.snapshotId = snapshotId
             log.debug("delete snapshot: ${out}")
@@ -2320,7 +2420,9 @@ For (\$i=0; \$i -le 10; \$i++) {
             commands << "\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${vmId}\""
             commands << "\$Checkpoint = Get-SCVMCheckpoint -VM \$VM | where {\$_.Name -like \"${snapshotId}\"}"
             commands << "Restore-SCVMCheckpoint -VMCheckpoint \$Checkpoint"
-            def out = wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
+            def out = SlowLogger.execute("restoreServer -  Restore-SCVMCheckpoint") {
+                wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
+            }
             rtn.success = out.success && out.exitCode == '0'
             log.debug("restore server: ${out}")
         } catch (e) {
@@ -2340,7 +2442,9 @@ For (\$i=0; \$i -le 10; \$i++) {
             commands << "\$ClonedBootDisk = Get-SCVirtualDiskDrive -VMMServer localhost -VM \$NewVM | where {\$_.VirtualHardDisk -like [io.path]::GetFileNameWithoutExtension(\$OriginalBootDisk.VirtualHardDisk)}"
             commands << "Set-SCVirtualDiskDrive -VirtualDiskDrive \$ClonedBootDisk -VolumeType BootAndSystem"
 
-            def out = wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
+            def out = SlowLogger.execute("changeVolumeTypeForClonedBootDisk -  Set-SCVirtualDiskDrive") {
+                wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
+            }
             rtn.success = out.success && out.exitCode == '0'
             log.debug("changeVolumeTypeForClonedBootDisk: ${out}")
         } catch (e) {
@@ -2751,6 +2855,7 @@ For (\$i=0; \$i -le 10; \$i++) {
 
     def wrapExecuteCommand(String command, Map opts = [:]) {
         def out = executeCommand(command, opts)
+
         if (out.data) {
             def payload = out.data
             if (!out.data.startsWith('[')) {
