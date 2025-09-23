@@ -46,11 +46,18 @@ class SCVMMpayloads:
                 "createUser": False,
             },
             "labels": ["TEST"],
-            "volumes": json.loads(os.getenv("VOLUMES")) if os.getenv("VOLUMES") else [],
+            "volumes": [
+                        {
+                            "rootVolume": True,
+                            "name": "root",
+                            "size": 60,
+                            "datastoreId":{"id":"auto"}
+                        }
+                        ],
         }
 
     @staticmethod
-    def get_create_cloud_payload(cloud_name, group_id, zone_type_id, shared_controller):
+    def get_create_cloud_payload(cloud_name, group_id, zone_type_id):
         """Helper function to create the payload for cloud creation."""
         return {
             "zone": {
@@ -63,7 +70,6 @@ class SCVMMpayloads:
                     "host": os.getenv("HOST"),
                     "username": os.getenv("HOST_USERNAME"),
                     "password": os.getenv("HOST_PASSWORD"),
-                    "sharedController": shared_controller,
                 },
             }
         }

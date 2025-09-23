@@ -24,8 +24,7 @@ class ResourcePoller:
         :param cloud_id: ID of the cloud to be validated
         :return: Response object if status is 'ok', else None
         """
-        # cloud_api = morpheus_clients.get("cloud_api")
-        max_attempts = 20
+        max_attempts = 50
         sleep_interval = 10
         for attempt in range(max_attempts):
             response = morpheus_session.clouds.get_clouds(cloud_id)

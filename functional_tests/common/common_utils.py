@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime
 
 log = logging.getLogger(__name__)
 
@@ -105,3 +106,21 @@ class CommonUtils:
         if servers:
             return servers[0].get("id")
         raise ValueError(f"Host not found for {host_name}")
+
+class DateTimeGenUtils:
+    """ Utility class for generating names with datetime suffixes."""
+
+    @staticmethod
+    def name_with_datetime(prefix: str, fmt: str = "%Y%m%d-%H%M%S") -> str:
+        """
+        Generate a name by appending the current datetime to a given prefix.
+
+        Args:
+            prefix (str): Base prefix for the name.
+            fmt (str): Datetime format (default: YYYYMMDD-HHMMSS).
+
+        Returns:
+            str: Generated name with datetime suffix.
+        """
+        timestamp = datetime.now().strftime(fmt)
+        return f"{prefix}-{timestamp}"

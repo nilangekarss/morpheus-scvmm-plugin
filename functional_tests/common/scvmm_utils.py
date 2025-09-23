@@ -16,7 +16,7 @@ from hpe_morpheus_automation_libs.api.external_api.plugins.plugin_api import Plu
 
 from functional_tests.common.cloud_helper import ResourcePoller
 from functional_tests.common.create_payloads import SCVMMpayloads
-from functional_tests.common.common_utils import CommonUtils
+from functional_tests.common.common_utils import CommonUtils, DateTimeGenUtils
 
 log = logging.getLogger(__name__)
 
@@ -64,11 +64,11 @@ class SCVMMUtils:
             pytest.fail(f"Plugin upload failed: {e}")
 
     @staticmethod
-    def create_scvmm_cloud(morpheus_session, group_id, shared_controller):
+    def create_scvmm_cloud(morpheus_session, group_id):
         """
         function to create scvmm cloud and wait until it's active
         """
-        cloud_name = "test-scvmm-cloud-" + RandomGenUtils.random_string_of_chars(5)
+        cloud_name = DateTimeGenUtils.name_with_datetime("scvmm-cloud", "%Y%m%d-%H%M%S")
 
         # 1. Get zone types
         zone_type_response = morpheus_session.clouds.list_cloud_types()
@@ -85,7 +85,7 @@ class SCVMMUtils:
 
         # 2. Build payload
         cloud_payload = SCVMMpayloads.get_create_cloud_payload(
-            cloud_name=cloud_name, group_id=group_id, zone_type_id=zone_type_id, shared_controller= shared_controller
+            cloud_name=cloud_name, group_id=group_id, zone_type_id=zone_type_id
         )
 
         # 3. Create cloud
@@ -107,7 +107,7 @@ class SCVMMUtils:
     @staticmethod
     def create_scvmm_cluster(morpheus_session, cloud_id, group_id, plan_name):
         """ function to create scvmm cluster and wait until it's active"""
-        cluster_name = "test-scvmm-cluster-" + RandomGenUtils.random_string_of_chars(5)
+        cluster_name = DateTimeGenUtils.name_with_datetime("scvmm-clus", "%Y%m%d-%H%M%S")
 
         # Fetching cluster-type ID for SCVMM
         cluster_type_response = morpheus_session.clusters.list_cluster_types()
@@ -122,15 +122,14 @@ class SCVMMUtils:
         log.info(f"Cluster type ID: {cluster_type_id}")
 
         # Fetching layout ID for SCVMM
-        layout_response = morpheus_session.cluster_layouts.list_cluster_layouts()
+        layout_response = morpheus_session.cluster_layouts.list_cluster_layouts(phrase= os.getenv("CLUSTER_LAYOUT_NAME"))
         assert (layout_response.status_code == 200), "Failed to retrieve cluster layouts!"
         layouts = layout_response.json().get("layouts", [])
         layout_id = None
-        for layout in layouts:
-            if layout.get("name") == os.getenv("CLUSTER_LAYOUT_NAME"):
-                layout_id = layout.get("id")
-                log.info(f"Layout ID: {layout_id}")
-                break
+        if layouts:
+            layout_id = layouts[0].get("id")
+            log.info(f"Layout ID: {layout_id}")
+
         assert layout_id is not None, "SCVMM cluster layout not found!"
 
         #fetch plan_id
@@ -173,7 +172,7 @@ class SCVMMUtils:
         """
         log.info("Creating instance...")
         if not instance_name:
-            instance_name = "test-scvmm-instance-" + RandomGenUtils.random_string_of_chars(3)
+            instance_name = DateTimeGenUtils.name_with_datetime("scvmm-inst", "%Y%m%d-%H%M%S")
 
         # Generate payload
         log.info("Generating instance payload...")
@@ -331,7 +330,7 @@ class SCVMMUtils:
         """
         schedule_payload = {
             "schedule": {
-                "name": "test-schedule-" + RandomGenUtils.random_string_of_chars(3),
+                "name": DateTimeGenUtils.name_with_datetime("schedule", "%Y%m%d-%H%M%S"),
                 "enabled": True,
                 "cron": "*/5  * * * *",
             }

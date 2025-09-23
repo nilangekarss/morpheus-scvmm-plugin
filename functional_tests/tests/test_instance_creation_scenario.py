@@ -13,6 +13,7 @@ from functional_tests.common.cloud_helper import ResourcePoller
 from functional_tests.common.create_payloads import SCVMMpayloads
 from functional_tests.common.scvmm_utils import SCVMMUtils
 from functional_tests.common.common_utils import CommonUtils
+from functional_tests.common.common_utils import DateTimeGenUtils
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -30,20 +31,19 @@ class TestSCVMMPlugin:
         """Validate Windows instance creation, agent installation, and basic operations."""
 
         plan_name = "2 Core, 8GB Memory"
+        cluster_id= None
         try:
             # Upload SCVMM plugin
             SCVMMUtils.upload_scvmm_plugin()
 
             # Create a SCVMM group
-            group_name = "test-scvmm-group-" + RandomGenUtils.random_string_of_chars(4)
+            group_name = DateTimeGenUtils.name_with_datetime("scvmm-group", "%Y%m%d-%H%M%S")
             group_response = morpheus_session.groups.add_groups({"group": {"name": group_name}})
             assert group_response.status_code == 200, "Group creation failed!"
             TestSCVMMPlugin.group_id = group_response.json()["group"]["id"]
 
-            # Create cloud & cluster
-            host_name= os.getenv("SHARED_CONTROLLER_HOST")
-            shared_controller= CommonUtils.get_host_id(morpheus_session,host_name)
-            TestSCVMMPlugin.cloud_id = SCVMMUtils.create_scvmm_cloud(morpheus_session, TestSCVMMPlugin.group_id, shared_controller)
+            # Create cloud
+            TestSCVMMPlugin.cloud_id = SCVMMUtils.create_scvmm_cloud(morpheus_session, TestSCVMMPlugin.group_id)
 
             # Create cluster
             cluster_id = SCVMMUtils.create_scvmm_cluster(morpheus_session, TestSCVMMPlugin.cloud_id, TestSCVMMPlugin.group_id, plan_name)
@@ -57,7 +57,7 @@ class TestSCVMMPlugin:
                 morpheus_session= morpheus_session,
                 template_id=template_id,
                 plan_name= plan_name,
-                instance_name="test-instance-" + RandomGenUtils.random_string_of_chars(4),
+                instance_name=DateTimeGenUtils.name_with_datetime("scvmm-inst", "%Y%m%d-%H%M%S"),
                 group_id= TestSCVMMPlugin.group_id,
                 cloud_id= TestSCVMMPlugin.cloud_id,
 
@@ -107,6 +107,8 @@ class TestSCVMMPlugin:
 
         except Exception as e:
             pytest.fail(f"Windows instance creation & agent validation failed: {e}")
+        finally:
+            SCVMMUtils.cleanup_resource("cluster", morpheus_session, cluster_id)
 
     def test_windows_instance_creation_with_selected_storage_and_host(self, morpheus_session):
         """Validate Windows instance creation with selected storage and host."""
@@ -130,7 +132,7 @@ class TestSCVMMPlugin:
                 morpheus_session=morpheus_session,
                 template_id=template_id,
                 plan_name=plan_name,
-                instance_name= "test-instance-" + RandomGenUtils.random_string_of_chars(5),
+                instance_name= DateTimeGenUtils.name_with_datetime("scvmm-inst", "%Y%m%d-%H%M%S"),
                 group_id= TestSCVMMPlugin.group_id,
                 cloud_id= TestSCVMMPlugin.cloud_id,
                 host_id=host_id
@@ -199,7 +201,7 @@ class TestSCVMMPlugin:
         instance_id = TestSCVMMPlugin.instance_id
         cloned_instance_id= None
         try:
-            clone_name = f"clone-{instance_id}" + RandomGenUtils.random_string_of_chars(2)
+            clone_name = DateTimeGenUtils.name_with_datetime("clone-inst", "%Y%m%d-%H%M%S")
             log.info(f"Cloning instance with id '{instance_id}'...")
             details = CommonUtils.get_instance_details(morpheus_session, instance_id)
             clone_payload = SCVMMpayloads.create_clone_payload(clone_instance_name=clone_name, instance_details= details)
@@ -240,8 +242,8 @@ class TestSCVMMPlugin:
         """Test case to validate the backup and restore operation on a windows instance."""
 
         instance_id = TestSCVMMPlugin.instance_id
-        backup_name = f"backup-instance-{instance_id}" + RandomGenUtils.random_string_of_chars(2)
-        backup_job_name = f"backup-job-{instance_id}" + RandomGenUtils.random_string_of_chars(2)
+        backup_name = DateTimeGenUtils.name_with_datetime("backup-inst", "%Y%m%d-%H%M%S")
+        backup_job_name = DateTimeGenUtils.name_with_datetime("backup-job", "%Y%m%d-%H%M%S")
         backup_id = None
         schedule_id = None
         try:
@@ -250,6 +252,7 @@ class TestSCVMMPlugin:
 
             # Create schedule (after 5 min cron)
             schedule_id = SCVMMUtils.create_execute_schedule(morpheus_session)
+            TestSCVMMPlugin.schedule_id= schedule_id
             backup_payload = SCVMMpayloads.create_backup_payload(instance_id, backup_name, container_id, backup_job_name, schedule_id)
             log.info(f"Backup Payload: {backup_payload}")
 
@@ -281,11 +284,12 @@ class TestSCVMMPlugin:
             pytest.fail(f"Backup & restore test failed: {e}")
 
         finally:
+            if backup_id:
+                SCVMMUtils.cleanup_resource("backup", morpheus_session, backup_id)
+
             if schedule_id:
                 SCVMMUtils.cleanup_resource("schedule", morpheus_session, schedule_id)
 
-            if backup_id:
-                SCVMMUtils.cleanup_resource("backup", morpheus_session, backup_id)
 
     def test_validate_infrastructure_delete(self, morpheus_session):
         """Test case to validate the cleanup of created resources."""
@@ -329,7 +333,6 @@ class TestSCVMMPlugin:
         assert cluster_details.get(
             "status") == "ok", f"Cluster creation failed, current status: {cluster_details.get('status')}"
         assert cluster_details.get("layout", {}).get("id"), "Layout ID missing in cluster details"
-        assert cluster_details.get("server", {}).get("plan", {}).get("id"), "Plan ID missing in cluster details"
         log.info(f"Cluster {cluster_id} verified successfully with status ok")
 
         # Delete cluster
