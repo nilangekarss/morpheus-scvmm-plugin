@@ -290,6 +290,29 @@ class TestSCVMMPlugin:
             if schedule_id:
                 SCVMMUtils.cleanup_resource("schedule", morpheus_session, schedule_id)
 
+    def test_validate_cluster_creation_and_deletion(self, morpheus_session):
+        """ Test case to validate the cluster creation workflow"""
+        cloud_id = TestSCVMMPlugin.cloud_id
+        group_id = TestSCVMMPlugin.group_id
+        plan_name = "1 Core, 4GB Memory"
+
+        cluster_id = SCVMMUtils.create_scvmm_cluster(morpheus_session, cloud_id, group_id, plan_name)
+        assert cluster_id, "Cluster creation failed! No cluster ID returned."
+
+        cluster_details = morpheus_session.clusters.get_cluster(cluster_id=cluster_id).json().get("cluster", {})
+        assert cluster_details.get("id") == cluster_id, f"No cluster found with id: {cluster_id}"
+        assert cluster_details.get(
+            "status") == "ok", f"Cluster creation failed, current status: {cluster_details.get('status')}"
+        assert cluster_details.get("layout", {}).get("id"), "Layout ID missing in cluster details"
+        log.info(f"Cluster {cluster_id} verified successfully with status ok")
+
+        # Delete cluster
+        SCVMMUtils.cleanup_resource(resource_type="cluster", morpheus_session=morpheus_session, resource_id=cluster_id)
+
+        # Verify deletion
+        get_resp = morpheus_session.clusters.get_cluster(cluster_id=cluster_id)
+        assert get_resp.status_code == 404, f"Cluster '{cluster_id}' still exists after deletion!"
+        log.info(f"Cluster {cluster_id} deleted successfully and verified.")
 
     def test_validate_infrastructure_delete(self, morpheus_session):
         """Test case to validate the cleanup of created resources."""
@@ -318,27 +341,3 @@ class TestSCVMMPlugin:
             log.info("Cleanup of created resources and plugin uninstall completed successfully.")
         except Exception as e:
             pytest.fail(f"Cleanup test failed: {e}")
-
-    def test_validate_cluster_creation_and_deletion(self, morpheus_session):
-        """ Test case to validate the cluster creation workflow"""
-        cloud_id = TestSCVMMPlugin.cloud_id
-        group_id = TestSCVMMPlugin.group_id
-        plan_name = "1 Core, 4GB Memory"
-
-        cluster_id = SCVMMUtils.create_scvmm_cluster(morpheus_session, cloud_id, group_id, plan_name)
-        assert cluster_id, "Cluster creation failed! No cluster ID returned."
-
-        cluster_details = morpheus_session.clusters.get_cluster(cluster_id=cluster_id).json().get("cluster", {})
-        assert cluster_details.get("id") == cluster_id, f"No cluster found with id: {cluster_id}"
-        assert cluster_details.get(
-            "status") == "ok", f"Cluster creation failed, current status: {cluster_details.get('status')}"
-        assert cluster_details.get("layout", {}).get("id"), "Layout ID missing in cluster details"
-        log.info(f"Cluster {cluster_id} verified successfully with status ok")
-
-        # Delete cluster
-        SCVMMUtils.cleanup_resource(resource_type="cluster", morpheus_session=morpheus_session, resource_id=cluster_id)
-
-        # Verify deletion
-        get_resp = morpheus_session.clusters.get_cluster(cluster_id=cluster_id)
-        assert get_resp.status_code == 404, f"Cluster '{cluster_id}' still exists after deletion!"
-        log.info(f"Cluster {cluster_id} deleted successfully and verified.")

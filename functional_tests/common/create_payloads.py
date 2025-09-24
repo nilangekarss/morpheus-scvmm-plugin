@@ -50,8 +50,8 @@ class SCVMMpayloads:
                         {
                             "rootVolume": True,
                             "name": "root",
-                            "size": 60,
-                            "datastoreId":{"id":"auto"}
+                            "size": 80,
+                            "datastoreId":{"id":"auto"},
                         }
                         ],
         }
