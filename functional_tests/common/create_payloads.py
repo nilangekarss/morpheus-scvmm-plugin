@@ -1,14 +1,18 @@
 import json
 import os
+import logging
 
 from functional_tests.common.common_utils import CommonUtils
+from functional_tests.tests.conftest import morpheus_session
 
+
+log = logging.getLogger(__name__)
 
 class SCVMMpayloads:
     """ Helper class to create payloads for SCVMM related operations """
 
     @staticmethod
-    def get_create_instance_payload(morpheus_session, instance_name, template, group_id, cloud_id, host_id=None):
+    def get_create_instance_payload(morpheus_session, instance_name, template, group_id, cloud_id, plan_id, host_id=None):
         """Helper function to create the payload for instance creation."""
 
         instance_layout_id = CommonUtils.get_scvmm_instance_layout_id(morpheus_session)
@@ -23,7 +27,7 @@ class SCVMMpayloads:
 
                 },
                 "plan": {
-                    "id": int(os.getenv("PLAN_ID"))
+                    "id": plan_id
                 },
             },
             "zoneId": cloud_id,
@@ -40,11 +44,16 @@ class SCVMMpayloads:
                 "template": int(template),
                 "scvmmCapabilityProfile": "Hyper-V",
                 "createUser": False,
-                "backup": {"providerBackupType": int(os.getenv("BACKUP_TYPE_ID"))
-                           }
             },
             "labels": ["TEST"],
-            "volumes": json.loads(os.getenv("VOLUMES")) if os.getenv("VOLUMES") else [],
+            "volumes": [
+                        {
+                            "rootVolume": True,
+                            "name": "root",
+                            "size": 80,
+                            "datastoreId":{"id":"auto"},
+                        }
+                        ],
         }
 
     @staticmethod
@@ -61,10 +70,57 @@ class SCVMMpayloads:
                     "host": os.getenv("HOST"),
                     "username": os.getenv("HOST_USERNAME"),
                     "password": os.getenv("HOST_PASSWORD"),
-                    "sharedController": os.getenv("SHARED_CONTROLLER"),
                 },
             }
         }
+
+    @staticmethod
+    def get_create_cluster_payload(morpheus_session, cluster_name, group_id, cloud_id, layout_id, cluster_type_id, plan_id):
+        """ Helper function to create the payload for cluster creation"""
+
+        network_id = CommonUtils.get_network_id(morpheus_session)
+        return {
+                "cluster": {
+                    "name": cluster_name,
+                    "group": {
+                        "id": group_id
+                    },
+                    "cloud": {
+                        "id": cloud_id
+                    },
+                    "layout": {
+                        "id": layout_id
+                    },
+                    "type": {
+                        "id": cluster_type_id
+                    },
+                    "server": {
+                        "name": cluster_name,
+                        "plan": {
+                            "id": plan_id
+                        },
+                        "volumes": [
+                            {
+                                "rootVolume": True,
+                                "name": "root",
+                                "size": 40,
+                                "datastoreId": "auto"
+                            }
+                        ],
+                        "networkInterfaces": [
+                            {
+                                "network": {
+                                    "id": f"network-{network_id}"
+                                }
+                            }
+                        ]
+                    },
+                    "config": {
+                        "noAgent": False
+                    },
+                    "autoRecoverPowerState": False
+                }
+            }
 
     @staticmethod
     def create_update_payload(labels):
@@ -76,52 +132,59 @@ class SCVMMpayloads:
         }
 
     @staticmethod
-    def create_reconfigure_payload(instance_details):
+    def create_reconfigure_payload(morpheus_session,instance_details, plan_name, cloud_id, group_id, new_volume_size):
         """Create payload for reconfiguring an instance."""
         volume = instance_details["instance"]["volumes"][0]
+        plan_id= CommonUtils.get_plan_id(morpheus_session=morpheus_session, plan_name= plan_name, zone_id=cloud_id, group_id=group_id)
+        log.info(f"Plan ID: {plan_id}")
+        network_id = CommonUtils.get_network_id(morpheus_session)
 
         return {
             "instance": {
                 "plan": {
-                    "id": 163
+                    "id": plan_id
                 }
             },
             "volumes": [
                 {
-                    "size": 85,
+                    "size": new_volume_size,
                     "id": volume["id"],
                     "name": volume["name"],
                     "rootVolume": volume.get("rootVolume", True),
-                    "storageType": 1,
                 }
             ],
             "networkInterfaces": [
                 {
-                    "network": {"id": os.getenv("NETWORK_ID")},
+                    "network": {"id":str(network_id)}
                 }
             ]
         }
 
     @staticmethod
-    def create_clone_payload(clone_instance_name: str):
+    def create_clone_payload(clone_instance_name: str, instance_details):
         """
         Create payload for cloning an instance.
-
+        :param instance_details: Details of the original instance
         :param clone_instance_name: Name for the cloned instance
         :return: Clone payload dictionary
         """
+        volume = instance_details["instance"]["volumes"][0]
+
         return {
             "name": clone_instance_name,
             "volumes": [
                 {
-                    "datastoreId": "auto",
+                    "rootVolume":  volume.get("rootVolume", True),
+                    "id": volume["id"],
+                    "name": volume["name"],
                     "size": 90,
+                    "datastoreId": "auto"
                 }
             ]
         }
 
     @staticmethod
-    def create_backup_payload(instance_id, container_id, backup_name, backup_job_name, schedule_id):
+    def create_backup_payload(instance_id, backup_name, container_id, backup_job_name= None, schedule_id= None):
         """
         Create payload for backup creation.
         """

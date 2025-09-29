@@ -13,6 +13,7 @@ from functional_tests.common.cloud_helper import ResourcePoller
 from functional_tests.common.create_payloads import SCVMMpayloads
 from functional_tests.common.scvmm_utils import SCVMMUtils
 from functional_tests.common.common_utils import CommonUtils
+from functional_tests.common.common_utils import DateTimeGenUtils
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -28,27 +29,35 @@ class TestSCVMMPlugin:
 
     def test_validate_windows_instance_creation_and_agent_installation(self, morpheus_session):
         """Validate Windows instance creation, agent installation, and basic operations."""
+
+        plan_name = "2 Core, 8GB Memory"
+        cluster_id= None
         try:
             # Upload SCVMM plugin
             SCVMMUtils.upload_scvmm_plugin()
 
             # Create a SCVMM group
-            group_name = "test-scvmm-group-" + RandomGenUtils.random_string_of_chars(4)
+            group_name = DateTimeGenUtils.name_with_datetime("scvmm-group", "%Y%m%d-%H%M%S")
             group_response = morpheus_session.groups.add_groups({"group": {"name": group_name}})
             assert group_response.status_code == 200, "Group creation failed!"
             TestSCVMMPlugin.group_id = group_response.json()["group"]["id"]
 
-            # Create cloud & cluster
+            # Create cloud
             TestSCVMMPlugin.cloud_id = SCVMMUtils.create_scvmm_cloud(morpheus_session, TestSCVMMPlugin.group_id)
-            SCVMMUtils.create_scvmm_cluster(morpheus_session, TestSCVMMPlugin.cloud_id, TestSCVMMPlugin.group_id)
+
+            # Create cluster
+            cluster_id = SCVMMUtils.create_scvmm_cluster(morpheus_session, TestSCVMMPlugin.cloud_id, TestSCVMMPlugin.group_id, plan_name)
+            assert cluster_id, "Cluster creation failed! No cluster ID returned."
 
             template_name= os.getenv("SCVMM_TEMPLATE_NAME")
             template_id = CommonUtils.get_template_id(morpheus_session, template_name)
 
             # Create instance
             instance_id, _ = SCVMMUtils.create_instance(
-                morpheus_session,
+                morpheus_session= morpheus_session,
                 template_id=template_id,
+                plan_name= plan_name,
+                instance_name=DateTimeGenUtils.name_with_datetime("scvmm-inst", "%Y%m%d-%H%M%S"),
                 group_id= TestSCVMMPlugin.group_id,
                 cloud_id= TestSCVMMPlugin.cloud_id,
 
@@ -57,13 +66,24 @@ class TestSCVMMPlugin:
             TestSCVMMPlugin.instance_id= instance_id
 
             # Fetch instance details
-            details = SCVMMUtils.get_instance_details(morpheus_session, instance_id)
+            details = CommonUtils.get_instance_details(morpheus_session, instance_id)
             instance = details["instance"]
             server = details["instance"]["containerDetails"][0]["server"]
 
-            #  Verify config
-            assert instance["plan"]["id"] == int(os.getenv("PLAN_ID")), "Plan ID mismatch"
-            assert instance["layout"]["id"] == int(os.getenv("SCVMM_LAYOUT_ID")), "Layout ID mismatch"
+            # Fetch dynamic expected values
+            expected_plan_id = CommonUtils.get_plan_id(
+                morpheus_session,
+                plan_name=plan_name,
+                zone_id=TestSCVMMPlugin.cloud_id,
+                group_id=TestSCVMMPlugin.group_id
+            )
+            expected_layout_id = CommonUtils.get_scvmm_instance_layout_id(morpheus_session)
+
+            # Verify plan and layout dynamically
+            assert instance["plan"][
+                       "id"] == expected_plan_id, f"Plan ID mismatch! Expected {expected_plan_id}, got {instance['plan']['id']}"
+            assert instance["layout"][
+                       "id"] == expected_layout_id, f"Layout ID mismatch! Expected {expected_layout_id}, got {instance['layout']['id']}"
 
             # Ensure critical fields are not null
             for field in ["maxCores", "maxMemory", "maxStorage", "platform"]:
@@ -87,6 +107,8 @@ class TestSCVMMPlugin:
 
         except Exception as e:
             pytest.fail(f"Windows instance creation & agent validation failed: {e}")
+        finally:
+            SCVMMUtils.cleanup_resource("cluster", morpheus_session, cluster_id)
 
     def test_windows_instance_creation_with_selected_storage_and_host(self, morpheus_session):
         """Validate Windows instance creation with selected storage and host."""
@@ -103,19 +125,21 @@ class TestSCVMMPlugin:
             template_name = os.getenv("SCVMM_TEMPLATE_NAME")
             template_id = CommonUtils.get_template_id(morpheus_session, template_name)
 
+            plan_name= "2 Core, 8GB Memory"
+
            # Create Instance
             instance_id, created_instance_name = SCVMMUtils.create_instance(
                 morpheus_session=morpheus_session,
                 template_id=template_id,
-                instance_name= "test-instance-" + RandomGenUtils.random_string_of_chars(5),
+                plan_name=plan_name,
+                instance_name= DateTimeGenUtils.name_with_datetime("scvmm-inst", "%Y%m%d-%H%M%S"),
                 group_id= TestSCVMMPlugin.group_id,
                 cloud_id= TestSCVMMPlugin.cloud_id,
-                host_id=host_id,
-
+                host_id=host_id
             )
 
             # Validate host assignment
-            details = SCVMMUtils.get_instance_details(morpheus_session,instance_id)
+            details = CommonUtils.get_instance_details(morpheus_session,instance_id)
             instance = details["instance"]
             assert details["instance"]["config"]["hostId"] == host_id, "Host ID mismatch!"
 
@@ -137,12 +161,20 @@ class TestSCVMMPlugin:
         instance_id = TestSCVMMPlugin.instance_id
         try:
             # Fetch current instance details
-            details = SCVMMUtils.get_instance_details(morpheus_session, instance_id)
+            details = CommonUtils.get_instance_details(morpheus_session, instance_id)
+            plan_name= "1 Core, 4GB Memory"
 
             # Build payloads
             update_payload = SCVMMpayloads.create_update_payload(labels=["Test1"])
-            reconfig_payload = SCVMMpayloads.create_reconfigure_payload(details)
-
+            reconfig_payload = SCVMMpayloads.create_reconfigure_payload(
+                morpheus_session,
+                details,
+                plan_name,
+                TestSCVMMPlugin.cloud_id,
+                TestSCVMMPlugin.group_id,
+                new_volume_size = 85
+            )
+            log.info(f"Reconfigure Payload: {reconfig_payload}")
             # Update labels
             resp = morpheus_session.instances.update_instance(id=instance_id, update_instance_request=update_payload)
             assert resp.status_code == 200, f"Update failed: {resp.text}"
@@ -154,10 +186,10 @@ class TestSCVMMPlugin:
             assert ResourcePoller.poll_instance_status(instance_id, "running", morpheus_session) == "running"
 
             # Validate applied changes
-            final = SCVMMUtils.get_instance_details(morpheus_session, instance_id)
-            SCVMMUtils.validate_labels(final, update_payload["instance"]["labels"])
-            SCVMMUtils.validate_volume_size(final, reconfig_payload["volumes"][0]["size"])
-            SCVMMUtils.validate_plan_id(final, reconfig_payload["instance"]["plan"]["id"])
+            details = CommonUtils.get_instance_details(morpheus_session, instance_id)
+            SCVMMUtils.validate_labels(details, update_payload["instance"]["labels"])
+            SCVMMUtils.validate_volume_size(details, reconfig_payload["volumes"][0]["size"])
+            SCVMMUtils.validate_plan_id(details, reconfig_payload["instance"]["plan"]["id"])
 
         except Exception as e:
             pytest.fail(f"Reconfigure test failed: {e}")
@@ -169,9 +201,10 @@ class TestSCVMMPlugin:
         instance_id = TestSCVMMPlugin.instance_id
         cloned_instance_id= None
         try:
-            clone_name = f"clone-{instance_id}" + RandomGenUtils.random_string_of_chars(2)
+            clone_name = DateTimeGenUtils.name_with_datetime("clone-inst", "%Y%m%d-%H%M%S")
             log.info(f"Cloning instance with id '{instance_id}'...")
-            clone_payload = SCVMMpayloads.create_clone_payload(clone_instance_name=clone_name)
+            details = CommonUtils.get_instance_details(morpheus_session, instance_id)
+            clone_payload = SCVMMpayloads.create_clone_payload(clone_instance_name=clone_name, instance_details= details)
             clone_response = morpheus_session.instances.clone_instance(id=instance_id, clone_instance_request=clone_payload)
             assert clone_response.status_code == 200, "Instance clone operation failed!"
 
@@ -183,7 +216,7 @@ class TestSCVMMPlugin:
             assert ResourcePoller.poll_instance_status(cloned_instance_id, "running", morpheus_session) == "running"
 
             # Fetch cloned instance details
-            details = SCVMMUtils.get_instance_details(morpheus_session, cloned_instance_id)
+            details = CommonUtils.get_instance_details(morpheus_session, cloned_instance_id)
             instance = details["instance"]
             server = instance["containerDetails"][0]["server"]
 
@@ -209,24 +242,26 @@ class TestSCVMMPlugin:
         """Test case to validate the backup and restore operation on a windows instance."""
 
         instance_id = TestSCVMMPlugin.instance_id
-        backup_name = f"backup-instance-{instance_id}" + RandomGenUtils.random_string_of_chars(2)
-        backup_job_name = f"backup-job-{instance_id}" + RandomGenUtils.random_string_of_chars(2)
+        backup_name = DateTimeGenUtils.name_with_datetime("backup-inst", "%Y%m%d-%H%M%S")
+        backup_job_name = DateTimeGenUtils.name_with_datetime("backup-job", "%Y%m%d-%H%M%S")
         backup_id = None
+        schedule_id = None
         try:
             # Create backup
-            instance_details = SCVMMUtils.get_instance_details(morpheus_session, instance_id)
-            container_id = instance_details["instance"]["containers"][0]
+            container_id = CommonUtils.get_container_id(morpheus_session, instance_id)
 
             # Create schedule (after 5 min cron)
             schedule_id = SCVMMUtils.create_execute_schedule(morpheus_session)
-            backup_payload = SCVMMpayloads.create_backup_payload(instance_id, container_id, backup_name, backup_job_name, schedule_id)
+            TestSCVMMPlugin.schedule_id= schedule_id
+            backup_payload = SCVMMpayloads.create_backup_payload(instance_id, backup_name, container_id, backup_job_name, schedule_id)
+            log.info(f"Backup Payload: {backup_payload}")
 
             backup_response = morpheus_session.backups.add_backups(add_backups_request=backup_payload)
             assert backup_response.status_code == 200, "Instance backup operation failed!"
             backup_id = backup_response.json()["backup"]["id"]
 
             #  Poll for backup job execution (runs after ~5 min)
-            job_result_id, status = SCVMMUtils.poll_backup_job_execution(
+            job_result_id, status = ResourcePoller.poll_backup_job_execution(
                 morpheus_session, backup_id, timeout=600, interval=30
             )
             assert status == "SUCCEEDED", f"Backup job failed with status {status}"
@@ -251,6 +286,33 @@ class TestSCVMMPlugin:
         finally:
             if backup_id:
                 SCVMMUtils.cleanup_resource("backup", morpheus_session, backup_id)
+
+            if schedule_id:
+                SCVMMUtils.cleanup_resource("schedule", morpheus_session, schedule_id)
+
+    def test_validate_cluster_creation_and_deletion(self, morpheus_session):
+        """ Test case to validate the cluster creation workflow"""
+        cloud_id = TestSCVMMPlugin.cloud_id
+        group_id = TestSCVMMPlugin.group_id
+        plan_name = "1 Core, 4GB Memory"
+
+        cluster_id = SCVMMUtils.create_scvmm_cluster(morpheus_session, cloud_id, group_id, plan_name)
+        assert cluster_id, "Cluster creation failed! No cluster ID returned."
+
+        cluster_details = morpheus_session.clusters.get_cluster(cluster_id=cluster_id).json().get("cluster", {})
+        assert cluster_details.get("id") == cluster_id, f"No cluster found with id: {cluster_id}"
+        assert cluster_details.get(
+            "status") == "ok", f"Cluster creation failed, current status: {cluster_details.get('status')}"
+        assert cluster_details.get("layout", {}).get("id"), "Layout ID missing in cluster details"
+        log.info(f"Cluster {cluster_id} verified successfully with status ok")
+
+        # Delete cluster
+        SCVMMUtils.cleanup_resource(resource_type="cluster", morpheus_session=morpheus_session, resource_id=cluster_id)
+
+        # Verify deletion
+        get_resp = morpheus_session.clusters.get_cluster(cluster_id=cluster_id)
+        assert get_resp.status_code == 404, f"Cluster '{cluster_id}' still exists after deletion!"
+        log.info(f"Cluster {cluster_id} deleted successfully and verified.")
 
     def test_validate_infrastructure_delete(self, morpheus_session):
         """Test case to validate the cleanup of created resources."""

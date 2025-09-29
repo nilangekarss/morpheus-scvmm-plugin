@@ -24,8 +24,7 @@ class ResourcePoller:
         :param cloud_id: ID of the cloud to be validated
         :return: Response object if status is 'ok', else None
         """
-        # cloud_api = morpheus_clients.get("cloud_api")
-        max_attempts = 20
+        max_attempts = 50
         sleep_interval = 10
         for attempt in range(max_attempts):
             response = morpheus_session.clouds.get_clouds(cloud_id)
@@ -104,7 +103,7 @@ class ResourcePoller:
                 - 'failed' if the cluster creation fails.
                 - Final cluster status string if timeout occurs before 'ok' or 'failed'.
         """
-        timeout = 50  # number of attempts
+        timeout = 100  # number of attempts
         sleep_time = 10  # seconds between each poll
 
         for i in range(timeout):
