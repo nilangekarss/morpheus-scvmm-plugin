@@ -24,6 +24,7 @@ import com.morpheusdata.response.ServiceResponse
 import com.morpheusdata.scvmm.helper.morpheus.types.StorageVolumeTypeHelper
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
+import groovy.json.JsonSlurper
 import groovy.util.logging.Slf4j
 
 class ScvmmProvisionProvider extends AbstractProvisionProvider implements WorkloadProvisionProvider, HostProvisionProvider, ProvisionProvider.HypervisorProvisionFacet, HostProvisionProvider.ResizeFacet, WorkloadProvisionProvider.ResizeFacet, ProvisionProvider.BlockDeviceNameFacet {
@@ -894,9 +895,27 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 		}
 	}
 
+	def getNonRootStorageVolumesFromConfigs(workload) {
+		def configs = workload.configs
+		if (configs instanceof String) {
+			configs = new JsonSlurper().parseText(configs)
+		}
+		def volumesList = configs?.volumes ?: []
+		def storageVolumeProps = StorageVolume.metaClass.properties*.name as Set
+		def storageVolumes = volumesList.findAll { !it.rootVolume }.collect { volMap ->
+			def filteredVolMap = volMap.findAll { k, v -> storageVolumeProps.contains(k) && k != 'size' && k != 'minStorage' && k != 'storageType' && k != 'datastoreId'}
+			if (filteredVolMap.id == -1) {
+				new StorageVolume(filteredVolMap)
+			}
+		}.findAll {it != null }
+		return storageVolumes
+	}
+
     def additionalTemplateDisksConfig(Workload workload, scvmmOpts) {
         // Determine what additional disks need to be added after provisioning
         def additionalTemplateDisks = []
+		def nonRootAdditionalVolumes = getNonRootStorageVolumesFromConfigs(workload)
+
         def dataDisks = getContainerDataDiskList(workload)
         log.debug "dataDisks: ${dataDisks} ${dataDisks?.size()}"
 		// scvmmOpts.diskExternalIdMappings will usually contain the virtualImage disk externalId
@@ -905,7 +924,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         def busNumber = '0'
         if (additionalDisksRequired) {
             def diskCounter = diskExternalIdMappings.size()
-            dataDisks?.eachWithIndex { StorageVolume sv, index ->
+			nonRootAdditionalVolumes?.eachWithIndex { StorageVolume sv, index ->
                 if (index + 2 > diskExternalIdMappings.size()) {  // add 1 for the root disk and then 1 for 0 based
                     additionalTemplateDisks << [idx: index + 1, diskCounter: diskCounter, diskSize: sv.maxStorage, busNumber: busNumber]
                     diskCounter++
