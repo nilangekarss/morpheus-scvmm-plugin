@@ -903,7 +903,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 		def volumesList = configs?.volumes ?: []
 		def storageVolumeProps = StorageVolume.metaClass.properties*.name as Set
 		def storageVolumes = volumesList.findAll { !it.rootVolume }.collect { volMap ->
-			def filteredVolMap = volMap.findAll { k, v -> storageVolumeProps.contains(k) && k != 'size' && k != 'minStorage' && k != 'storageType' && k != 'datastoreId'}
+			def filteredVolMap = volMap.findAll { k, v -> storageVolumeProps.contains(k) }
 			if (filteredVolMap.id == -1) {
 				new StorageVolume(filteredVolMap)
 			}
