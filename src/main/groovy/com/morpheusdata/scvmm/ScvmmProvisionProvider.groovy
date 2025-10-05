@@ -923,7 +923,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 		// else its a clone and we only want to add the new volumes
 		def nonRootAdditionalVolumes = []
 		if (totalDataVols == userAddedVolumes.size()) {
-			log.debug "New VM creation - adding all user added volumes"
+			log.debug "New VM creation - adding all non root volumes"
 			nonRootAdditionalVolumes = dataDisks
 		} else {
 			log.debug "Clone Scenario - adding all user added volumes"
@@ -936,11 +936,11 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         def busNumber = '0'
         if (additionalDisksRequired) {
             def diskCounter = diskExternalIdMappings.size()
+			// These new volumes will be added after the VM is created.
 			nonRootAdditionalVolumes?.eachWithIndex { StorageVolume sv, index ->
-                if (index + 2 > diskExternalIdMappings.size()) {  // add 1 for the root disk and then 1 for 0 based
-                    additionalTemplateDisks << [idx: index + 1, diskCounter: diskCounter, diskSize: sv.maxStorage, busNumber: busNumber]
-                    diskCounter++
-                }
+				additionalTemplateDisks << [idx: index + 1, diskCounter: diskCounter, diskSize: sv.maxStorage, busNumber: busNumber]
+				diskCounter++
+
             }
         }
 
