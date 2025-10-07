@@ -800,6 +800,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                         def serverDetails = apiService.getServerDetails(scvmmOpts, server.externalId)
                         if (serverDetails.success == true) {
                             log.info("serverDetail: ${serverDetails}")
+							def status = provisionResponse.skipNetworkWait ? 'waiting for server status' : 'waiting for network'
+							context.process.startProcessStep(workloadRequest.process, new ProcessEvent(type: ProcessEvent.ProcessType.provisionNetwork), status).blockingGet()
                             opts.network = applyComputeServerNetworkIp(server, serverDetails.server?.ipAddress, serverDetails.server?.ipAddress, 0, null)
                             server.osDevice = '/dev/sda'
                             server.dataDevice = '/dev/sda'
