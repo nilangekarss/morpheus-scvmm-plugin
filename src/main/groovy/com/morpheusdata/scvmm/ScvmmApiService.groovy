@@ -2598,7 +2598,7 @@ For (\$i=0; \$i -le 10; \$i++) {
             commands << "\$VirtualNetworkAdapter = Get-SCVirtualNetworkAdapter -VMMServer localhost -VM \$VM"
             commands << "\$VirtualNetwork = Get-SCVirtualNetwork -VMMServer localhost -Name \$VirtualNetworkAdapter.VirtualNetwork | Select-Object -first 1"
             def ipConfig = ""
-            if (doStatic && doPool) {
+            if (doStatic) {
                 ipConfig = "-IPv4AddressType Static -IPv4Address \"${ipAddress}\""
             } else {
                 ipConfig = "-IPv4AddressType Dynamic"
