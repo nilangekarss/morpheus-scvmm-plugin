@@ -2597,10 +2597,16 @@ For (\$i=0; \$i -le 10; \$i++) {
             commands << "if (\$VMNetwork.VMSubnet) { if (\$VMNetwork.VMSubnet -is [Array] -or \$VMNetwork.VMSubnet -is [System.Collections.Generic.List[Microsoft.SystemCenter.VirtualMachineManager.VMSubnet]]) { \$VMSubnet = \$VMNetwork.VMSubnet[0]; } else { \$VMSubnet = \$VMNetwork.VMSubnet } }"
             commands << "\$VirtualNetworkAdapter = Get-SCVirtualNetworkAdapter -VMMServer localhost -VM \$VM"
             commands << "\$VirtualNetwork = Get-SCVirtualNetwork -VMMServer localhost -Name \$VirtualNetworkAdapter.VirtualNetwork | Select-Object -first 1"
+            def ipConfig = ""
+            if (doStatic && doPool) {
+                ipConfig = "-IPv4AddressType Static -IPv4Address \"${ipAddress}\""
+            } else {
+                ipConfig = "-IPv4AddressType Dynamic"
+            }
             commands << "if (\$VMSubnet) {"
-            commands << "Set-SCVirtualNetworkAdapter -VirtualNetworkAdapter \$VirtualNetworkAdapter -VMNetwork \$VMNetwork -VMSubnet \$VMSubnet ${vlanEnabled ? "-VLanEnabled \$true" : ""} ${vlanEnabled ? "-VLanID ${vlanId}" : ''} -VirtualNetwork \$VirtualNetwork -MACAddressType Dynamic -IPv4AddressType Dynamic -IPv6AddressType Dynamic -NoPortClassification -EnableVMNetworkOptimization \$false -EnableMACAddressSpoofing \$false -JobGroup $virtualNetworkGuid"
+            commands << "Set-SCVirtualNetworkAdapter -VirtualNetworkAdapter \$VirtualNetworkAdapter -VMNetwork \$VMNetwork -VMSubnet \$VMSubnet ${vlanEnabled ? "-VLanEnabled \$true" : ""} ${vlanEnabled ? "-VLanID ${vlanId}" : ''} -VirtualNetwork \$VirtualNetwork -MACAddressType Dynamic ${ipConfig} -IPv6AddressType Dynamic -NoPortClassification -EnableVMNetworkOptimization \$false -EnableMACAddressSpoofing \$false -JobGroup $virtualNetworkGuid"
             commands << "} else {"
-            commands << "Set-SCVirtualNetworkAdapter -VirtualNetworkAdapter \$VirtualNetworkAdapter -VMNetwork \$VMNetwork ${vlanEnabled ? "-VLanEnabled \$true" : ""} ${vlanEnabled ? "-VLanID ${vlanId}" : ''} -VirtualNetwork \$VirtualNetwork -MACAddressType Dynamic -IPv4AddressType Dynamic -IPv6AddressType Dynamic -NoPortClassification -EnableVMNetworkOptimization \$false -EnableMACAddressSpoofing \$false -JobGroup $virtualNetworkGuid"
+            commands << "Set-SCVirtualNetworkAdapter -VirtualNetworkAdapter \$VirtualNetworkAdapter -VMNetwork \$VMNetwork ${vlanEnabled ? "-VLanEnabled \$true" : ""} ${vlanEnabled ? "-VLanID ${vlanId}" : ''} -VirtualNetwork \$VirtualNetwork -MACAddressType Dynamic ${ipConfig} -IPv6AddressType Dynamic -NoPortClassification -EnableVMNetworkOptimization \$false -EnableMACAddressSpoofing \$false -JobGroup $virtualNetworkGuid"
             commands << "}"
             if (hostExternalId) {
                 commands << "\$vmHost = Get-SCVMHost -ID \"$hostExternalId\""
