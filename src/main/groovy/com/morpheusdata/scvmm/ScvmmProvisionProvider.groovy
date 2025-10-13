@@ -858,6 +858,10 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 		return rtn
     }
 
+
+	public MorpheusContext getContext() {
+		return this.context
+	}
 	private cloneParentCleanup(Map<String, Object> scvmmOpts, ServiceResponse rtn) {
 		if (scvmmOpts.cloneVMId && scvmmOpts.cloneContainerId) {
 			try {

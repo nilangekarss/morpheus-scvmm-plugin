@@ -3,20 +3,20 @@ import org.gradle.api.publish.maven.MavenPublication
 // (C) Copyright 2025 Hewlett Packard Enterprise Development LP
 
 buildscript {
-    repositories {
-        mavenLocal()
-        mavenCentral()
-        maven { url "https://plugins.gradle.org/m2/" }
+	repositories {
+		mavenLocal()
+		mavenCentral()
+		maven { url "https://plugins.gradle.org/m2/" }
 		maven { url "https://nexus.bertramlabs.com/content/repositories/snapshots" }
 		maven { url "https://nexus.bertramlabs.com/content/repositories/releases" }
 		maven { url "https://nexus.bertramlabs.com/content/repositories/publicReleases" }
-    }
-    dependencies {
-        classpath "com.github.johnrengelman:shadow:8.1.1"
+	}
+	dependencies {
+		classpath "com.github.johnrengelman:shadow:8.1.1"
 //        classpath "com.morpheusdata:morpheus-plugin-gradle:$morpheusApiVersion"
 		classpath "com.morpheusdata:morpheus-plugin-gradle:$morpheusGradleVersion"
-        classpath "com.bertramlabs.plugins:asset-pipeline-gradle:$assetPipelineVersion"
-    }
+		classpath "com.bertramlabs.plugins:asset-pipeline-gradle:$assetPipelineVersion"
+	}
 }
 
 plugins {
@@ -27,6 +27,7 @@ plugins {
 	id 'com.bertramlabs.asset-pipeline' version "$assetPipelineVersion"
 	id 'com.jfrog.artifactory' version "5.+"
 	id 'maven-publish'
+	id 'jacoco'
 }
 
 // Include required files in the JAR
@@ -42,7 +43,7 @@ ext.isReleaseVersion = !version.endsWith("SNAPSHOT")
 
 java {
 	sourceCompatibility = JavaVersion.toVersion('1.11')
-    targetCompatibility = JavaVersion.toVersion('1.11')
+	targetCompatibility = JavaVersion.toVersion('1.11')
 }
 
 repositories {
@@ -59,7 +60,7 @@ configurations {
 
 dependencies {
 	provided "com.morpheusdata:morpheus-plugin-api:$morpheusApiVersion"
-	
+
 	provided "org.codehaus.groovy:groovy-all:$groovyVersion"
 	implementation 'commons-beanutils:commons-beanutils:1.11.0'
 	implementation "org.slf4j:slf4j-api:$slf4jVersion"
@@ -70,6 +71,7 @@ dependencies {
 	}
 
 	// Include morpheus-core and it's dependencies
+	testImplementation "com.morpheusdata:morpheus-plugin-api:$morpheusApiVersion"
 	testImplementation 'io.reactivex.rxjava3:rxjava:3.1.7'
 	testImplementation 'org.apache.httpcomponents:httpclient:4.5.13'
 	testImplementation 'org.apache.httpcomponents:httpcore:4.4.5'
@@ -133,11 +135,61 @@ task(console, dependsOn: 'classes', type: JavaExec) {
 }
 
 test {
+	useJUnitPlatform()
+	forkEvery = 1
 	testLogging {
 		exceptionFormat = 'full'
 		showStandardStreams = true
 	}
 }
+
+test.finalizedBy jacocoTestReport
+
+jacocoTestReport.dependsOn test
+
+jacocoTestCoverageVerification {
+	violationRules {
+		rule {
+			limit {
+				minimum = 0.60
+			}
+		}
+
+		rule {
+			element = 'PACKAGE'
+			limit {
+				minimum = 0.0
+			}
+		}
+
+		rule {
+			limit {
+				counter = 'BRANCH'
+				minimum = 0.0
+			}
+		}
+
+		rule {
+			element = 'METHOD'
+			limit {
+				counter = 'COMPLEXITY'
+				value = 'TOTALCOUNT'
+				maximum = 40
+			}
+		}
+	}
+}
+
+jacocoTestReport {
+	afterEvaluate {
+		classDirectories.setFrom(files(classDirectories.files.collect {
+			fileTree(dir: it)
+		}))
+	}
+}
+
+jacocoTestCoverageVerification.dependsOn jacocoTestReport
+
 tasks.assemble.dependsOn tasks.shadowJar
 
 
