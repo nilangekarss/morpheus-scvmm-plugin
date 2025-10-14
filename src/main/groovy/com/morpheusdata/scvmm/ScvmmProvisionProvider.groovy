@@ -1948,7 +1948,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         }
     }
 
-    private applyComputeServerNetworkIp(ComputeServer server, privateIp, publicIp, index, macAddress) {
+    protected applyComputeServerNetworkIp(ComputeServer server, privateIp, publicIp, index, macAddress) {
         log.debug("applyComputeServerNetworkIp: ${privateIp}")
         ComputeServerInterface netInterface
         if (privateIp) {

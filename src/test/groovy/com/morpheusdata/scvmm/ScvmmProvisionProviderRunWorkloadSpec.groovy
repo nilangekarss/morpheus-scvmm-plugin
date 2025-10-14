@@ -3,8 +3,10 @@ package com.morpheusdata.scvmm
 import com.bertramlabs.plugins.karman.CloudFile
 import com.morpheusdata.core.MorpheusAsyncServices
 import com.morpheusdata.core.MorpheusContext
+import com.morpheusdata.core.MorpheusProcessService
 import com.morpheusdata.core.MorpheusServices
 import com.morpheusdata.core.MorpheusVirtualImageService
+import com.morpheusdata.core.MorpheusComputeServerService
 import com.morpheusdata.core.cloud.MorpheusCloudService
 import com.morpheusdata.core.synchronous.MorpheusSynchronousVirtualImageService
 import com.morpheusdata.core.synchronous.compute.MorpheusSynchronousComputeServerService
@@ -38,6 +40,8 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     private ScvmmProvisionProvider provisionProvider
     private ScvmmApiService mockApiService
     private MorpheusSynchronousComputeServerService computeServerService
+    private MorpheusComputeServerService asyncComputeServerService
+    private MorpheusProcessService processService
     private MorpheusSynchronousWorkloadTypeService workloadTypeService
     private MorpheusSynchronousStorageVolumeService storageVolumeService
     private MorpheusSynchronousVirtualImageService virtualImageService
@@ -51,6 +55,8 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
         // Mock services
         computeServerService = Mock(MorpheusSynchronousComputeServerService)
+        asyncComputeServerService = Mock(MorpheusComputeServerService)
+        processService = Mock(MorpheusProcessService)
         def cloudService = Mock(MorpheusCloudService)
         def networkService = Mock(MorpheusNetworkService)
         workloadTypeService = Mock(MorpheusSynchronousWorkloadTypeService)
@@ -67,11 +73,13 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         def morpheusAsyncServices = Mock(MorpheusAsyncServices) {
             getCloud() >> cloudService
             getNetwork() >> networkService
+            getComputeServer() >> asyncComputeServerService
             getStorageVolume() >> storageVolumeService
             getVirtualImage() >> asyncVirtualImageService
         }
 
         // Configure context mocks
+        morpheusContext.getProcess() >> processService
         morpheusContext.getAsync() >> morpheusAsyncServices
         morpheusContext.getServices() >> morpheusServices
 
@@ -424,12 +432,51 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
             ]
         }
 
+        mockApiService.getServerDetails(_, _) >> { Map options, String serverId ->
+            return [
+                    success: true,
+                    server: [
+                            id: serverId ?: 'vm-12345',
+                            name: 'testVM',
+                            status: 'Running',
+                            VMId: 'VMm-123456',
+                            ipAddress: '10.0.1.100',
+                            osType: 'Windows',
+                            generation: 'Generation 2',
+                            description: 'Test virtual machine',
+                            diskSizeMB: 40960,
+                            memoryMB: 4096,
+                            cpuCount: 2,
+                            hostName: 'scvmm-host-01',
+                            hostId: 'host-123',
+                            datastoreName: 'datastore1',
+                            datastoreId: 'ds-123',
+                            diskLayout: [
+                                    systemDisk: '/dev/sda',
+                                    dataDisk: '/dev/sda'
+                            ]
+                    ],
+                    msg: 'Server details retrieved successfully'
+            ]
+        }
 //        computeServerService.get(_) >> {
 //            computerServer
 //        }
 
         provisionProvider.loadDatastoreForVolume(_, _, _, _) >> { Cloud cld, String hostVolumeId, String fileShareId, String partitionId ->
             return datastore // Return the datastore object you created in your test setup
+        }
+
+        // Mock applyComputeServerNetworkIp
+        provisionProvider.applyComputeServerNetworkIp(_, _, _, _, _) >> { ComputeServer serverObj, String internalIp, String externalIp, int index, def macAddress  ->
+            return new ComputeServerInterface(
+                    id: 1L,
+                    ipAddress: internalIp,
+                    publicIpAddress: externalIp,
+                    externalId: 'nic-123',
+                    primaryInterface: true,
+                    network: new Network(id: 1L, name: 'vlanbaseVmNetwork')
+            )
         }
 
         // Then modify your existing mock for computeServerService.get() to handle different IDs
@@ -462,16 +509,30 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
             return mockFilesSingle
         }
 
+        asyncComputeServerService.save(_) >> { ComputeServer serverObj ->
+            return Single.just(serverObj)
+        }
+
+        // Mock process.startProcessStep
+
+        processService.startProcessStep(_, _, _) >> {
+            return Single.just(true)
+        }
+
+        morpheusContext.getProcess() >> processService
+
         morpheusContext.getServices() >> Mock(MorpheusServices) {
             getComputeServer() >> computeServerService
             getWorkloadType() >> workloadTypeService
             getStorageVolume() >> storageVolumeService
             getVirtualImage() >> virtualImageService
+
         }
 
 
+
         morpheusContext.getAsync() >> Mock(MorpheusAsyncServices) {
-            getComputeServer() >> computeServerService
+            getComputeServer() >> asyncComputeServerService
             getWorkloadType() >> workloadTypeService
             getStorageVolume() >> storageVolumeService
             getVirtualImage() >> asyncVirtualImageService
