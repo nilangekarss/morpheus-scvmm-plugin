@@ -954,7 +954,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         additionalTemplateDisks
     }
 
-    private constructCloudInitOptions(Workload container, WorkloadRequest workloadRequest, installAgent, platform, VirtualImage virtualImage, networkConfig, licenses, scvmmOpts) {
+    protected constructCloudInitOptions(Workload container, WorkloadRequest workloadRequest, installAgent, platform, VirtualImage virtualImage, networkConfig, licenses, scvmmOpts) {
         log.debug("constructCloudInitOptions: ${container}, ${installAgent}, ${platform}")
         def rtn = [:]
         ComputeServer server = container.server

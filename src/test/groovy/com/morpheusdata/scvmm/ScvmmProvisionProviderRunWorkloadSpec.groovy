@@ -244,6 +244,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         // Create WorkloadRequest with concrete values
         def workloadRequest = new WorkloadRequest()
         workloadRequest.usersConfiguration = [createUsers: [userConfig]]
+        workloadRequest.cloudConfigOpts = [:]
 
         def opts = [noAgent: true]
 
@@ -328,6 +329,92 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
             additionalTemplateDisks << [idx: 1, diskCounter: 1, diskSize: 9663676416, busNumber: 0]
             return additionalTemplateDisks
         }
+        provisionProvider.findVmNodeServerTypeForCloud(_, _, _) >> {
+            null
+        }
+        provisionProvider.saveAndGetMorpheusServer(_, _) >> { ComputeServer serverArg, boolean fullReload ->
+            // Return the same server but with a simulated "saved" state
+            // This prevents the actual saving operation while maintaining the test flow
+            return serverArg
+        }
+
+        // Add this to your test setup or directly in your test case
+        provisionProvider.getScvmmContainerOpts(_) >> { Workload container ->
+            return [
+                    config: [serverConfig: 'value'],
+                    vmId: 'vm-123',
+                    name: 'vm-123',
+                    server: container.server,
+                    serverId: container.server?.id,
+                    memory: 4294967296, // Using the values that would come from your test container's plan
+                    maxCpu: 1,
+                    maxCores: 2,
+                    serverFolder: 'morpheus\\morpheus_server_1',
+                    hostname: 'testVM',
+                    network: [id: 1, name: 'vlanbaseVmNetwork'],
+                    networkId: 1,
+                    platform: 'linux',
+                    externalId: 'vm-123',
+                    networkType: 'vlan',
+                    containerConfig: [scvmmCapabilityProfile: 'Hyper-V'],
+                    resourcePool: 'Resource Pool 1',
+                    hostId: 2,
+                    osDiskSize: 42949672960,
+                    maxTotalStorage: 71940702208,
+                    dataDisks: [
+                            new StorageVolume(
+                                    displayOrder: 2,
+                                    name: "data-2",
+                                    rootVolume: false,
+                                    id: 509,
+                                    resizeable: true,
+                                    shortName: "data-2",
+                                    maxStorage: 9663676416
+                            )
+                    ],
+                    scvmmCapabilityProfile: 'Hyper-V',
+                    accountId: 1
+            ]
+        }
+
+        provisionProvider.constructCloudInitOptions(_, _, _, _, _, _, _, _) >> { args ->
+            Workload container = args[0]
+            WorkloadRequest workloadReq = args[1]
+            boolean installAgent = args[2]
+            String platform = args[3]
+            VirtualImage virtualImg = args[4]
+            def networkConfig = args[5]
+            def licenses = args[6]
+            def scvmOpts = args[7]
+
+            return [
+                    cloudConfigUser: '''
+            #cloud-config
+            users:
+              - name: morpheus
+                sudo: ALL=(ALL) NOPASSWD:ALL
+                shell: /bin/bash
+                ssh-authorized-keys:
+                  - ssh-rsa AAAAB3Nz...
+        ''',
+                    cloudConfigMeta: '''
+            instance-id: i-test123
+            local-hostname: testVM
+        ''',
+                    cloudConfigBytes: Base64.encoder.encodeToString('test data'.bytes),
+                    cloudConfigNetwork: '''
+            version: 1
+            config:
+              - type: physical
+                name: eth0
+                subnets:
+                  - type: dhcp
+        ''',
+                    licenseApplied: true,
+                    unattendCustomized: args[3]?.toLowerCase() == 'windows'
+            ]
+        }
+
         computeServerService.get(_) >> {
             computerServer
         }
@@ -374,6 +461,55 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         }
         mockApiService.getScvmmControllerOpts(_, _) >> {
             mockedControllerOpts
+        }
+
+        mockApiService.createServer(_) >> { Map servOpts ->
+            return [
+                    success: true,
+                    server: [
+                            id: 'vm-12345',
+                            ipAddress: '10.0.1.100',
+                            name: 'testVM',
+                            status: 'Running'
+                    ],
+                    deleteDvdOnComplete: [
+                            removeIsoFromDvd: true,
+                            deleteIso: false
+                    ],
+                    cloudConfig: [
+                            isoAttached: true,
+                            dvdDriveId: 'dvd-123'
+                    ],
+                    errors: [],
+                    msg: 'Server created successfully'
+            ]
+        }
+
+        mockApiService.checkServerReady(_, _) >> { Map options, String serverId ->
+            return [
+                    success: true,
+                    server: [
+                            id: serverId ?: 'vm-12345',
+                            ipAddress: '10.0.1.100',
+                            name: 'testVM',
+                            status: 'Running',
+                            VMId: 'VMm-123456'
+                    ],
+                    hasIp: true,
+                    ready: true,
+                    waitComplete: true,
+                    msg: 'Server is ready'
+            ]
+        }
+
+        mockApiService.setCdrom(_) >> { Map setCdromOpts ->
+            return [
+                    success: true,
+                    data: [
+                            dvdRemoved: true
+                    ],
+                    msg: 'CD-ROM settings updated successfully'
+            ]
         }
 
         mockApiService.resolveConfigDatastore(_, _) >> datastore
