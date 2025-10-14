@@ -273,6 +273,15 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
         def datastore = new Datastore(id: 5L, name: "datastore1", externalId: "ds-123")
         def node = new ComputeServer(id: 2L, name: "node-01")
+        // Add this to your test setup
+        def nodeServer = new ComputeServer(
+                id: 2L,
+                name: "node-01",
+                externalId: "host-123",
+                sshHost: "10.0.0.10",
+                serverType: new ComputeServerType(code: "hypervisor"),
+                hostname: "scvmm-host-01"
+        )
 
         def diskSpec = [
                 type: "IDE",
@@ -415,9 +424,25 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
             ]
         }
 
-        computeServerService.get(_) >> {
-            computerServer
+//        computeServerService.get(_) >> {
+//            computerServer
+//        }
+
+        provisionProvider.loadDatastoreForVolume(_, _, _, _) >> { Cloud cld, String hostVolumeId, String fileShareId, String partitionId ->
+            return datastore // Return the datastore object you created in your test setup
         }
+
+        // Then modify your existing mock for computeServerService.get() to handle different IDs
+        computeServerService.get(_) >> { Long id ->
+            if (id == nodeServer.id) {
+                return nodeServer
+            } else if (id == computerServer.id) {
+                return computerServer
+            } else {
+                return controllerServer
+            }
+        }
+
         computeServerService.find(_) >> {
             controllerServer
         }
@@ -470,7 +495,43 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
                             id: 'vm-12345',
                             ipAddress: '10.0.1.100',
                             name: 'testVM',
-                            status: 'Running'
+                            status: 'Running',
+                            MId: 'VMm-123456',
+                            disks: [
+                                    osDisk: [
+                                            externalId: 'os-disk-id-1'
+                                    ],
+                                    dataDisks: [
+                                            [
+                                                    id: 509,  // This should match the ID of your non-root volume
+                                                    externalId: 'data-disk-id-1'
+                                            ]
+                                    ],
+                                    diskMetaData: [
+                                            'os-disk-id-1': [
+                                                    VhdID: 'vhd-os-123',
+                                                    HostVolumeId: 'hvol-1',
+                                                    FileShareId: 'fs-1',
+                                                    PartitionUniqueId: 'part-1'
+                                            ],
+                                            'data-disk-id-1': [
+                                                    VhdID: 'vhd-data-123',
+                                                    HostVolumeId: 'hvol-2',
+                                                    FileShareId: 'fs-2',
+                                                    PartitionUniqueId: 'part-2'
+                                            ],
+                                            'vhd-os-123': [
+                                                    HostVolumeId: 'hvol-1',
+                                                    FileShareId: 'fs-1',
+                                                    PartitionUniqueId: 'part-1'
+                                            ],
+                                            'vhd-data-123': [
+                                                    HostVolumeId: 'hvol-2',
+                                                    FileShareId: 'fs-2',
+                                                    PartitionUniqueId: 'part-2'
+                                            ]
+                                    ]
+                            ]
                     ],
                     deleteDvdOnComplete: [
                             removeIsoFromDvd: true,
