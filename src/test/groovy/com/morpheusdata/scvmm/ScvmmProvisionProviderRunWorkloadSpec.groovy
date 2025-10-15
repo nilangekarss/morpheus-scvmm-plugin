@@ -5,12 +5,17 @@ import com.morpheusdata.core.MorpheusAsyncServices
 import com.morpheusdata.core.MorpheusContext
 import com.morpheusdata.core.MorpheusProcessService
 import com.morpheusdata.core.MorpheusServices
+import com.morpheusdata.core.MorpheusStorageVolumeTypeService
 import com.morpheusdata.core.MorpheusVirtualImageService
 import com.morpheusdata.core.MorpheusComputeServerService
+import com.morpheusdata.core.MorpheusStorageVolumeService
 import com.morpheusdata.core.cloud.MorpheusCloudService
 import com.morpheusdata.core.synchronous.MorpheusSynchronousVirtualImageService
+import com.morpheusdata.core.synchronous.cloud.MorpheusSynchronousDatastoreService
+import com.morpheusdata.core.synchronous.cloud.MorpheusSynchronousCloudService
 import com.morpheusdata.core.synchronous.compute.MorpheusSynchronousComputeServerService
 import com.morpheusdata.core.synchronous.MorpheusSynchronousStorageVolumeService
+import com.morpheusdata.core.synchronous.MorpheusSynchronousResourcePermissionService
 import com.morpheusdata.core.data.DataQuery
 import com.morpheusdata.core.network.MorpheusNetworkService
 import com.morpheusdata.core.synchronous.library.MorpheusSynchronousWorkloadTypeService
@@ -32,7 +37,9 @@ import com.morpheusdata.response.ServiceResponse
 import groovy.json.JsonOutput
 import io.reactivex.rxjava3.core.Observable
 import io.reactivex.rxjava3.core.Single
+import org.junit.jupiter.api.BeforeEach
 import spock.lang.Specification
+import spock.lang.Unroll
 
 class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     private MorpheusContext morpheusContext
@@ -43,12 +50,17 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     private MorpheusComputeServerService asyncComputeServerService
     private MorpheusProcessService processService
     private MorpheusSynchronousWorkloadTypeService workloadTypeService
+    private MorpheusCloudService asyncCloudService
+    private MorpheusSynchronousCloudService cloudService
     private MorpheusSynchronousStorageVolumeService storageVolumeService
+    private MorpheusSynchronousResourcePermissionService resourcePermissionService
+    private MorpheusStorageVolumeService asyncStorageVolumeService
     private MorpheusSynchronousVirtualImageService virtualImageService
     private MorpheusVirtualImageService asyncVirtualImageService
     //private ComputeServer mockedComputerServer
     //private WorkloadType mockedWorkloadType
-    def setup() {
+    @BeforeEach
+    void setup() {
         // Setup mock context and services
         morpheusContext = Mock(MorpheusContext)
         plugin = Mock(ScvmmPlugin)
@@ -57,24 +69,29 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         computeServerService = Mock(MorpheusSynchronousComputeServerService)
         asyncComputeServerService = Mock(MorpheusComputeServerService)
         processService = Mock(MorpheusProcessService)
-        def cloudService = Mock(MorpheusCloudService)
+        asyncCloudService = Mock(MorpheusCloudService)
         def networkService = Mock(MorpheusNetworkService)
         workloadTypeService = Mock(MorpheusSynchronousWorkloadTypeService)
         storageVolumeService = Mock(MorpheusSynchronousStorageVolumeService)
+        resourcePermissionService = Mock(MorpheusSynchronousResourcePermissionService)
+        cloudService = Mock(MorpheusSynchronousCloudService)
+        asyncStorageVolumeService = Mock(MorpheusStorageVolumeService)
         virtualImageService = Mock(MorpheusSynchronousVirtualImageService)
         asyncVirtualImageService = Mock(MorpheusVirtualImageService)
 
         def morpheusServices = Mock(MorpheusServices) {
             getComputeServer() >> computeServerService
+            getCloud() >> cloudService
             getWorkloadType() >> workloadTypeService
             getStorageVolume() >> storageVolumeService
             getVirtualImage() >> virtualImageService
+            getResourcePermission() >> resourcePermissionService
         }
         def morpheusAsyncServices = Mock(MorpheusAsyncServices) {
-            getCloud() >> cloudService
+            getCloud() >> asyncCloudService
             getNetwork() >> networkService
             getComputeServer() >> asyncComputeServerService
-            getStorageVolume() >> storageVolumeService
+            getStorageVolume() >> asyncStorageVolumeService
             getVirtualImage() >> asyncVirtualImageService
         }
 
@@ -83,10 +100,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         morpheusContext.getAsync() >> morpheusAsyncServices
         morpheusContext.getServices() >> morpheusServices
 
-        // Create and inject mock API service
-//        mockApiService = Mock(ScvmmApiService)
-//        provisionProvider = new ScvmmProvisionProvider(plugin, morpheusContext)
-//        provisionProvider.apiService = mockApiService
 
         mockApiService = Mock(ScvmmApiService)
         provisionProvider = Spy(ScvmmProvisionProvider, constructorArgs: [plugin, morpheusContext])
@@ -639,11 +652,11 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
             ]
         }
 
-        mockApiService.resolveConfigDatastore(_, _) >> datastore
-        mockApiService.resolveControllerNode(_, _) >> node
-        mockApiService.resolveHostNode(_, _, _) >> node
-        mockApiService.generateDiskSpec(_, _, _, _, _) >> diskSpec
-        mockApiService.provisionServer(_, _, _, _) >> new ServiceResponse<Map>(success: true, data: provisionResponse)
+//        mockApiService.resolveConfigDatastore(_, _) >> datastore
+//        mockApiService.resolveControllerNode(_, _) >> node
+//        mockApiService.resolveHostNode(_, _, _) >> node
+//        mockApiService.generateDiskSpec(_, _, _, _, _) >> diskSpec
+//        mockApiService.provisionServer(_, _, _, _) >> new ServiceResponse<Map>(success: true, data: provisionResponse)
 
         when:
         def response = provisionProvider.runWorkload(workload, workloadRequest, opts)
@@ -651,11 +664,376 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         then:
         response.success
         response.data.success
-//        !response.data.installAgent
-//        response.data.noAgent
-//        response.data.externalId == "vm-12345"
-//        response.data.publicIp == "10.0.1.100"
-//        response.data.privateIp == "192.168.1.100"
+
     }
 
+    def "getProvisionTypeCode should return scvmm"() {
+        expect:
+        provisionProvider.getProvisionTypeCode() == "scvmm"
+    }
+
+    def "getCircularIcon should return an Icon object with provision-circular.svg path"() {
+        when:
+        def result = provisionProvider.getCircularIcon()
+
+        then:
+        result instanceof com.morpheusdata.model.Icon
+        result.path == "provision-circular.svg"
+        result.darkPath == "provision-circular-dark.svg"
+    }
+
+    def "getOptionTypes should return non-empty list"() {
+        when:
+        def result = provisionProvider.getOptionTypes()
+
+        then:
+        result != null
+        !result.isEmpty()
+        result.every { it instanceof OptionType }
+    }
+
+    def "getNodeOptionTypes should return non-empty list"() {
+        when:
+        def result = provisionProvider.getNodeOptionTypes()
+
+        then:
+        result != null
+        !result.isEmpty()
+        result.every { it instanceof OptionType }
+    }
+
+    def "getRootVolumeStorageTypes should return non-empty list"() {
+        given:
+        def mockStorageTypes = [new StorageVolumeType(code: 'standard')]
+        def mockedStorageVolTypeService =  Mock(MorpheusStorageVolumeTypeService)
+        asyncStorageVolumeService.getStorageVolumeType() >> mockedStorageVolTypeService
+        mockedStorageVolTypeService.list(_) >> Observable.fromIterable(mockStorageTypes)
+        //storageVolumeService.listStorageVolumeTypes() >> mockStorageTypes
+
+        when:
+        def result = provisionProvider.getRootVolumeStorageTypes()
+
+        then:
+        result != null
+        !result.isEmpty()
+        result == mockStorageTypes
+    }
+
+    def "getDataVolumeStorageTypes should return non-empty list"() {
+        given:
+        def mockStorageTypes = [new StorageVolumeType(code: 'standard')]
+        def mockedStorageVolTypeService =  Mock(MorpheusStorageVolumeTypeService)
+        asyncStorageVolumeService.getStorageVolumeType() >> mockedStorageVolTypeService
+        mockedStorageVolTypeService.list(_) >> Observable.fromIterable(mockStorageTypes)
+
+
+        when:
+        def result = provisionProvider.getDataVolumeStorageTypes()
+
+        then:
+        result != null
+        !result.isEmpty()
+        result == mockStorageTypes
+    }
+
+    def "getServicePlans should return non-empty list"() {
+        when:
+        def result = provisionProvider.getServicePlans()
+
+        then:
+        result != null
+        !result.isEmpty()
+    }
+
+    def "validateWorkload should return success response"() {
+        given:
+        def opts = [:]
+
+        when:
+        def response = provisionProvider.validateWorkload(opts)
+
+        then:
+        response.success
+    }
+
+    def "getCode should return scvmm"() {
+        expect:
+        provisionProvider.getCode() == "scvmm.provision"
+    }
+
+    def "getName should return 'SCVMM'"() {
+        expect:
+        provisionProvider.getName() == "SCVMM"
+    }
+
+    def "getMorpheus should return the morpheus context"() {
+        expect:
+        provisionProvider.getMorpheus() == morpheusContext
+    }
+
+    def "getPlugin should return the plugin"() {
+        expect:
+        provisionProvider.getPlugin() == plugin
+    }
+
+    @Unroll
+    def "#methodName should return #expectedValue"() {
+        when:
+        def result = provisionProvider."$methodName"()
+
+        then:
+        if (methodName == "getHostType") {
+            result.toString() == "vm" // Compare string representation for HostType
+        } else {
+            result == expectedValue
+        }
+
+        where:
+        methodName                   | expectedValue
+        "hasNetworks"                | true
+        "getMaxNetworks"             | 1
+        "canAddVolumes"              | true
+        "canCustomizeRootVolume"     | true
+        "canResizeRootVolume"        | true
+        "canCustomizeDataVolumes"    | true
+        "hasDatastores"              | true
+        "getHostType"                | "vm"
+        "serverType"                 | "vm"
+        "supportsCustomServicePlans" | true
+        "multiTenant"                | false
+        "aclEnabled"                 | false
+        "customSupported"            | true
+        "lvmSupported"               | true
+        "getNodeFormat"              | "vm"
+        "hasSecurityGroups"          | false
+        "hasNodeTypes"               | true
+        "getHostDiskMode"            | "lvm"
+        "hasComputeZonePools"        | true
+    }
+
+    def "getDeployTargetService should return vmDeployTargetService"() {
+        expect:
+        provisionProvider.getDeployTargetService() == "vmDeployTargetService"
+    }
+
+    def "createDefaultInstanceType should return false"() {
+        expect:
+        provisionProvider.createDefaultInstanceType() == false
+    }
+
+    @Unroll
+    def "validateHost should #scenario"() {
+        given:
+        def server = Mock(ComputeServer) {
+            getComputeServerType() >> Mock(ComputeServerType) {
+                isVmHypervisor() >> isVmHypervisor
+            }
+        }
+
+        when:
+        def response = provisionProvider.validateHost(server, opts)
+
+        then:
+        if (apiCallExpected) {
+            1 * mockApiService.validateServerConfig(expectedApiArgs) >> apiResponse
+        }
+        response.success == expectedSuccess
+        if (errorCheck) {
+            response.errors == validationErrors
+        }
+
+        where:
+        scenario                                    | isVmHypervisor | opts                                              | apiCallExpected | expectedApiArgs                                                         | apiResponse                                                         | expectedSuccess | errorCheck | validationErrors
+        "return success when server is a VM hypervisor" | true           | [:]                                               | false           | null                                                                   | null                                                                | true           | false      | null
+        "validate server config when not VM hypervisor"  | false          | [networkInterfaces:[[network:[id:123L]]], config:[scvmmCapabilityProfile:"Hyper-V", nodeCount:1]] | true            | [networkId:123L, scvmmCapabilityProfile:"Hyper-V", nodeCount:1]        | ServiceResponse.success()                                           | true           | false      | null
+        "handle network ID from interface field"         | false          | [networkInterface:[network:[id:123L]]]           | true            | [networkId:123L, scvmmCapabilityProfile:null, nodeCount:null]           | ServiceResponse.success()                                           | true           | false      | null
+        "handle network ID from config field"            | false          | [config:[networkInterface:[network:[id:123L]]]]  | true            | [networkId:123L, scvmmCapabilityProfile:null, nodeCount:null]           | ServiceResponse.success()                                           | true           | false      | null
+        "handle network ID from interfaces array"        | false          | [networkInterfaces:[[network:[id:123L]]]]        | true            | [networkId:123L, scvmmCapabilityProfile:null, nodeCount:null]           | ServiceResponse.success()                                           | true           | false      | null
+        "return error when validation fails"             | false          | [networkInterfaces:[[network:[id:123L]]]]        | true            | [networkId:123L, scvmmCapabilityProfile:null, nodeCount:null]           | new ServiceResponse(success:false, errors:[error:"Invalid configuration"]) | false          | true       | [error:"Invalid configuration"]
+        "handle exceptions gracefully"                   | false          | [networkInterfaces:[[network:[id:123L]]]]        | true            | [networkId:123L, scvmmCapabilityProfile:null, nodeCount:null]           | { throw new RuntimeException("Test exception") }                    | true           | false      | null
+    }
+
+    @Unroll
+    def "getVolumePathForDatastore should return #expectedPath for datastore #datastoreDescription"() {
+        given:
+
+        def datastore = datastoreInput ? new Datastore(id: 123L, name: "test-datastore") : null
+
+        // Mock the storage volume response
+        if (hasStorageVolume) {
+            def storageVolume = new StorageVolume(volumePath: expectedPath)
+            storageVolumeService.find({ DataQuery query ->
+                query.filters.any { it.name == 'datastore.id' && it.value == datastore?.id } &&
+                        query.filters.any { it.name == 'volumePath' && it.operator == '!=' && it.value == null }
+            }) >> {
+             return storageVolume
+            }
+        } else {
+            storageVolumeService.find(_) >> null
+        }
+
+        when:
+        def result = provisionProvider.getVolumePathForDatastore(datastore)
+
+        then:
+        result == expectedPath
+
+        where:
+        datastoreDescription     | datastoreInput | hasStorageVolume | expectedPath
+        "valid datastore"        | true           | true             | "\\\\server\\path\\to\\volume"
+        "datastore with no path" | true           | false            | null
+        "null datastore"         | false          | false            | null
+    }
+
+    @Unroll
+    def "testHostAndDatastore #hostAndDataScenario"() {
+        given:
+        // Setup cloud and account
+        def cloud = new Cloud(id: 1L, name: 'test-cloud', regionCode: hasCloudRegion ? 'region1' : null)
+        def account = new Account(id: 2L, name: 'test-account')
+
+        // Setup datastores
+        def datastore1 = new Datastore(id: 10L, name: 'datastore1', freeSpace: 100000000000L)
+        def datastore2 = new Datastore(id: 11L, name: 'datastore2', freeSpace: 200000000000L)
+        if (isSharedVolume) {
+            datastore1.zonePool = new ComputeZonePool(id: 5L, name: 'zone-pool-1')
+        }
+
+        // Convert datastore parameter string to actual datastore object
+        def datastoreObj = datastoreParam == 'datastore1' ? datastore1 :
+                (datastoreParam == 'datastore2' ? datastore2 : null)
+
+        // Setup computeServer/node
+        def node1 = new ComputeServer(
+                id: 20L,
+                name: 'node1',
+                enabled: true,
+                cloud: cloud,
+                computeServerType: new ComputeServerType(code: 'scvmmHypervisor'),
+                powerState: ComputeServer.PowerState.on,
+                capacityInfo: new ComputeCapacityInfo(maxMemory: 8589934592L, usedMemory: 2147483648L)
+        )
+        def node2 = new ComputeServer(
+                id: 21L,
+                name: 'node2',
+                enabled: true,
+                cloud: cloud,
+                computeServerType: new ComputeServerType(code: 'scvmmHypervisor'),
+                powerState: ComputeServer.PowerState.on,
+                capacityInfo: new ComputeCapacityInfo(maxMemory: 17179869184L, usedMemory: 4294967296L)
+        )
+
+        // Setup storage volumes for the nodes
+        def volume1 = new StorageVolume(id: 30L, datastore: datastore1)
+        def volume2 = new StorageVolume(id: 31L, datastore: datastore2)
+        node1.volumes = [volume1]
+        node2.volumes = [volume1, volume2]
+
+        resourcePermissionService.listAccessibleResources(_, _, _, _) >> [datastore1.id, datastore2.id]
+
+        // Mock cloud datastore service
+        def datastoreService = Mock(MorpheusSynchronousDatastoreService)
+        cloudService.getDatastore() >> datastoreService
+
+        // Mock getVolumePathForDatastore
+        if (mockVolumePathDatastore) {
+            def dsForPath = mockVolumePathDatastore == 'datastore1' ? datastore1 : datastore2
+            provisionProvider.getVolumePathForDatastore(dsForPath) >> "\\\\server\\path\\to\\volume"
+           // provisionProvider.getVolumePathForDatastore(mockVolumePathDatastore) >> "\\\\server\\path\\to\\volume"
+        }
+
+        // Configure mocks based on test scenario
+        if (hostIdParam) {
+            computeServerService.get(hostId) >> node1
+        }
+
+        if (scopedDatastoreIds) {
+            computeServerService.list({ DataQuery query ->
+                query.filters.any { it.name == 'hostId' && it.value == hostId }
+            }) >> [node1]
+        }
+
+        if (searchForDatastores) {
+
+            // Create proper list of datastore objects instead of using string
+            def datastoreList = []
+            if (datastoreResults == '[datastore1]') {
+                datastoreList = [datastore1]
+            }
+            datastoreService.list(_ as DataQuery) >> datastoreList
+        }
+
+        if (searchForNodes) {
+            computeServerService.list({ DataQuery query ->
+                // For datastore_provided_directly scenario, return node1 instead of node2
+                if (datastoreParam == 'datastore1') {
+                    return [node1]  // Return node1 with ID 20 to match the expected result
+                } else if (datastoreParam == 'datastore2') {
+                    return [node2]
+                }
+                return []
+            }) >> { DataQuery query ->
+                if (datastoreParam == 'datastore1') {
+                    return [node1]  // Return node1 with ID 20 to match the expected result
+                } else if (datastoreParam == 'datastore2') {
+                    return [node2]
+                }
+                return []
+            }
+        }
+
+        when:
+        def result = provisionProvider.getHostAndDatastore(cloud, account,
+                clusterIdParam ? clusterIdParam : null,
+                hostIdParam ? hostIdParam : null,
+                datastoreObj,
+                datastoreOption,
+                size,
+                siteId,
+                requiredMemory)
+
+        then:
+        result[0]?.id == expectedNodeId
+        result[1]?.id == expectedDatastoreId
+        result[2] == expectedVolumePath
+        result[3] == expectedHighlyAvailable
+
+        where:
+        hostAndDataScenario                | hasCloudRegion | clusterIdParam | hostIdParam | hostId | datastoreParam | datastoreOption | size          | siteId | requiredMemory | isSharedVolume | scopedDatastoreIds | searchForDatastores | datastoreResults | searchForNodes | mockVolumePathDatastore | expectedNodeId | expectedDatastoreId | expectedVolumePath            | expectedHighlyAvailable
+        "cloud_deployment_with_auto_ds"    | true           | null           | null        | null   | null           | 'auto'          | 10000000000L  | null   | 4294967296L    | false          | false              | false               | []               | false          | null                    | null           | null               | null                          | false
+        "host_specified_by_user"           | true           | null           | '20'        | 20L    | null           | 'manual'        | 10000000000L  | null   | 4294967296L    | false          | true               | true                | '[datastore1]'   | false          | 'datastore1'            | 20L            | 10L                | "\\\\server\\path\\to\\volume" | false
+        "datastore_provided_directly"      | true           | null           | null        | null   | 'datastore1'   | 'manual'        | 10000000000L  | null   | 4294967296L    | false          | false              | false               | []               | true           | 'datastore1'            | 20L            | 10L                | "\\\\server\\path\\to\\volume" | false
+        "cluster_with_shared_volume"       | true           | '5'            | null        | null   | 'datastore1'   | 'manual'        | 10000000000L  | null   | 4294967296L    | true           | false              | false               | []               | true           | 'datastore1'            | 20L            | 10L                | "\\\\server\\path\\to\\volume" | true
+        "non_cloud_with_node_and_ds"       | false          | null           | '20'        | 20L    | null           | 'manual'        | 10000000000L  | null   | 4294967296L    | false          | true               | true                | '[datastore1]'   | false          | 'datastore1'            | 20L            | 10L                | "\\\\server\\path\\to\\volume" | false
+        "ds_with_insufficient_mem_nodes"   | true           | null           | null        | null   | 'datastore1'   | 'manual'        | 10000000000L  | null   | 10737418240L   | false          | false              | false               | []               | true           | 'datastore1'            | null           | 10L                | "\\\\server\\path\\to\\volume" | false
+    }
+
+
+    @Unroll
+    def "test_getHostAndDatastore_exceptionCases"() {
+        given:
+        // Setup cloud and account
+        def cloud = new Cloud(id: 1L, name: 'test-cloud', regionCode: hasCloudRegion ? 'region1' : null)
+        def account = new Account(id: 2L, name: 'test-account')
+
+        // Setup datastores - empty for this test case
+        resourcePermissionService.listAccessibleResources(_, _, _, _) >> []
+
+        // Mock cloud datastore service
+        def datastoreService = Mock(MorpheusSynchronousDatastoreService)
+        cloudService.getDatastore() >> datastoreService
+        datastoreService.list(_ as DataQuery) >> []
+
+        when:
+        provisionProvider.getHostAndDatastore(cloud, account, clusterIdParam, hostIdParam,
+                datastoreParam, datastoreOption, size, siteId, requiredMemory)
+
+
+        then:
+        thrown(Exception)
+
+        where:
+        scenario                               | hasCloudRegion | clusterIdParam | hostIdParam | hostId | datastoreParam | datastoreOption | size          | siteId | requiredMemory
+        "non_cloud_without_node_and_datastore" | false          | null           | null        | null   | null           | 'manual'        | 10000000000L  | null   | 4294967296L
+    }
 }
