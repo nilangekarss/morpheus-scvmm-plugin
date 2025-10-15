@@ -872,6 +872,16 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 					if (!startResults.success) {
 						log.error "Failed to start the parent VM ${scvmmOpts.cloneVMId}: ${startResults.msg}"
 					}
+					Workload savedContainer = context.services.workload.find(new DataQuery().withFilter("id", scvmmOpts.cloneContainerId.toLong()))
+					if (savedContainer) {
+						savedContainer.userStatus = Workload.Status.running.toString()
+						savedContainer.status = Workload.Status.running
+						context.services.workload.save(savedContainer)
+					}
+					ComputeServer savedServer = context.services.computeServer.get(savedContainer.server?.id)
+					if (savedServer) {
+						context.async.computeServer.updatePowerState(savedServer.id, ComputeServer.PowerState.on)
+					}
 				}
 
 				// Always check for DVD/ISO cleanup on the parent VM

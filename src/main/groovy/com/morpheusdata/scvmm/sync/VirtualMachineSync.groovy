@@ -178,6 +178,11 @@ class VirtualMachineSync {
                                 save = true
                             }
                             if (masterItem.IpAddress && currentServer.externalIp != masterItem.IpAddress) {
+                                def netInterface = currentServer.interfaces.find {it.publicIpAddress == currentServer.externalIp}
+                                if (netInterface) {
+                                    netInterface.publicIpAddress = masterItem.IpAddress
+                                    context.async.computeServer.computeServerInterface.save([netInterface]).blockingGet()
+                                }
                                 if (currentServer.externalIp == currentServer.sshHost) {
                                     currentServer.sshHost = masterItem.IpAddress
                                 }
@@ -185,6 +190,11 @@ class VirtualMachineSync {
                                 save = true
                             }
                             if (masterItem.InternalIp && currentServer.internalIp != masterItem.InternalIp) {
+                                def netInterface = currentServer.interfaces.find {it.ipAddress == currentServer.internalIp}
+                                if (netInterface) {
+                                    netInterface.ipAddress = masterItem.InternalIp
+                                    context.async.computeServer.computeServerInterface.save([netInterface]).blockingGet()
+                                }
                                 if (currentServer.internalIp == currentServer.sshHost) {
                                     currentServer.sshHost = masterItem.InternalIp
                                 }
@@ -256,59 +266,11 @@ class VirtualMachineSync {
                                 currentServer.powerState = powerState
                                 if(currentServer.computeServerType?.guestVm) {
                                     if(currentServer.powerState == ComputeServer.PowerState.on) {
-                                        context.services.computeServer.list(new DataQuery().withFilter('id', currentServer.id)
-                                                .withFilter('status', '!=', 'provisioning'))?.each { compServer ->
-                                            compServer.status = 'running'
-                                            context.services.computeServer.save(compServer)
-                                        }
-                                        def instanceIds = context.services.computeServer.list(new DataQuery()
-                                                .withFilters(
-                                                        new DataFilter('status', '!=', 'failed'),
-                                                        new DataFilter('status', '!=', 'provisioning'),
-                                                        new DataFilter('status', 'notIn', [
-                                                                'pending',
-                                                                'pendingRemoval',
-                                                                'removing',
-                                                                'restarting',
-                                                                'finishing',
-                                                                'resizing'
-                                                        ]),
-                                                        new DataFilter('id', currentServer.id)
-                                                ))?.collect { it.id }?.unique()
-                                        if(instanceIds) {
-                                            context.services.computeServer.list(new DataQuery().withFilter('id', 'in', instanceIds))?.each { server ->
-                                                server.status = 'running'
-                                                context.services.computeServer.save(server)
-                                            }
-                                        }
+                                        updateWorkloadAndInstanceStatuses(currentServer, Workload.Status.running, 'running')
                                     } else {
-                                        def containerStatus = currentServer.powerState == ComputeServer.PowerState.paused ? 'suspended' : 'stopped'
+                                        def containerStatus = currentServer.powerState == ComputeServer.PowerState.paused ? Workload.Status.suspended : Workload.Status.stopped
                                         def instanceStatus = currentServer.powerState == ComputeServer.PowerState.paused ? 'suspended' : 'stopped'
-                                        context.services.computeServer.list(new DataQuery().withFilter('id', currentServer.id)
-                                                .withFilter('status', '!=', 'provisioning'))?.each { server ->
-                                            server.status = containerStatus
-                                            context.services.computeServer.save(server)
-                                        }
-                                        def instanceIds = context.services.computeServer.list(new DataQuery()
-                                                .withFilters(
-                                                        new DataFilter('status', '!=', 'failed'),
-                                                        new DataFilter('status', '!=', 'provisioning'),
-                                                        new DataFilter('status', 'notIn', [
-                                                                'pending',
-                                                                'pendingRemoval',
-                                                                'removing',
-                                                                'restarting',
-                                                                'finishing',
-                                                                'resizing'
-                                                        ]),
-                                                        new DataFilter('id', currentServer.id)
-                                                ))?.collect { it.id }?.unique()
-                                        if(instanceIds) {
-                                            context.services.computeServer.list(new DataQuery().withFilter('id', 'in', instanceIds))?.each { server ->
-                                                server.status = instanceStatus
-                                                context.services.computeServer.save(server)
-                                            }
-                                        }
+                                        updateWorkloadAndInstanceStatuses(currentServer, containerStatus, instanceStatus, ['stopping', 'starting'])
                                     }
                                 }
                                 save = true
@@ -343,6 +305,48 @@ class VirtualMachineSync {
             }
         } catch (Exception e) {
             log.error "Error in updating virtual machines: ${e.message}", e
+        }
+    }
+
+    private void updateWorkloadAndInstanceStatuses(ComputeServer server, Workload.Status workloadStatus,
+                                                   String instanceStatus, List<String> additionalExcludedStatuses = []) {
+        // Update workloads
+        context.services.workload.list(new DataQuery().withFilter('server.id', server.id)
+                .withFilter('status', '!=', Workload.Status.deploying))?.each { workload ->
+            workload.status = workloadStatus
+            if (workloadStatus == Workload.Status.running) {
+                workload.userStatus = workloadStatus.toString()
+            }
+            context.services.workload.save(workload)
+        }
+
+        // Build excluded statuses list
+        def excludedStatuses = [
+                'pendingReconfigureApproval',
+                'pendingDeleteApproval',
+                'removing',
+                'restarting',
+                'finishing',
+                'resizing'
+        ]
+        if (additionalExcludedStatuses) {
+            excludedStatuses.addAll(additionalExcludedStatuses)
+        }
+
+        // Update instances
+        def instanceIds = context.services.workload.list(new DataQuery()
+                .withFilters(
+                        new DataFilter('status', '!=', Workload.Status.failed),
+                        new DataFilter('status', '!=', Workload.Status.deploying),
+                        new DataFilter('instance.status', 'notIn', excludedStatuses),
+                        new DataFilter('server.id', server.id)
+                ))?.collect { it.instance.id }?.unique()
+
+        if(instanceIds) {
+            context.services.instance.list(new DataQuery().withFilter('id', 'in', instanceIds))?.each { instance ->
+                instance.status = instanceStatus
+                context.services.instance.save(instance)
+            }
         }
     }
 
