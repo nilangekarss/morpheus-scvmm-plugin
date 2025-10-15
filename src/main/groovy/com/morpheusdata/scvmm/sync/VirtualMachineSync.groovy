@@ -266,62 +266,11 @@ class VirtualMachineSync {
                                 currentServer.powerState = powerState
                                 if(currentServer.computeServerType?.guestVm) {
                                     if(currentServer.powerState == ComputeServer.PowerState.on) {
-                                        context.services.workload.list(new DataQuery().withFilter('server.id', currentServer.id)
-                                                .withFilter('status', '!=', Workload.Status.deploying))?.each { workload ->
-                                            workload.status = Workload.Status.running
-                                            workload.userStatus = Workload.Status.running.toString()
-                                            context.services.workload.save(workload)
-                                        }
-                                        def instanceIds = context.services.workload.list(new DataQuery()
-                                                .withFilters(
-                                                        new DataFilter('status', '!=', Workload.Status.failed),
-                                                        new DataFilter('status', '!=', Workload.Status.deploying),
-                                                        new DataFilter('instance.status', 'notIn', [
-                                                                'pendingReconfigureApproval',
-                                                                'pendingDeleteApproval',
-                                                                'removing',
-                                                                'restarting',
-                                                                'finishing',
-                                                                'resizing'
-                                                        ]),
-                                                        new DataFilter('server.id', currentServer.id)
-                                                ))?.collect { it.instance.id }?.unique()
-                                        if(instanceIds) {
-                                            context.services.instance.list(new DataQuery().withFilter('id', 'in', instanceIds))?.each { instance ->
-                                                instance.status = 'running'
-                                                context.services.instance.save(instance)
-                                            }
-                                        }
+                                        updateWorkloadAndInstanceStatuses(currentServer, Workload.Status.running, 'running')
                                     } else {
                                         def containerStatus = currentServer.powerState == ComputeServer.PowerState.paused ? Workload.Status.suspended : Workload.Status.stopped
                                         def instanceStatus = currentServer.powerState == ComputeServer.PowerState.paused ? 'suspended' : 'stopped'
-                                        context.services.workload.list(new DataQuery().withFilter('server.id', currentServer.id)
-                                                .withFilter('status', '!=', Workload.Status.deploying))?.each { workload ->
-                                            workload.status = containerStatus
-                                            context.services.workload.save(workload)
-                                        }
-                                        def instanceIds = context.services.workload.list(new DataQuery()
-                                                .withFilters(
-                                                        new DataFilter('status', '!=', Workload.Status.failed),
-                                                        new DataFilter('status', '!=', Workload.Status.deploying),
-                                                        new DataFilter('instance.status', 'notIn', [
-                                                                'pendingReconfigureApproval',
-                                                                'pendingDeleteApproval',
-                                                                'removing',
-                                                                'restarting',
-                                                                'finishing',
-                                                                'resizing',
-                                                                'stopping',
-                                                                'starting'
-                                                        ]),
-                                                        new DataFilter('server.id', currentServer.id)
-                                                ))?.collect { it.instance.id }?.unique()
-                                        if(instanceIds) {
-                                            context.services.instance.list(new DataQuery().withFilter('id', 'in', instanceIds))?.each { instance ->
-                                                instance.status = instanceStatus
-                                                context.services.instance.save(instance)
-                                            }
-                                        }
+                                        updateWorkloadAndInstanceStatuses(currentServer, containerStatus, instanceStatus, ['stopping', 'starting'])
                                     }
                                 }
                                 save = true
@@ -356,6 +305,48 @@ class VirtualMachineSync {
             }
         } catch (Exception e) {
             log.error "Error in updating virtual machines: ${e.message}", e
+        }
+    }
+
+    private void updateWorkloadAndInstanceStatuses(ComputeServer server, Workload.Status workloadStatus,
+                                                   String instanceStatus, List<String> additionalExcludedStatuses = []) {
+        // Update workloads
+        context.services.workload.list(new DataQuery().withFilter('server.id', server.id)
+                .withFilter('status', '!=', Workload.Status.deploying))?.each { workload ->
+            workload.status = workloadStatus
+            if (workloadStatus == Workload.Status.running) {
+                workload.userStatus = workloadStatus.toString()
+            }
+            context.services.workload.save(workload)
+        }
+
+        // Build excluded statuses list
+        def excludedStatuses = [
+                'pendingReconfigureApproval',
+                'pendingDeleteApproval',
+                'removing',
+                'restarting',
+                'finishing',
+                'resizing'
+        ]
+        if (additionalExcludedStatuses) {
+            excludedStatuses.addAll(additionalExcludedStatuses)
+        }
+
+        // Update instances
+        def instanceIds = context.services.workload.list(new DataQuery()
+                .withFilters(
+                        new DataFilter('status', '!=', Workload.Status.failed),
+                        new DataFilter('status', '!=', Workload.Status.deploying),
+                        new DataFilter('instance.status', 'notIn', excludedStatuses),
+                        new DataFilter('server.id', server.id)
+                ))?.collect { it.instance.id }?.unique()
+
+        if(instanceIds) {
+            context.services.instance.list(new DataQuery().withFilter('id', 'in', instanceIds))?.each { instance ->
+                instance.status = instanceStatus
+                context.services.instance.save(instance)
+            }
         }
     }
 
