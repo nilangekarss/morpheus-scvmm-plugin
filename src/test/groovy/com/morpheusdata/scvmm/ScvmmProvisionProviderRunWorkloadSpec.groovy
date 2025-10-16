@@ -2,6 +2,7 @@ package com.morpheusdata.scvmm
 
 import com.bertramlabs.plugins.karman.CloudFile
 import com.morpheusdata.core.MorpheusAsyncServices
+import com.morpheusdata.core.MorpheusComputeTypeSetService
 import com.morpheusdata.core.MorpheusContext
 import com.morpheusdata.core.MorpheusProcessService
 import com.morpheusdata.core.MorpheusServices
@@ -10,6 +11,7 @@ import com.morpheusdata.core.MorpheusVirtualImageService
 import com.morpheusdata.core.MorpheusComputeServerService
 import com.morpheusdata.core.MorpheusStorageVolumeService
 import com.morpheusdata.core.cloud.MorpheusCloudService
+import com.morpheusdata.core.library.MorpheusWorkloadTypeService
 import com.morpheusdata.core.synchronous.MorpheusSynchronousVirtualImageService
 import com.morpheusdata.core.synchronous.cloud.MorpheusSynchronousDatastoreService
 import com.morpheusdata.core.synchronous.cloud.MorpheusSynchronousCloudService
@@ -19,7 +21,9 @@ import com.morpheusdata.core.synchronous.MorpheusSynchronousResourcePermissionSe
 import com.morpheusdata.core.data.DataQuery
 import com.morpheusdata.core.network.MorpheusNetworkService
 import com.morpheusdata.core.synchronous.library.MorpheusSynchronousWorkloadTypeService
+import com.morpheusdata.core.util.ComputeUtility
 import com.morpheusdata.model.*
+import com.morpheusdata.model.provisioning.HostRequest
 import com.morpheusdata.model.provisioning.UserConfiguration
 import com.morpheusdata.model.provisioning.WorkloadRequest
 import com.morpheusdata.model.ComputeServerInterface
@@ -32,9 +36,12 @@ import com.morpheusdata.model.Account
 import com.morpheusdata.model.VirtualImage
 import com.morpheusdata.model.OsType
 import com.morpheusdata.model.VirtualImageLocation
+import com.morpheusdata.response.InitializeHypervisorResponse
+import com.morpheusdata.response.PrepareWorkloadResponse
 import com.morpheusdata.response.ProvisionResponse
 import com.morpheusdata.response.ServiceResponse
 import groovy.json.JsonOutput
+import io.reactivex.rxjava3.core.Maybe
 import io.reactivex.rxjava3.core.Observable
 import io.reactivex.rxjava3.core.Single
 import org.junit.jupiter.api.BeforeEach
@@ -48,8 +55,10 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     private ScvmmApiService mockApiService
     private MorpheusSynchronousComputeServerService computeServerService
     private MorpheusComputeServerService asyncComputeServerService
+    private MorpheusComputeTypeSetService asyncComputeTypeSetService
     private MorpheusProcessService processService
     private MorpheusSynchronousWorkloadTypeService workloadTypeService
+    private MorpheusWorkloadTypeService asyncWorkloadTypeService
     private MorpheusCloudService asyncCloudService
     private MorpheusSynchronousCloudService cloudService
     private MorpheusSynchronousStorageVolumeService storageVolumeService
@@ -68,10 +77,12 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         // Mock services
         computeServerService = Mock(MorpheusSynchronousComputeServerService)
         asyncComputeServerService = Mock(MorpheusComputeServerService)
+        asyncComputeTypeSetService = Mock(MorpheusComputeTypeSetService)
         processService = Mock(MorpheusProcessService)
         asyncCloudService = Mock(MorpheusCloudService)
         def networkService = Mock(MorpheusNetworkService)
         workloadTypeService = Mock(MorpheusSynchronousWorkloadTypeService)
+        asyncWorkloadTypeService = Mock(MorpheusWorkloadTypeService)
         storageVolumeService = Mock(MorpheusSynchronousStorageVolumeService)
         resourcePermissionService = Mock(MorpheusSynchronousResourcePermissionService)
         cloudService = Mock(MorpheusSynchronousCloudService)
@@ -93,6 +104,8 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
             getComputeServer() >> asyncComputeServerService
             getStorageVolume() >> asyncStorageVolumeService
             getVirtualImage() >> asyncVirtualImageService
+            getComputeTypeSet() >> asyncComputeTypeSetService
+            getWorkloadType() >> asyncWorkloadTypeService
         }
 
         // Configure context mocks
@@ -652,11 +665,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
             ]
         }
 
-//        mockApiService.resolveConfigDatastore(_, _) >> datastore
-//        mockApiService.resolveControllerNode(_, _) >> node
-//        mockApiService.resolveHostNode(_, _, _) >> node
-//        mockApiService.generateDiskSpec(_, _, _, _, _) >> diskSpec
-//        mockApiService.provisionServer(_, _, _, _) >> new ServiceResponse<Map>(success: true, data: provisionResponse)
 
         when:
         def response = provisionProvider.runWorkload(workload, workloadRequest, opts)
@@ -1035,5 +1043,399 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         where:
         scenario                               | hasCloudRegion | clusterIdParam | hostIdParam | hostId | datastoreParam | datastoreOption | size          | siteId | requiredMemory
         "non_cloud_without_node_and_datastore" | false          | null           | null        | null   | null           | 'manual'        | 10000000000L  | null   | 4294967296L
+    }
+
+
+    def "test prepareWorkload returns successful response with workload"() {
+        given:
+        def provider = new ScvmmProvisionProvider(null, null)
+        def workload = Mock(Workload) {
+            getName() >> "test-workload"
+            getServer() >> Mock(ComputeServer) {
+                getName() >> "test-server"
+            }
+        }
+        def workloadRequest = Mock(WorkloadRequest)
+        def opts = [key: "value"]
+
+        when:
+        def response = provider.prepareWorkload(workload, workloadRequest, opts)
+
+        then:
+        response.success
+        response.msg == ''
+        response.errors == null
+        response.data instanceof PrepareWorkloadResponse
+        response.data.workload == workload
+    }
+
+    def "test initializeHypervisor with shared controller"() {
+        given:
+        ComputeServer server = new ComputeServer(id: 1)
+        Cloud cloud = new Cloud(id: 1, code: 'scvmm', configMap: [sharedController: "123"])
+
+        when:
+        def response = provisionProvider.initializeHypervisor(cloud, server)
+
+        then:
+        0 * mockApiService._
+        response.success
+        response.data instanceof InitializeHypervisorResponse
+    }
+
+    def "test initializeHypervisor with successful server info retrieval"() {
+        given:
+        ComputeServer server = new ComputeServer(id: 1)
+        Cloud cloud = new Cloud(id: 1, code: 'scvmm', configMap: [:])
+        Map zoneOpts = [hostName: 'scvmmserver', username: 'admin', password: 'password']
+        Map controllerOpts = [controllerHostname: 'scvmmserver']
+        Map serverInfo = [
+                success: true,
+                hostname: 'scvmmserver.local',
+                disks: 500 * ComputeUtility.ONE_GIGABYTE,
+                memory: 16 * ComputeUtility.ONE_GIGABYTE,
+                osName: 'Microsoft Windows Server 2019 Datacenter'
+        ]
+
+        when:
+        def response = provisionProvider.initializeHypervisor(cloud, server)
+
+        then:
+        1 * mockApiService.getScvmmZoneOpts(morpheusContext, cloud) >> zoneOpts
+        1 * mockApiService.getScvmmControllerOpts(cloud, server) >> controllerOpts
+        1 * mockApiService.getScvmmServerInfo(zoneOpts + controllerOpts) >> serverInfo
+        1 * mockApiService.extractWindowsServerVersion(serverInfo.osName) >> 'windows.server.2019'
+        1 * mockApiService.prepareNode(zoneOpts + controllerOpts)
+        response.success
+        response.data.commType.toString() == 'winrm'
+        response.data.maxMemory == serverInfo.memory
+        response.data.maxStorage == serverInfo.disks
+        response.data.maxCores == 1
+        response.data.serverOs.code == 'windows.server.2019'
+        server.hostname == 'scvmmserver.local'
+    }
+
+    def "test initializeHypervisor handles exception"() {
+        given:
+        ComputeServer server = new ComputeServer(id: 1)
+        Cloud cloud = new Cloud(id: 1, code: 'scvmm', configMap: [:])
+
+        when:
+        def response = provisionProvider.initializeHypervisor(cloud, server)
+
+        then:
+        1 * mockApiService.getScvmmZoneOpts(morpheusContext, cloud) >> { throw new RuntimeException("API error") }
+        0 * mockApiService.prepareNode(_)
+        response.data instanceof InitializeHypervisorResponse
+        !response.success
+    }
+
+    @Unroll
+    def "waitForHost returns success when server is ready and finalize succeeds"() {
+        given:
+        Cloud cloud = new Cloud(id: 1L, code: 'scvmm-cloud')
+
+        ComputeServer server = new ComputeServer(
+                id: 100L,
+                cloud: cloud,
+                externalId: 'vm-123',
+                name: 'test-server',
+                config: '{"hostId":"200"}'
+        )
+
+        ComputeServer controllerServer = new ComputeServer(
+                id: 200L,
+                cloud: cloud,
+                computeServerType: new ComputeServerType(code: 'scvmmController')
+        )
+
+        def serverDetail = [
+                success: true,
+                server: [ipAddress: '10.0.0.100']
+        ]
+
+        morpheusContext.services.computeServer.get(200L) >> {
+            return controllerServer
+        }
+        mockApiService.getScvmmCloudOpts(morpheusContext, cloud, controllerServer) >> {
+            return [cloud: cloud.id]
+        }
+        mockApiService.getScvmmControllerOpts(cloud, controllerServer) >> {
+            return [controller: controllerServer.id]
+        }
+        provisionProvider.getScvmmServerOpts(server) >> {
+            return [server: server.id, vmId: 'vm-123']
+        }
+        mockApiService.checkServerReady(_, 'vm-123') >> {
+            return serverDetail
+        }
+
+        // Mock finalizeHost call - this is a method in the same class, we need to spy it
+        provisionProvider.metaClass.finalizeHost = { ComputeServer srv ->
+            return new ServiceResponse(success: true)
+        }
+
+        asyncComputeServerService.save(_) >> { ComputeServer serverObj ->
+            return Single.just(serverObj)
+        }
+        provisionProvider.applyComputeServerNetworkIp(_, _, _, _, _) >> {
+            return new ComputeServerInterface(
+                    id: 1L,
+                    ipAddress: '10.0.0.5',
+                    name: 'eth0',
+                    primaryInterface: true,
+                    publicIpAddress: '10.0.0.5',
+                    macAddress: '00:11:22:33:44:55',
+                    displayOrder: 1,
+                    addresses: [new NetAddress(type: NetAddress.AddressType.IPV4, address: '10.0.0.5')]
+            )
+        }
+
+        when:
+        def response = provisionProvider.waitForHost(server)
+
+        then:
+
+        response.success == true
+        response.data.privateIp == '10.0.0.100'
+        response.data.publicIp == '10.0.0.100'
+        response.data.externalId == 'vm-123'
+        response.data.success == true
+    }
+
+    @Unroll
+    def "finalizeHost successfully processes server when checkServerReady succeeds"() {
+        given:
+        Cloud cloud = new Cloud(id: 1L, code: 'scvmm-cloud')
+
+        ComputeServer server = new ComputeServer(
+                id: 100L,
+                cloud: cloud,
+                externalId: 'vm-123',
+                name: 'test-server',
+                config: '{"hostId":"200"}'
+        )
+
+        ComputeServer controllerNode = new ComputeServer(
+                id: 200L,
+                cloud: cloud,
+                computeServerType: new ComputeServerType(code: 'scvmmController')
+        )
+
+        def serverDetail = [
+                success: true,
+                server: [ipAddress: '10.0.0.100']
+        ]
+
+        // Mock necessary service calls
+        computeServerService.get(200L) >> controllerNode
+
+        mockApiService.getScvmmCloudOpts(morpheusContext, server.cloud, controllerNode) >> [cloudId: 1L]
+        mockApiService.getScvmmControllerOpts(server.cloud, controllerNode) >> [controllerId: 200L]
+
+        provisionProvider.getScvmmServerOpts(server) >> [vmId: 'vm-123']
+
+        mockApiService.checkServerReady(_, 'vm-123') >> serverDetail
+
+        // Mock the network IP application
+        provisionProvider.applyComputeServerNetworkIp(_,_,_,_,_) >> {
+            return new ComputeServerInterface(
+                    id: 1L,
+                    ipAddress: '192.168.1.100',
+                    macAddress: '00:11:22:33:44:55'
+            )
+        }
+
+        // Mock the server save operation
+        def serverSingle = Single.just(server)
+        asyncComputeServerService.save(server) >> serverSingle
+
+        when:
+        def response = provisionProvider.finalizeHost(server)
+
+        then:
+        response.success == true
+        1 * asyncComputeServerService.save(server) >> serverSingle
+    }
+
+    @Unroll
+    def "prepareHost sets source image when server has a typeSet with a workloadType that has a virtualImage"() {
+        given:
+        def server = new ComputeServer(id: 1L, typeSet: new ComputeTypeSet(id: 123L))
+        def hostRequest = new HostRequest()
+        def opts = [:]
+        def computeTypeSet1 = new ComputeTypeSet()
+        def workloadType = new WorkloadType(id: 456L, virtualImage: new VirtualImage(id: 789L))
+        def virtualImage = new VirtualImage(id: 789L)
+
+        computeTypeSet1.workloadType = workloadType
+        computeTypeSet1.id  = 123L
+
+        asyncComputeTypeSetService.get(_) >> {
+            return Maybe.just(computeTypeSet1)
+        }
+        asyncWorkloadTypeService.get(_) >> Maybe.just(workloadType)
+
+        provisionProvider.saveAndGet(_) >> { ComputeServer srv ->
+            // Just return the server without making changes
+            return srv
+        }
+
+        when:
+        def response = provisionProvider.prepareHost(server, hostRequest, opts)
+
+        then:
+
+        response.success
+        response.data.computeServer == server
+        server.sourceImage.id == 789L
+    }
+
+    def "stopServer handles different scenarios"() {
+        given:
+        // Create a test server with optional externalId
+        def server = new ComputeServer(
+                id: 100L,
+                name: "test-server",
+                externalId: externalId,
+                cloud: new Cloud(id: 1L)
+        )
+
+        // Setup mocks based on scenario
+        if (externalId) {
+            def serverOpts = [
+                    externalId: externalId,
+                    server: server,
+                    cloud: server.cloud
+            ]
+            provisionProvider.getAllScvmmServerOpts(server) >> serverOpts
+            if (apiThrowsException) {
+                mockApiService.stopServer(serverOpts, externalId) >> { throw new RuntimeException(errorMessage) }
+            } else {
+                mockApiService.stopServer(serverOpts, externalId) >> [success: apiSuccess]
+            }
+        }
+
+        when:
+        def response = provisionProvider.stopServer(server)
+
+        then:
+        response.success == expectedSuccess
+        response.msg == expectedMessage
+        if (!externalId) {
+            0 * mockApiService.stopServer(_, _) // Verify API was not called when no externalId
+        }
+
+        where:
+        scenario           | externalId | apiSuccess | apiThrowsException | errorMessage           | expectedSuccess | expectedMessage
+        "successful stop"  | "vm-123"   | true       | false              | null                   | true           | null
+        "no externalId"    | null       | false      | false              | null                   | false          | "vm not found"
+        "api exception"    | "vm-123"   | false      | true               | "API connection error" | false          | "API connection error"
+    }
+
+    def "startServer handles different scenarios"() {
+        given:
+        // Create a test server with optional externalId
+        def server = new ComputeServer(
+                id: 100L,
+                name: "test-server",
+                externalId: externalId,
+                cloud: new Cloud(id: 1L)
+        )
+
+        // Setup mocks based on scenario
+        if (externalId) {
+            def serverOpts = [
+                    externalId: externalId,
+                    server: server,
+                    cloud: server.cloud
+            ]
+            provisionProvider.getAllScvmmServerOpts(server) >> serverOpts
+            if (apiThrowsException) {
+                mockApiService.startServer(serverOpts, externalId) >> { throw new RuntimeException(errorMessage) }
+            } else {
+                mockApiService.startServer(serverOpts, externalId) >> [success: apiSuccess]
+            }
+        }
+
+        when:
+        def response = provisionProvider.startServer(server)
+
+        then:
+        response.success == expectedSuccess
+        response.msg == expectedMessage
+        if (!externalId) {
+            0 * mockApiService.startServer(_, _) // Verify API was not called when no externalId
+        }
+
+        where:
+        scenario           | externalId | apiSuccess | apiThrowsException | errorMessage           | expectedSuccess | expectedMessage
+        "successful start" | "vm-123"   | true       | false              | null                   | true           | null
+        "failed start"     | "vm-123"   | false      | false              | null                   | false          | null
+        "no externalId"    | null       | false      | false              | null                   | false          | "externalId not found"
+        "api exception"    | "vm-123"   | false      | true               | "API connection error" | false          | null
+    }
+
+    def "getServerDetails returns response with server IP addresses"() {
+        given:
+        // Create test servers with different IP configurations
+        def serverWithBothIps = new ComputeServer(
+                id: 100L,
+                name: "server-both-ips",
+                internalIp: "192.168.1.100",
+                externalIp: "10.0.1.100"
+        )
+
+        def serverWithOnlyInternalIp = new ComputeServer(
+                id: 101L,
+                name: "server-internal-only",
+                internalIp: "192.168.1.101",
+                externalIp: null
+        )
+
+        def serverWithOnlyExternalIp = new ComputeServer(
+                id: 102L,
+                name: "server-external-only",
+                internalIp: null,
+                externalIp: "10.0.1.102"
+        )
+
+        def serverWithNoIps = new ComputeServer(
+                id: 103L,
+                name: "server-no-ips",
+                internalIp: null,
+                externalIp: null
+        )
+
+        when:
+        def responseBothIps = provisionProvider.getServerDetails(serverWithBothIps)
+        def responseInternalOnly = provisionProvider.getServerDetails(serverWithOnlyInternalIp)
+        def responseExternalOnly = provisionProvider.getServerDetails(serverWithOnlyExternalIp)
+        def responseNoIps = provisionProvider.getServerDetails(serverWithNoIps)
+
+        then:
+        // Test server with both IPs
+        responseBothIps.success == true
+        responseBothIps.data.success == true
+        responseBothIps.data.privateIp == "192.168.1.100"
+        responseBothIps.data.publicIp == "10.0.1.100"
+
+        // Test server with only internal IP
+        responseInternalOnly.success == true
+        responseInternalOnly.data.success == true
+        responseInternalOnly.data.privateIp == "192.168.1.101"
+        responseInternalOnly.data.publicIp == null
+
+        // Test server with only external IP
+        responseExternalOnly.success == true
+        responseExternalOnly.data.success == true
+        responseExternalOnly.data.privateIp == null
+        responseExternalOnly.data.publicIp == "10.0.1.102"
+
+        // Test server with no IPs
+        responseNoIps.success == true
+        responseNoIps.data.success == true
+        responseNoIps.data.privateIp == null
+        responseNoIps.data.publicIp == null
     }
 }

@@ -53,7 +53,9 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     @Override
     ServiceResponse<InitializeHypervisorResponse> initializeHypervisor(Cloud cloud, ComputeServer server) {
         log.debug("initializeHypervisor: cloud: {}, server: {}", cloud, server)
-        ServiceResponse<InitializeHypervisorResponse> rtn = new ServiceResponse<>(new InitializeHypervisorResponse())
+		InitializeHypervisorResponse initializeHypervisorResponse = new InitializeHypervisorResponse()
+        //ServiceResponse<InitializeHypervisorResponse> rtn = new ServiceResponse<>(new InitializeHypervisorResponse())
+		ServiceResponse<InitializeHypervisorResponse> rtn = ServiceResponse.prepare(initializeHypervisorResponse)
         try {
             def sharedController = cloud.getConfigProperty('sharedController')
             if (sharedController) {
@@ -104,12 +106,11 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     @Override
     ServiceResponse<PrepareWorkloadResponse> prepareWorkload(Workload workload, WorkloadRequest workloadRequest, Map opts) {
         log.debug("prepare workload scvmm")
-        ServiceResponse<PrepareWorkloadResponse> resp = new ServiceResponse<PrepareWorkloadResponse>(
-                true, // successful
-                '', // no message
-                null, // no errors
-                new PrepareWorkloadResponse(workload: workload) // adding the workload to the response for convenience
-        )
+		PrepareWorkloadResponse prepareResponse = new PrepareWorkloadResponse(workload: workload)
+		ServiceResponse<PrepareWorkloadResponse> resp = ServiceResponse.prepare(prepareResponse)
+		resp.success = true
+		resp.msg = ''
+		resp.errors = null
         return resp
     }
 
@@ -1560,7 +1561,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             Long computeTypeSetId = server.typeSet?.id
             if (computeTypeSetId) {
                 ComputeTypeSet computeTypeSet = morpheus.async.computeTypeSet.get(computeTypeSetId).blockingGet()
-                if (computeTypeSet.workloadType) {
+                if (computeTypeSet?.workloadType) {
                     WorkloadType workloadType = morpheus.async.workloadType.get(computeTypeSet.workloadType.id).blockingGet()
                     virtualImage = workloadType.virtualImage
                 }
