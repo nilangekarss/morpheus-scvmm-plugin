@@ -1,6 +1,7 @@
 package com.morpheusdata.scvmm
 
 import com.bertramlabs.plugins.karman.CloudFile
+import com.morpheusdata.core.BulkSaveResult
 import com.morpheusdata.core.MorpheusAsyncServices
 import com.morpheusdata.core.MorpheusComputeTypeSetService
 import com.morpheusdata.core.MorpheusContext
@@ -13,6 +14,7 @@ import com.morpheusdata.core.MorpheusStorageVolumeService
 import com.morpheusdata.core.cloud.MorpheusCloudService
 import com.morpheusdata.core.library.MorpheusWorkloadTypeService
 import com.morpheusdata.core.synchronous.MorpheusSynchronousVirtualImageService
+import com.morpheusdata.core.synchronous.network.MorpheusSynchronousNetworkService
 import com.morpheusdata.core.synchronous.cloud.MorpheusSynchronousDatastoreService
 import com.morpheusdata.core.synchronous.cloud.MorpheusSynchronousCloudService
 import com.morpheusdata.core.synchronous.compute.MorpheusSynchronousComputeServerService
@@ -61,6 +63,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     private MorpheusWorkloadTypeService asyncWorkloadTypeService
     private MorpheusCloudService asyncCloudService
     private MorpheusSynchronousCloudService cloudService
+    private MorpheusSynchronousNetworkService networkService
     private MorpheusSynchronousStorageVolumeService storageVolumeService
     private MorpheusSynchronousResourcePermissionService resourcePermissionService
     private MorpheusStorageVolumeService asyncStorageVolumeService
@@ -80,12 +83,13 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         asyncComputeTypeSetService = Mock(MorpheusComputeTypeSetService)
         processService = Mock(MorpheusProcessService)
         asyncCloudService = Mock(MorpheusCloudService)
-        def networkService = Mock(MorpheusNetworkService)
+        def asyncNetworkService = Mock(MorpheusNetworkService)
         workloadTypeService = Mock(MorpheusSynchronousWorkloadTypeService)
         asyncWorkloadTypeService = Mock(MorpheusWorkloadTypeService)
         storageVolumeService = Mock(MorpheusSynchronousStorageVolumeService)
         resourcePermissionService = Mock(MorpheusSynchronousResourcePermissionService)
         cloudService = Mock(MorpheusSynchronousCloudService)
+        networkService = Mock(MorpheusSynchronousNetworkService)
         asyncStorageVolumeService = Mock(MorpheusStorageVolumeService)
         virtualImageService = Mock(MorpheusSynchronousVirtualImageService)
         asyncVirtualImageService = Mock(MorpheusVirtualImageService)
@@ -100,7 +104,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         }
         def morpheusAsyncServices = Mock(MorpheusAsyncServices) {
             getCloud() >> asyncCloudService
-            getNetwork() >> networkService
+            getNetwork() >> asyncNetworkService
             getComputeServer() >> asyncComputeServerService
             getStorageVolume() >> asyncStorageVolumeService
             getVirtualImage() >> asyncVirtualImageService
@@ -1437,5 +1441,1052 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         responseNoIps.data.success == true
         responseNoIps.data.privateIp == null
         responseNoIps.data.publicIp == null
+    }
+
+    def "finalizeWorkload returns success response"() {
+        given:
+        def workload = new Workload(
+                id: 100L,
+                internalName: "test-workload",
+                server: new ComputeServer(id: 200L, name: "test-server")
+        )
+
+        when:
+        def response = provisionProvider.finalizeWorkload(workload)
+
+        then:
+        response.success == true
+    }
+
+    def "createWorkloadResources returns success response"() {
+        given:
+        def workload = new Workload(
+                id: 100L,
+                internalName: "test-workload",
+                server: new ComputeServer(id: 200L, name: "test-server")
+        )
+        def opts = [key: "value"]
+
+        when:
+        def response = provisionProvider.createWorkloadResources(workload, opts)
+
+        then:
+        response.success == true
+    }
+
+    def "restartWorkload returns success response"() {
+        given:
+        def workload = new Workload(
+                id: 100L,
+                internalName: "test-workload",
+                server: new ComputeServer(id: 200L, name: "test-server")
+        )
+
+        when:
+        def response = provisionProvider.restartWorkload(workload)
+
+        then:
+        response.success == true
+    }
+
+    def "stopWorkload handles different scenarios correctly"() {
+        given:
+        // Create a test workload with appropriate server details
+        def server = new ComputeServer(
+                id: 100L,
+                name: "test-server",
+                externalId: externalId,
+                cloud: new Cloud(id: 1L)
+        )
+
+        def workload = new Workload(
+                id: 200L,
+                internalName: "test-workload",
+                server: server
+        )
+
+        // Setup mocks based on scenario
+        if (externalId) {
+            def workloadOpts = [
+                    vmId: externalId,
+                    server: server,
+                    cloud: server.cloud
+            ]
+            provisionProvider.getAllScvmmOpts(workload) >> workloadOpts
+            if (apiThrowsException) {
+                mockApiService.stopServer(workloadOpts, externalId) >> { throw new RuntimeException(errorMessage) }
+            } else {
+                mockApiService.stopServer(workloadOpts, externalId) >> [success: apiSuccess]
+            }
+        }
+
+        when:
+        def response = provisionProvider.stopWorkload(workload)
+
+        then:
+        response.success == expectedSuccess
+        response.msg == expectedMessage
+        if (!externalId) {
+            0 * mockApiService.stopServer(_, _) // Verify API was not called when no externalId
+        }
+
+        where:
+        scenario           | externalId | apiSuccess | apiThrowsException | errorMessage           | expectedSuccess | expectedMessage
+        "successful stop"  | "vm-123"   | true       | false              | null                   | true           | null
+        "failed stop"      | "vm-123"   | false      | false              | null                   | false          | null
+        "no externalId"    | null       | false      | false              | null                   | false          | "vm not found"
+        "api exception"    | "vm-123"   | false      | true               | "API connection error" | false          | "API connection error"
+    }
+
+    @Unroll
+    def "startWorkload handles different scenarios correctly"() {
+        given:
+        // Create a test workload with appropriate server details
+        def server = new ComputeServer(
+                id: 100L,
+                name: "test-server",
+                externalId: externalId,
+                cloud: new Cloud(id: 1L)
+        )
+
+        def workload = new Workload(
+                id: 200L,
+                internalName: "test-workload",
+                server: server
+        )
+
+        // Setup mocks based on scenario
+        if (externalId) {
+            def workloadOpts = [
+                    vmId: externalId,
+                    server: server,
+                    cloud: server.cloud
+            ]
+            provisionProvider.getAllScvmmOpts(workload) >> workloadOpts
+            if (apiThrowsException) {
+                mockApiService.startServer(workloadOpts, externalId) >> { throw new RuntimeException(errorMessage) }
+            } else {
+                mockApiService.startServer(workloadOpts, externalId) >> [success: apiSuccess]
+            }
+        }
+
+        when:
+        def response = provisionProvider.startWorkload(workload)
+
+        then:
+        response.success == expectedSuccess
+        response.msg == expectedMessage
+        if (!externalId) {
+            0 * mockApiService.startServer(_, _) // Verify API was not called when no externalId
+        }
+
+        where:
+        scenario           | externalId | apiSuccess | apiThrowsException | errorMessage           | expectedSuccess | expectedMessage
+        "successful start" | "vm-123"   | true       | false              | null                   | true           | null
+        "failed start"     | "vm-123"   | false      | false              | null                   | false          | null
+        "no externalId"    | null       | false      | false              | null                   | false          | "vm not found"
+        "api exception"    | "vm-123"   | false      | true               | "API connection error" | false          | "API connection error"
+    }
+
+    @Unroll
+    def "removeWorkload handles different scenarios correctly"() {
+        given:
+        // Create a test workload with appropriate server details
+        def server = new ComputeServer(
+                id: 100L,
+                name: "test-server",
+                externalId: externalId,
+                cloud: new Cloud(id: 1L)
+        )
+
+        def workload = new Workload(
+                id: 200L,
+                internalName: "test-workload",
+                server: server
+        )
+
+        // Setup mocks based on scenario
+        if (externalId) {
+            def workloadOpts = [
+                    externalId: externalId,
+                    server: server,
+                    cloud: server.cloud
+            ]
+            provisionProvider.getAllScvmmOpts(workload) >> workloadOpts
+            if (apiThrowsException) {
+                mockApiService.deleteServer(workloadOpts, externalId) >> { throw new RuntimeException(errorMessage) }
+            } else {
+                mockApiService.deleteServer(workloadOpts, externalId) >> [success: apiSuccess]
+            }
+        }
+
+        when:
+        def response = provisionProvider.removeWorkload(workload, [:])
+
+        then:
+        response.success == expectedSuccess
+        response.msg == expectedMessage
+        if (!externalId) {
+            0 * mockApiService.deleteServer(_, _) // Verify API was not called when no externalId
+        }
+
+        where:
+        scenario           | externalId | apiSuccess | apiThrowsException | errorMessage           | expectedSuccess | expectedMessage
+        "successful remove"| "vm-123"   | true       | false              | null                   | true           | null
+        "failed remove"    | "vm-123"   | false      | false              | null                   | false          | "Failed to remove vm"
+        "no externalId"    | null       | false      | false              | null                   | false          | "vm not found"
+        "api exception"    | "vm-123"   | false      | true               | "API connection error" | false          | null
+    }
+
+    @Unroll
+    def "pickScvmmController handles different scenarios correctly"() {
+        given:
+        def cloud = new Cloud(id: 1L)
+        if (sharedControllerId) {
+            cloud.configMap = [sharedController: sharedControllerId.toString()]
+        }
+
+        def sharedController = sharedControllerId ?
+                new ComputeServer(id: sharedControllerId, name: "shared-controller") : null
+
+        def scvmmController = new ComputeServer(
+                id: 2L,
+                name: "scvmm-controller",
+                cloud: cloud,
+                computeServerType: new ComputeServerType(code: "scvmmController")
+        )
+
+        def scvmmHypervisor = new ComputeServer(
+                id: 3L,
+                name: "scvmm-hypervisor",
+                cloud: cloud,
+                computeServerType: new ComputeServerType(code: "scvmmHypervisor")
+        )
+
+        def legacyHypervisor = new ComputeServer(
+                id: 4L,
+                name: "legacy-hypervisor",
+                cloud: cloud,
+                serverType: "hypervisor"
+        )
+
+        // Mock the computeServerService based on different scenarios
+        if (sharedControllerId) {
+            computeServerService.get(sharedControllerId) >> sharedController
+        }
+
+        if (findScvmmController) {
+            computeServerService.find({ DataQuery query ->
+                query.filters.any { it.name == 'cloud.id' && it.value == cloud.id } &&
+                        query.filters.any { it.name == 'computeServerType.code' && it.value == 'scvmmController' }
+            }) >> scvmmController
+        } else {
+            computeServerService.find({ DataQuery query ->
+                query.filters.any { it.name == 'cloud.id' && it.value == cloud.id } &&
+                        query.filters.any { it.name == 'computeServerType.code' && it.value == 'scvmmController' }
+            }) >> null
+
+            if (findScvmmHypervisor) {
+                computeServerService.find({ DataQuery query ->
+                    query.filters.any { it.name == 'cloud.id' && it.value == cloud.id } &&
+                            query.filters.any { it.name == 'computeServerType.code' && it.value == 'scvmmHypervisor' }
+                }) >> scvmmHypervisor
+            } else {
+                computeServerService.find({ DataQuery query ->
+                    query.filters.any { it.name == 'cloud.id' && it.value == cloud.id } &&
+                            query.filters.any { it.name == 'computeServerType.code' && it.value == 'scvmmHypervisor' }
+                }) >> null
+
+                if (findLegacyHypervisor) {
+                    computeServerService.find({ DataQuery query ->
+                        query.filters.any { it.name == 'cloud.id' && it.value == cloud.id } &&
+                                query.filters.any { it.name == 'serverType' && it.value == 'hypervisor' }
+                    }) >> legacyHypervisor
+                } else {
+                    computeServerService.find({ DataQuery query ->
+                        query.filters.any { it.name == 'cloud.id' && it.value == cloud.id } &&
+                                query.filters.any { it.name == 'serverType' && it.value == 'hypervisor' }
+                    }) >> null
+                }
+            }
+        }
+
+        when:
+        def result = provisionProvider.pickScvmmController(cloud)
+
+        then:
+        if (saveExpected) {
+            1 * computeServerService.save(_ as ComputeServer) >> { ComputeServer server ->
+                assert server.computeServerType.code == 'scvmmController'
+                return server
+            }
+        } else {
+            0 * computeServerService.save(_ as ComputeServer)
+        }
+
+        result?.id == expectedControllerId
+
+        where:
+        scenario                     | sharedControllerId | findScvmmController | findScvmmHypervisor | findLegacyHypervisor | saveExpected | expectedControllerId
+        "shared controller"          | 5L                 | false               | false               | false                | false        | 5L
+        "direct scvmm controller"    | null               | true                | false               | false                | false        | 2L
+        "find scvmm hypervisor"      | null               | false               | true                | false                | true         | 3L
+        "find legacy hypervisor"     | null               | false               | false               | true                 | true         | 4L
+        "no controller found"        | null               | false               | false               | false                | false        | null
+    }
+
+    def "getContainerRootDisk returns the root volume from server volumes"() {
+        given:
+        def rootVolume = new StorageVolume(
+                id: 1L,
+                name: "root",
+                rootVolume: true,
+                maxStorage: 42949672960L
+        )
+
+        def dataVolume = new StorageVolume(
+                id: 2L,
+                name: "data",
+                rootVolume: false,
+                maxStorage: 10737418240L
+        )
+
+        def server = new ComputeServer(
+                id: 100L,
+                name: "test-server",
+                volumes: [dataVolume, rootVolume]
+        )
+
+        def containerWithVolumes = new Workload(
+                id: 200L,
+                server: server
+        )
+        containerWithVolumes.displayName = "test-container"
+
+        def containerWithNoServer = new Workload(
+                id: 201L,
+        )
+        containerWithNoServer.displayName = "test-container-no-server"
+
+        def containerWithEmptyVolumes = new Workload(
+                id: 202L,
+                server: new ComputeServer(id: 101L, volumes: [])
+        )
+        containerWithEmptyVolumes.displayName = "test-container-empty-volumes"
+
+        when:
+        def foundRootVolume = provisionProvider.getContainerRootDisk(containerWithVolumes)
+        def noServerResult = provisionProvider.getContainerRootDisk(containerWithNoServer)
+        def emptyVolumesResult = provisionProvider.getContainerRootDisk(containerWithEmptyVolumes)
+
+        then:
+        foundRootVolume == rootVolume
+        noServerResult == null
+        emptyVolumesResult == null
+    }
+
+    @Unroll
+    def "getContainerRootSize returns correct size based on priority when all values are present"() {
+        given:
+        // Create root volume with size
+        def rootVolume = new StorageVolume(
+                id: 1L,
+                name: "root",
+                rootVolume: true,
+                maxStorage: 42949672960L // ~40GB
+        )
+
+        // Create server with volumes
+        def server = new ComputeServer(
+                id: 100L,
+                volumes: [rootVolume]
+        )
+
+        // Create container with server and maxStorage
+        def container = new Workload(
+                id: 200L,
+                server: server,
+                maxStorage: 10737418240L // ~10GB
+        )
+
+        // Add instance with plan
+        def plan = new ServicePlan(id: 300L, maxStorage: 21474836480L) // ~20GB
+        def instance = new Instance(id: 400L, plan: plan)
+        container.instance = instance
+
+        when:
+        def result = provisionProvider.getContainerRootSize(container)
+
+        then:
+        // The code prioritizes root volume size if present
+        result == rootVolume.maxStorage
+    }
+
+    @Unroll
+    def "getContainerVolumeSize prioritizes correctly for different input combinations"() {
+        given:
+        // Create volumes with specified sizes
+        def volumes = []
+        if (volumeSizes) {
+            volumes = volumeSizes.collect { size ->
+                new StorageVolume(
+                        id: volumes.size() + 1L,
+                        maxStorage: size
+                )
+            }
+        }
+
+        // Create server with volumes if needed
+        def server = hasVolumes ? new ComputeServer(
+                id: 100L,
+                volumes: volumes
+        ) : null
+
+        // Create plan with maxStorage if needed
+        def plan = hasPlan ? new ServicePlan(
+                id: 300L,
+                maxStorage: planMaxStorage
+        ) : null
+
+        // Create instance with plan if needed
+        def instance = hasPlan ? new Instance(
+                id: 400L,
+                plan: plan
+        ) : null
+
+        // Create container with all the components
+        def container = new Workload(
+                id: 200L,
+                server: server,
+                maxStorage: containerMaxStorage,
+                instance: instance
+        )
+
+        when:
+        def result = provisionProvider.getContainerVolumeSize(container)
+
+        then:
+        result == expectedSize
+
+        where:
+        scenario                                      | containerMaxStorage | hasPlan | planMaxStorage | hasVolumes | volumeSizes                | expectedSize
+        "container.maxStorage only"                   | 10737418240L        | false   | null           | false      | null                       | 10737418240L
+        "plan.maxStorage only"                        | null                | true    | 21474836480L   | false      | null                       | 21474836480L
+        "container.maxStorage takes priority over plan" | 10737418240L      | true    | 21474836480L   | false      | null                       | 10737418240L
+        "volumes sum smaller than container.maxStorage" | 30737418240L      | false   | null           | true       | [10737418240L, 5368709120L] | 30737418240L
+        "volumes sum larger than container.maxStorage" | 10737418240L        | false   | null           | true       | [10737418240L, 21474836480L] | 32212254720L
+        "volumes sum larger than plan.maxStorage"     | null                | true    | 10737418240L   | true       | [15737418240L, 21474836480L] | 37212254720L
+        "volumes with null maxStorage values"         | 10737418240L        | false   | null           | true       | [10737418240L, null, 5368709120L] | 16106127360L
+        "all three values present, volumes largest"   | 10737418240L        | true    | 21474836480L   | true       | [20737418240L, 15368709120L] | 36106127360L
+    }
+
+    def "getContainerDataDiskList returns correct non-root volumes for #scenario"() {
+        given:
+        def rootVolume = new StorageVolume(id: 1, rootVolume: true)
+        def dataVolume1 = new StorageVolume(id: 2, rootVolume: false)
+        def dataVolume2 = new StorageVolume(id: 3, rootVolume: false)
+
+        def volumes = [rootVolume, dataVolume1, dataVolume2]
+        def server = Mock(ComputeServer)
+        def workload = Mock(Workload)
+
+        workload.server >> server
+        server.volumes >> volumes
+
+        when:
+        def result = ScvmmProvisionProvider.getContainerDataDiskList(workload)
+
+        then:
+        result == [dataVolume1, dataVolume2]
+    }
+
+    def "test getScvmmContainerOpts returns proper configuration"() {
+        given:
+        // Create concrete objects instead of mocks where possible
+        def cloud = new Cloud(id: 1L, name: "test-cloud")
+        def account = new Account(id: 1L, name: "test-account")
+        cloud.account = account
+
+        // Create a network to be returned by the cloud service
+        def network = new Network(id: 1L)
+        network.displayName = "vlanbaseVmNetwork"
+
+        // Create OS Type and server OS
+        def serverOs = new OsType(platform: "linux")
+
+        def osType = new OsType(platform: "linux")
+        def virtualImage = new VirtualImage(id: 2L, name: "test-image", osType: osType)
+
+        // Create service plan with specific values
+        def servicePlan = new ServicePlan(
+                id: 3L,
+                maxMemory: 4294967296L, // 4GB
+                maxCpu: 1,
+                maxCores: 2,
+                maxStorage: 42949672960L // 40GB
+        )
+
+        def instance = new Instance(id: 4L, name: "test-instance", plan: servicePlan)
+
+        // Create storage volumes for the computer server
+        def rootVolume = new StorageVolume(
+                id: 507L,
+                displayOrder: 0,
+                name: "root",
+                rootVolume: true,
+                maxStorage: 42949672960L // 40GB
+        )
+
+        def dataVolume = new StorageVolume(
+                id: 509L,
+                displayOrder: 2,
+                name: "data-2",
+                rootVolume: false,
+                maxStorage: 9663676416L // ~9GB
+        )
+
+        // Create resource pool
+        def resourcePool = new ComputeZonePool(id: 5L, name: "Resource Pool 1", externalId: "Resource Pool 1")
+
+        // Create ComputeServer with concrete values
+        def computerServer = new ComputeServer(
+                id: 1L,
+                name: "test-server",
+                externalId: "vm-123",
+                cloud: cloud,
+                sourceImage: virtualImage,
+                volumes: [rootVolume, dataVolume],
+                resourcePool: resourcePool,
+                serverOs: serverOs,
+                interfaces: []
+        )
+
+        def workloadType = new WorkloadType(refId: 1L, code: "test-workload-type")
+        workloadType.setId(19L)
+
+        // Define container config
+        def containerConfig = [
+                networkId: "1",
+                networkType: "vlan",
+                hostId: 2,
+                scvmmCapabilityProfile: "Hyper-V"
+        ]
+
+        // Create workload with concrete values
+        def workload = new Workload(
+                id: 5L,
+                internalName: "testWorkload",
+                server: computerServer,
+                workloadType: workloadType,
+                instance: instance,
+                account: account,
+                maxMemory: null, // Using plan's value
+                maxCpu: null,    // Using plan's value
+                maxCores: null,  // Using plan's value
+                hostname: "testVM"
+        )
+
+        // Set the config map for the workload
+        workload.setConfigProperty("networkId", "1")
+        workload.setConfigProperty("networkType", "vlan")
+        workload.setConfigProperty("hostId", 2)
+        workload.setConfigProperty("scvmmCapabilityProfile", "Hyper-V")
+
+        // Mock the cloud network service get method
+        //def cloudNetworkService = Mock(MorpheusCloudNetworkService)
+        cloudService.getNetwork() >> networkService
+        networkService.get(1L) >> {
+            return network
+        }
+        //cloudService.getNetwork() >> cloudNetworkService
+
+        // Mock the methods used in getScvmmContainerOpts
+        provisionProvider.getContainerRootSize(workload) >> {
+            return 42949672960L
+        }
+        provisionProvider.getContainerVolumeSize(workload) >> {
+            return 42949672960L
+        } // Sum of root + data volumes with 20% overhead
+        provisionProvider.getContainerDataDiskList(workload) >> {
+            return [dataVolume]
+        }
+
+        when:
+        def result = provisionProvider.getScvmmContainerOpts(workload)
+
+        then:
+        result.config instanceof Map
+        result.vmId == "vm-123"
+        result.name == "vm-123"
+        result.server == computerServer
+        result.serverId == 1L
+        result.memory == 4294967296L
+        result.maxCpu == 1
+        result.maxCores == 2
+        result.serverFolder == "morpheus\\morpheus_server_1"
+        result.hostname == "testVM"
+        result.network == network
+        result.networkId == 1L
+        result.platform == "linux"
+        result.externalId == "vm-123"
+        result.networkType == "vlan"
+        result.containerConfig.scvmmCapabilityProfile == "Hyper-V"
+        result.resourcePool == "Resource Pool 1"
+        result.hostId == 2
+        result.osDiskSize == 42949672960L
+        result.maxTotalStorage == 42949672960
+        result.dataDisks == [dataVolume]
+        result.scvmmCapabilityProfile == "Hyper-V"
+        result.accountId == 1L
+    }
+
+    def "getAllScvmmOpts successfully combines options from all sources"() {
+        given:
+        // Setup the workload and cloud
+        def cloud = new Cloud(id: 1L, name: "test-cloud")
+        def server = new ComputeServer(id: 1L, name: "test-server", cloud: cloud)
+        def workload = new Workload(id: 5L, server: server)
+
+        // Setup controller server
+        def controllerServer = new ComputeServer(
+                id: 10L,
+                name: "controller-01",
+                serverType: new ComputeServerType(code: "scvmm-controller"),
+                computeServerType: new ComputeServerType(code: "scvmm-controller")
+        )
+
+        // Mock the various option methods
+        def cloudOpts = [
+                cloud: 1L,
+                cloudName: "test-cloud",
+                zoneId: 1L
+        ]
+
+        def controllerOpts = [
+                controller: 10L,
+                sshHost: "10.0.0.5",
+                sshUsername: "admin",
+                sshPassword: "password123"
+        ]
+
+        def containerOpts = [
+                vmId: "vm-123",
+                name: "vm-123",
+                memory: 4294967296L,
+                maxCpu: 1,
+                maxCores: 2,
+                hostname: "testVM",
+                networkId: 1L,
+                platform: "linux"
+        ]
+
+        // Mock the methods that are called inside getAllScvmmOpts
+        provisionProvider.pickScvmmController(cloud) >> controllerServer
+        mockApiService.getScvmmCloudOpts(morpheusContext, cloud, controllerServer) >> cloudOpts
+        mockApiService.getScvmmControllerOpts(cloud, controllerServer) >> controllerOpts
+        provisionProvider.getScvmmContainerOpts(workload) >> containerOpts
+
+        when:
+        def result = provisionProvider.getAllScvmmOpts(workload)
+
+        then:
+        // Verify that result contains combined options from all sources
+        result.cloud == 1L
+        result.cloudName == "test-cloud"
+        result.zoneId == 1L
+        result.controller == 10L
+        result.sshHost == "10.0.0.5"
+        result.sshUsername == "admin"
+        result.sshPassword == "password123"
+        result.vmId == "vm-123"
+        result.name == "vm-123"
+        result.memory == 4294967296L
+        result.maxCpu == 1
+        result.maxCores == 2
+        result.hostname == "testVM"
+        result.networkId == 1L
+        result.platform == "linux"
+
+        // Verify each method was called exactly once
+        1 * provisionProvider.pickScvmmController(cloud) >> controllerServer
+        1 * mockApiService.getScvmmCloudOpts(morpheusContext, cloud, controllerServer) >> cloudOpts
+        1 * mockApiService.getScvmmControllerOpts(cloud, controllerServer) >> controllerOpts
+        1 * provisionProvider.getScvmmContainerOpts(workload) >> containerOpts
+    }
+
+    @Unroll
+    def "getServerRootSize returns #expectedValue for #scenario"() {
+        given:
+        def server = new ComputeServer(
+                id: 100L,
+                name: "test-server",
+                maxStorage: serverMaxStorage
+        )
+
+        // Set up plan if needed
+        if (hasPlan) {
+            def plan = new ServicePlan(
+                    id: 200L,
+                    maxStorage: planMaxStorage
+            )
+            server.plan = plan
+        }
+
+        // Mock the getServerRootDisk method to return the appropriate value
+        provisionProvider.getServerRootDisk(_) >> { ComputeServer serverArg ->
+            return rootDisk
+        }
+
+        when:
+        def result = provisionProvider.getServerRootSize(server)
+
+        then:
+        result == expectedValue
+
+        where:
+        scenario                         | rootDisk                                          | serverMaxStorage | hasPlan | planMaxStorage | expectedValue
+        "root disk exists"               | new StorageVolume(maxStorage: 42949672960L)       | 21474836480L     | true    | 32212254720L   | 42949672960L
+        "no root disk, use server size"  | null                                              | 21474836480L     | true    | 32212254720L   | 21474836480L
+    }
+
+    def "getServerRootDisk returns root volume when present"() {
+        given:
+        // Create volumes with one root volume and one non-root volume
+        def rootVolume = new StorageVolume(
+                id: 1L,
+                name: "root",
+                rootVolume: true,
+                maxStorage: 42949672960L
+        )
+        def dataVolume = new StorageVolume(
+                id: 2L,
+                name: "data",
+                rootVolume: false,
+                maxStorage: 10737418240L
+        )
+
+        // Create servers with different volume configurations
+        def serverWithRootVolume = new ComputeServer(
+                id: 100L,
+                name: "server-with-root",
+                volumes: [dataVolume, rootVolume]
+        )
+
+        def serverWithoutRootVolume = new ComputeServer(
+                id: 101L,
+                name: "server-without-root",
+                volumes: [dataVolume]
+        )
+
+        def serverWithEmptyVolumes = new ComputeServer(
+                id: 102L,
+                name: "server-empty-volumes",
+                volumes: []
+        )
+
+        def serverWithNullVolumes = new ComputeServer(
+                id: 103L,
+                name: "server-null-volumes",
+                volumes: null
+        )
+
+        when:
+        def resultWithRoot = provisionProvider.getServerRootDisk(serverWithRootVolume)
+        def resultWithoutRoot = provisionProvider.getServerRootDisk(serverWithoutRootVolume)
+        def resultEmptyVolumes = provisionProvider.getServerRootDisk(serverWithEmptyVolumes)
+        def resultNullVolumes = provisionProvider.getServerRootDisk(serverWithNullVolumes)
+        def resultNullServer = provisionProvider.getServerRootDisk(null)
+
+        then:
+        // Should return the root volume when present
+        resultWithRoot == rootVolume
+
+        // Should return null when no root volume is present
+        resultWithoutRoot == null
+        resultEmptyVolumes == null
+        resultNullVolumes == null
+        resultNullServer == null
+    }
+
+    @Unroll
+    def "getServerVolumeSize returns correct value for #scenario"() {
+        given:
+        // Create a server with the specified maxStorage
+        def server = new ComputeServer(
+                id: 100L,
+                name: "test-server",
+                maxStorage: serverMaxStorage
+        )
+
+        // Set up plan if needed
+        if (hasPlan) {
+            def plan = new ServicePlan(
+                    id: 200L,
+                    maxStorage: planMaxStorage
+            )
+            server.plan = plan
+        }
+
+        // Set up volumes if needed
+        if (volumeSizes) {
+            server.volumes = volumeSizes.collect { size ->
+                new StorageVolume(
+                        id: volumeSizes.indexOf(size) + 1,
+                        maxStorage: size
+                )
+            }
+        }
+
+        when:
+        def result = provisionProvider.getServerVolumeSize(server)
+
+        then:
+        result == expectedValue
+
+        where:
+        scenario                                     | serverMaxStorage | hasPlan | planMaxStorage | volumeSizes                 | expectedValue
+        "server.maxStorage has priority"             | 10737418240L     | true    | 5368709120L    | null                        | 10737418240L
+        "plan.maxStorage used when server null"      | null             | true    | 21474836480L   | null                        | 21474836480L
+        "volumes sum used when greater than server"  | 10737418240L     | false   | null           | [5368709120L, 21474836480L] | 26843545600L
+        "server.maxStorage used when greater than volumes" | 30737418240L | false   | null           | [5368709120L, 10737418240L] | 30737418240L
+        "volumes with mixed null maxStorage handled" | 10737418240L     | false   | null           | [null, 5368709120L, null]   | 10737418240L
+    }
+
+    def "getServerDataDiskList returns only non-root volumes sorted by id"() {
+        given:
+        def rootVolume = new StorageVolume(id: 2L, name: "root", rootVolume: true)
+        def dataVolume1 = new StorageVolume(id: 3L, name: "data1", rootVolume: false)
+        def dataVolume2 = new StorageVolume(id: 1L, name: "data2", rootVolume: false)
+        def server = new ComputeServer(
+                //name: "test-server",
+                displayName: "test-server",
+                volumes: [rootVolume, dataVolume1, dataVolume2]
+        )
+
+        when:
+        def result = provisionProvider.getServerDataDiskList(server)
+
+        then:
+        result.size() == 2
+        result[0].id == 1L // Should be sorted by ID
+        result[0].name == "data2"
+        result[1].id == 3L
+        result[1].name == "data1"
+        !result.any { it.rootVolume }
+    }
+
+    def "test getScvmmServerOpts returns correctly populated options map"() {
+        given:
+        // Create a network to be returned by the network service
+        def network = new Network(id: 123L, name: "test-network")
+
+        // Create storage volumes for the server
+//        def rootVolume = new StorageVolume(
+//                id: 507L,
+//                name: "root",
+//                rootVolume: true,
+//                maxStorage: 42949672960L // 40GB
+//        )
+
+        def dataVolume = new StorageVolume(
+                id: 509L,
+                name: "data-disk",
+                rootVolume: false,
+                maxStorage: 10737418240L // 10GB
+        )
+
+        // Create a service plan with specific values
+        def servicePlan = new ServicePlan(
+                id: 3L,
+                maxMemory: 4294967296L, // 4GB
+                maxCpu: 2,
+                maxCores: 4
+        )
+
+        // Create ComputeServer with concrete values
+        def server = new ComputeServer(
+                id: 100L,
+                name: "test-server",
+                externalId: "vm-123",
+                externalHostname: "test-hostname",
+                maxMemory: 8589934592L, // 8GB - this should be used instead of plan's value
+                plan: servicePlan,
+                account: new Account(id: 200L)
+        )
+
+        // Set server config with networkId
+        server.setConfigProperty("networkId", "123")
+        server.setConfigProperty("scvmmCapabilityProfile", "Hyper-V")
+
+        // Mock the network service get method
+        cloudService.getNetwork() >> networkService
+        networkService.get(123L) >> network
+
+        // Mock the methods used in getScvmmServerOpts
+        provisionProvider.getServerRootSize(server) >> 42949672960L
+        provisionProvider.getServerVolumeSize(server) >> 53687091200L
+        provisionProvider.getServerDataDiskList(server) >> [dataVolume]
+
+        when:
+        def result = provisionProvider.getScvmmServerOpts(server)
+
+        then:
+        result.name == "test-server"
+        result.vmId == "vm-123"
+        result.serverId == 100L
+        result.externalId == "vm-123"
+        result.memory == 8589934592L // Server's value should be used
+        result.maxCpu == 2 // Plan's value should be used
+        result.maxCores == 4 // Plan's value should be used
+        result.serverFolder == "morpheus\\morpheus_server_100"
+        result.hostname == "test-hostname"
+        result.network == network
+        result.networkId == 123L
+        result.osDiskSize == 42949672960L
+        result.maxTotalStorage == 53687091200L
+        result.dataDisks == [dataVolume]
+        result.scvmmCapabilityProfile == "Hyper-V"
+        result.accountId == 200L
+
+        // Verify mocked methods were called exactly once
+        1 * networkService.get(123L) >> network
+        1 * provisionProvider.getServerRootSize(server) >> 42949672960L
+        1 * provisionProvider.getServerVolumeSize(server) >> 53687091200L
+        1 * provisionProvider.getServerDataDiskList(server) >> [dataVolume]
+    }
+
+    @Unroll
+    def "getAllScvmmServerOpts successfully combines options from all sources"() {
+        given:
+        // Setup the server and cloud
+        def cloud = new Cloud(id: 1L, name: "test-cloud")
+        def server = new ComputeServer(id: 1L, name: "test-server", cloud: cloud)
+
+        // Setup controller server
+        def controllerServer = new ComputeServer(
+                id: 10L,
+                name: "controller-01",
+                serverType: new ComputeServerType(code: "scvmm-controller"),
+                computeServerType: new ComputeServerType(code: "scvmm-controller")
+        )
+
+        // Mock the various option methods
+        def cloudOpts = [
+                cloud: 1L,
+                cloudName: "test-cloud",
+                zoneId: 1L
+        ]
+
+        def controllerOpts = [
+                controller: 10L,
+                sshHost: "10.0.0.5",
+                sshUsername: "admin",
+                sshPassword: "password123"
+        ]
+
+        def serverOpts = [
+                vmId: "vm-123",
+                name: "vm-123",
+                memory: 4294967296L,
+                maxCpu: 1,
+                maxCores: 2,
+                hostname: "testVM",
+                networkId: 1L,
+                platform: "linux"
+        ]
+
+        // Mock the methods that are called inside getAllScvmmServerOpts
+        provisionProvider.pickScvmmController(cloud) >> controllerServer
+        mockApiService.getScvmmCloudOpts(morpheusContext, cloud, controllerServer) >> cloudOpts
+        mockApiService.getScvmmControllerOpts(cloud, controllerServer) >> controllerOpts
+        provisionProvider.getScvmmServerOpts(server) >> serverOpts
+
+        when:
+        def result = provisionProvider.getAllScvmmServerOpts(server)
+
+        then:
+        // Verify that result contains combined options from all sources
+        result.cloud == 1L
+        result.cloudName == "test-cloud"
+        result.zoneId == 1L
+        result.controller == 10L
+        result.sshHost == "10.0.0.5"
+        result.sshUsername == "admin"
+        result.sshPassword == "password123"
+        result.vmId == "vm-123"
+        result.name == "vm-123"
+        result.memory == 4294967296L
+        result.maxCpu == 1
+        result.maxCores == 2
+        result.hostname == "testVM"
+        result.networkId == 1L
+        result.platform == "linux"
+
+        // Verify each method was called exactly once
+        1 * provisionProvider.pickScvmmController(cloud) >> controllerServer
+        1 * mockApiService.getScvmmCloudOpts(morpheusContext, cloud, controllerServer) >> cloudOpts
+        1 * mockApiService.getScvmmControllerOpts(cloud, controllerServer) >> controllerOpts
+        1 * provisionProvider.getScvmmServerOpts(server) >> serverOpts
+    }
+
+    @Unroll
+    def "getMorpheusServer returns server with joined network interfaces"() {
+        given:
+        def serverId = 123L
+        def server = new ComputeServer(id: serverId, name: "test-server")
+
+        // Mock network interface
+        def network = new Network(id: 456L, name: "test-network")
+        def networkInterface = new ComputeServerInterface(
+                id: 789L,
+                network: network,
+                ipAddress: "192.168.1.100"
+        )
+        server.interfaces = [networkInterface]
+
+        // Mock the computeServerService find method with query matching
+        computeServerService.find({ DataQuery query ->
+            return query.filters.any { it.name == "id" && it.value == serverId } &&
+                    query.joins.contains("interfaces.network")
+        }) >> server
+
+        when:
+        def result = provisionProvider.getMorpheusServer(serverId)
+
+        then:
+        result == server
+        result.id == serverId
+        result.interfaces.size() == 1
+        result.interfaces[0].network.id == 456L
+        1 * computeServerService.find(_) >> server
+    }
+
+    @Unroll
+    def "saveAndGetMorpheusServer handles correctly"() {
+        given:
+        def server = new ComputeServer(id: 100L, name: "test-server")
+        def persistedServer = new ComputeServer(id: 100L, name: "test-server-persisted")
+        def failedServer = new ComputeServer(id: 100L, name: "test-server-failed")
+        def reloadedServer = new ComputeServer(id: 100L, name: "test-server-reloaded")
+
+
+        BulkSaveResult bulkResponse = new BulkSaveResult<ComputeServer>("", "", [persistedServer], [])
+
+        // Mock the bulkSave method
+        asyncComputeServerService.bulkSave([server]) >> {
+            return Single.just(bulkResponse)
+        }
+
+        // Mock getMorpheusServer if needed
+        provisionProvider.getMorpheusServer(server.id) >> reloadedServer
+
+
+        when:
+        def result = provisionProvider.saveAndGetMorpheusServer(server, true)
+
+        then:
+        //1 * provisionProvider.getMorpheusServer(server.id) >> reloadedServer
+        result.name == "test-server"
+
     }
 }
