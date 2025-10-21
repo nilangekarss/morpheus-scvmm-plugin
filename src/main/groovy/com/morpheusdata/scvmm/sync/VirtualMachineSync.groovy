@@ -43,6 +43,7 @@ class VirtualMachineSync {
         try {
             def now = new Date()
             def consoleEnabled = cloud.getConfigProperty('enableVnc') ? true : false
+            log.info("console enabled: ${consoleEnabled}. enableVnc value: ${cloud.getConfigProperty('enableVnc')}")
             def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(context, cloud, node)
 
             def listResults = apiService.listVirtualMachines(scvmmOpts)
@@ -124,16 +125,17 @@ class VirtualMachineSync {
                     add.platform = osType?.platform
                 }
                 add.sshHost = add.internalIp ?: add.externalIp
-                if (consoleEnabled) {
+                /*if (consoleEnabled) {
                     add.consoleType = 'vmrdp'
                     add.consoleHost = add.parentServer?.name
                     add.consolePort = 2179
+                    log.info("################ setting cloud console credentials for scvmm vm")
                     add.sshUsername = cloud.accountCredentialData?.username ?: cloud.getConfigProperty('username') ?: 'dunno'
                     if (add.sshUsername.contains('\\')) {
                         add.sshUsername = add.sshUsername.tokenize('\\')[1]
                     }
                     add.consolePassword = cloud.accountCredentialData?.password ?: cloud.getConfigProperty('password')
-                }
+                }*/
                 add.capacityInfo = new ComputeCapacityInfo(maxCores: add.maxCores, maxMemory: add.maxMemory, maxStorage: add.maxStorage)
                 ComputeServer savedServer = context.async.computeServer.create(add).blockingGet()
                 if (!savedServer) {
@@ -240,8 +242,9 @@ class VirtualMachineSync {
                                 currentServer.consolePort = consolePort
                                 save = true
                             }
-                            if (consoleEnabled) {
+                            /*if (consoleEnabled) {
                                 if (consoleUsername != currentServer.sshUsername) {
+                                    log.info("################ setting cloud console credentials for scvmm vm")
                                     currentServer.sshUsername = consoleUsername
                                     save = true
                                 }
@@ -249,7 +252,7 @@ class VirtualMachineSync {
                                     currentServer.consolePassword = consolePassword
                                     save = true
                                 }
-                            }
+                            }*/
                             // Operating System
                             def osTypeCode = apiService.getMapScvmmOsType(masterItem.OperatingSystem, true, masterItem.OperatingSystemWindows?.toString() == 'true' ? 'windows' : null)
                             def osTypeCodeStr = osTypeCode ?: 'other'
