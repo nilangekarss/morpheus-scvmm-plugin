@@ -127,7 +127,7 @@ class HostSync {
                                 resourcePool     : cluster,
                                 externalId       : cloudItem.id,
                                 cloud            : cloud,
-                                sshUsername      : 'Admnistrator',
+                                sshUsername      : cloud?.accountCredentialData?.username ?: cloud?.getConfigProperty('username'),
                                 apiKey           : java.util.UUID.randomUUID(),
                                 status           : 'provisioned',
                                 provision        : false,
