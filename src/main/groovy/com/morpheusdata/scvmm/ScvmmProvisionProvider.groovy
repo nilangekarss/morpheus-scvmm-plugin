@@ -766,14 +766,14 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                         server.externalId = createResults.server.id
                         server.internalId = createResults.server.VMId
                         server.parentServer = node
-                        if (server.cloud.getConfigProperty('enableVnc')) {
+                        /*if (server.cloud.getConfigProperty('enableVnc')) {
                             //credentials
                             server.consoleHost = server.parentServer?.name
                             server.consoleType = 'vmrdp'
                             server.sshUsername = server.cloud.accountCredentialData?.username ?: server.cloud.getConfigProperty('username')
                             server.consolePassword = server.cloud.accountCredentialData?.password ?: server.cloud.getConfigProperty('password')
                             server.consolePort = 2179
-                        }
+                        }*/
                         def serverDisks = createResults.server.disks
                         if (serverDisks && server.volumes) {
                             storageVolumes = server.volumes
@@ -812,6 +812,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                             server.status = 'provisioned'
                             context.async.computeServer.save(server).blockingGet()
                             provisionResponse.success = true
+							provisionResponse.installAgent = false
                             log.debug("provisionResponse.success: ${provisionResponse.success}")
                         } else {
                             server.statusMessage = 'Failed to run server'

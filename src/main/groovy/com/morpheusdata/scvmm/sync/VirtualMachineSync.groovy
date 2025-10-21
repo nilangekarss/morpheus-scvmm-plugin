@@ -124,7 +124,7 @@ class VirtualMachineSync {
                     add.platform = osType?.platform
                 }
                 add.sshHost = add.internalIp ?: add.externalIp
-                if (consoleEnabled) {
+                /*if (consoleEnabled) {
                     add.consoleType = 'vmrdp'
                     add.consoleHost = add.parentServer?.name
                     add.consolePort = 2179
@@ -133,7 +133,7 @@ class VirtualMachineSync {
                         add.sshUsername = add.sshUsername.tokenize('\\')[1]
                     }
                     add.consolePassword = cloud.accountCredentialData?.password ?: cloud.getConfigProperty('password')
-                }
+                }*/
                 add.capacityInfo = new ComputeCapacityInfo(maxCores: add.maxCores, maxMemory: add.maxMemory, maxStorage: add.maxStorage)
                 ComputeServer savedServer = context.async.computeServer.create(add).blockingGet()
                 if (!savedServer) {
@@ -240,7 +240,7 @@ class VirtualMachineSync {
                                 currentServer.consolePort = consolePort
                                 save = true
                             }
-                            if (consoleEnabled) {
+                            /*if (consoleEnabled) {
                                 if (consoleUsername != currentServer.sshUsername) {
                                     currentServer.sshUsername = consoleUsername
                                     save = true
@@ -249,7 +249,7 @@ class VirtualMachineSync {
                                     currentServer.consolePassword = consolePassword
                                     save = true
                                 }
-                            }
+                            }*/
                             // Operating System
                             def osTypeCode = apiService.getMapScvmmOsType(masterItem.OperatingSystem, true, masterItem.OperatingSystemWindows?.toString() == 'true' ? 'windows' : null)
                             def osTypeCodeStr = osTypeCode ?: 'other'
