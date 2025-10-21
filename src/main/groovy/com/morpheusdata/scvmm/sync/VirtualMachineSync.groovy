@@ -43,7 +43,6 @@ class VirtualMachineSync {
         try {
             def now = new Date()
             def consoleEnabled = cloud.getConfigProperty('enableVnc') ? true : false
-            log.info("console enabled: ${consoleEnabled}. enableVnc value: ${cloud.getConfigProperty('enableVnc')}")
             def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(context, cloud, node)
 
             def listResults = apiService.listVirtualMachines(scvmmOpts)
@@ -129,7 +128,6 @@ class VirtualMachineSync {
                     add.consoleType = 'vmrdp'
                     add.consoleHost = add.parentServer?.name
                     add.consolePort = 2179
-                    log.info("################ setting cloud console credentials for scvmm vm")
                     add.sshUsername = cloud.accountCredentialData?.username ?: cloud.getConfigProperty('username') ?: 'dunno'
                     if (add.sshUsername.contains('\\')) {
                         add.sshUsername = add.sshUsername.tokenize('\\')[1]
@@ -244,7 +242,6 @@ class VirtualMachineSync {
                             }
                             /*if (consoleEnabled) {
                                 if (consoleUsername != currentServer.sshUsername) {
-                                    log.info("################ setting cloud console credentials for scvmm vm")
                                     currentServer.sshUsername = consoleUsername
                                     save = true
                                 }

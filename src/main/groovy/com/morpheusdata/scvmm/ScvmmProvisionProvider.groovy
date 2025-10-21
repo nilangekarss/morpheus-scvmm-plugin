@@ -671,7 +671,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 server.externalId = scvmmOpts.name
                 server.parentServer = node
                 server.serverOs = server.serverOs ?: virtualImage.osType
-				server.sshUsername
 				def osplatform = virtualImage?.osType?.platform?.toString()?.toLowerCase() ?: virtualImage?.platform?.toString()?.toLowerCase()
 				server.osType = ['windows', 'osx'].contains(osplatform) ? osplatform : 'linux'
                 def newType = this.findVmNodeServerTypeForCloud(cloud.id, server.osType, PROVISION_TYPE_CODE)
