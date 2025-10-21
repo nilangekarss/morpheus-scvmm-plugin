@@ -7,33 +7,34 @@ buildscript {
         mavenLocal()
         mavenCentral()
         maven { url "https://plugins.gradle.org/m2/" }
-		maven { url "https://nexus.bertramlabs.com/content/repositories/snapshots" }
-		maven { url "https://nexus.bertramlabs.com/content/repositories/releases" }
-		maven { url "https://nexus.bertramlabs.com/content/repositories/publicReleases" }
+        maven { url "https://nexus.bertramlabs.com/content/repositories/snapshots" }
+        maven { url "https://nexus.bertramlabs.com/content/repositories/releases" }
+        maven { url "https://nexus.bertramlabs.com/content/repositories/publicReleases" }
     }
     dependencies {
         classpath "com.github.johnrengelman:shadow:8.1.1"
 //        classpath "com.morpheusdata:morpheus-plugin-gradle:$morpheusApiVersion"
-		classpath "com.morpheusdata:morpheus-plugin-gradle:$morpheusGradleVersion"
+        classpath "com.morpheusdata:morpheus-plugin-gradle:$morpheusGradleVersion"
         classpath "com.bertramlabs.plugins:asset-pipeline-gradle:$assetPipelineVersion"
     }
 }
 
 plugins {
-	id 'java'
-	id 'groovy'
-	id 'idea'
-	id 'com.github.johnrengelman.shadow' version '8.1.1'
-	id 'com.bertramlabs.asset-pipeline' version "$assetPipelineVersion"
-	id 'com.jfrog.artifactory' version "5.+"
-	id 'maven-publish'
+    id 'java'
+    id 'groovy'
+    id 'idea'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id 'com.bertramlabs.asset-pipeline' version "$assetPipelineVersion"
+    id 'com.jfrog.artifactory' version "5.+"
+    id 'maven-publish'
+    id 'jacoco'
 }
 
 // Include required files in the JAR
 processResources {
-	from('NOTICE') {
-		into('META-INF')
-	}
+    from('NOTICE') {
+        into('META-INF')
+    }
 }
 
 apply plugin: 'com.morpheusdata.morpheus-plugin-gradle'
@@ -41,151 +42,219 @@ group = 'com.hpe.scvmm'
 ext.isReleaseVersion = !version.endsWith("SNAPSHOT")
 
 java {
-	sourceCompatibility = JavaVersion.toVersion('1.11')
+    sourceCompatibility = JavaVersion.toVersion('1.11')
     targetCompatibility = JavaVersion.toVersion('1.11')
 }
 
 repositories {
-	mavenLocal()
-	mavenCentral()
-	maven { url "https://nexus.bertramlabs.com/content/repositories/snapshots" }
-	maven { url "https://nexus.bertramlabs.com/content/repositories/releases" }
-	maven { url "https://nexus.bertramlabs.com/content/repositories/publicReleases" }
+    mavenLocal()
+    mavenCentral()
+    maven { url "https://nexus.bertramlabs.com/content/repositories/snapshots" }
+    maven { url "https://nexus.bertramlabs.com/content/repositories/releases" }
+    maven { url "https://nexus.bertramlabs.com/content/repositories/publicReleases" }
 }
 
 configurations {
-	provided
+    provided
 }
 
 dependencies {
-	provided "com.morpheusdata:morpheus-plugin-api:$morpheusApiVersion"
-	
-	provided "org.codehaus.groovy:groovy-all:$groovyVersion"
-	implementation 'commons-beanutils:commons-beanutils:1.11.0'
-	implementation "org.slf4j:slf4j-api:$slf4jVersion"
-	implementation "org.slf4j:slf4j-parent:$slf4jVersion"
-	implementation 'commons-net:commons-net:3.9.0'
-	implementation("com.bertramlabs.plugins:karman-core:${karmanVersion}") {
-		exclude module: 'groovy-all'
-	}
+    provided "com.morpheusdata:morpheus-plugin-api:$morpheusApiVersion"
 
-	// Include morpheus-core and it's dependencies
-	testImplementation 'io.reactivex.rxjava3:rxjava:3.1.7'
-	testImplementation 'org.apache.httpcomponents:httpclient:4.5.13'
-	testImplementation 'org.apache.httpcomponents:httpcore:4.4.5'
-	testImplementation "org.slf4j:slf4j-parent:$slf4jVersion"
+    provided "org.codehaus.groovy:groovy-all:$groovyVersion"
+    implementation 'commons-beanutils:commons-beanutils:1.11.0'
+    implementation "org.slf4j:slf4j-api:$slf4jVersion"
+    implementation "org.slf4j:slf4j-parent:$slf4jVersion"
+    implementation 'commons-net:commons-net:3.9.0'
+    implementation("com.bertramlabs.plugins:karman-core:${karmanVersion}") {
+        exclude module: 'groovy-all'
+    }
 
-	testImplementation "org.codehaus.groovy:groovy-all:$groovyVersion"
-	testImplementation 'net.bytebuddy:byte-buddy:1.9.3'
-	testImplementation 'org.objenesis:objenesis:2.6'
-	testImplementation platform("org.spockframework:spock-bom:$spockVersion")
-	testImplementation "org.spockframework:spock-core"
-	testImplementation "org.spockframework:spock-junit4"  // you can remove this if your code does not rely on old JUnit 4 rules
-	testImplementation 'cglib:cglib-nodep:3.2.12'
+    // Include morpheus-core and it's dependencies
+    testImplementation "com.morpheusdata:morpheus-plugin-api:$morpheusApiVersion"
+    testImplementation 'io.reactivex.rxjava3:rxjava:3.1.7'
+    testImplementation 'org.apache.httpcomponents:httpclient:4.5.13'
+    testImplementation 'org.apache.httpcomponents:httpcore:4.4.5'
+    testImplementation "org.slf4j:slf4j-parent:$slf4jVersion"
+    // Add SLF4J implementation for tests to enable logging in coverage testing
+    testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.9'
+
+    testImplementation "org.codehaus.groovy:groovy-all:$groovyVersion"
+    testImplementation 'net.bytebuddy:byte-buddy:1.9.3'
+    testImplementation 'org.objenesis:objenesis:2.6'
+    testImplementation platform("org.spockframework:spock-bom:$spockVersion")
+    testImplementation "org.spockframework:spock-core"
+    testImplementation "org.spockframework:spock-junit4"  // you can remove this if your code does not rely on old JUnit 4 rules
+    testImplementation 'cglib:cglib-nodep:3.2.12'
+    
+    // Add Jackson dependencies for Spock framework
+    testImplementation 'com.fasterxml.jackson.core:jackson-core:2.15.2'
+    testImplementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
+    testImplementation 'com.fasterxml.jackson.core:jackson-annotations:2.15.2'
 }
 
 
 sourceSets {
-	main {
-		compileClasspath += configurations.provided
-	}
+    main {
+        compileClasspath += configurations.provided
+    }
+    test {
+        compileClasspath += configurations.provided
+        runtimeClasspath += configurations.provided
+    }
 }
 
 final gitCommitId = providers.exec {
-	commandLine('git', 'rev-parse', 'HEAD')
+    commandLine('git', 'rev-parse', 'HEAD')
 }.standardOutput.asText.get()
 
 final gitBranchName = providers.exec {
-	commandLine('git', 'rev-parse', '--abbrev-ref', 'HEAD')
+    commandLine('git', 'rev-parse', '--abbrev-ref', 'HEAD')
 }.standardOutput.asText.get()
 
 def getEnvOrProperty(final String envVar, final String propertyKey) {
-	return System.getenv(envVar) ?: project.findProperty(propertyKey)
+    return System.getenv(envVar) ?: project.findProperty(propertyKey)
 }
 
 //Set plugin metadata information here that gets written into the jar
 jar {
-	manifest {
-		attributes(
-				'Plugin-Class': 'com.morpheusdata.scvmm.ScvmmPlugin',
-				'Plugin-Version': version,
-				'Morpheus-Name': 'SCVMM',
-				'Morpheus-Organization': 'morpheus',
-				'Morpheus-Code': 'morpheus-scvmm-plugin',
-				'Morpheus-Description': 'Plugin for System Center Virtual Machine Manager',
-				'Morpheus-Logo': 'assets/scvmm.svg',
-				'Morpheus-Logo-Dark': 'assets/scvmm-dark.svg',
-				'Morpheus-Labels': 'Plugin, Cloud',
-				'Morpheus-Repo': 'https://github.com/gomorpheus/morpheus-scvmm-plugin',
-				'Morpheus-Min-Appliance-Version': "8.0.3"
-		)
-	}
+    manifest {
+        attributes(
+                'Plugin-Class': 'com.morpheusdata.scvmm.ScvmmPlugin',
+                'Plugin-Version': version,
+                'Morpheus-Name': 'SCVMM',
+                'Morpheus-Organization': 'morpheus',
+                'Morpheus-Code': 'morpheus-scvmm-plugin',
+                'Morpheus-Description': 'Plugin for System Center Virtual Machine Manager',
+                'Morpheus-Logo': 'assets/scvmm.svg',
+                'Morpheus-Logo-Dark': 'assets/scvmm-dark.svg',
+                'Morpheus-Labels': 'Plugin, Cloud',
+                'Morpheus-Repo': 'https://github.com/gomorpheus/morpheus-scvmm-plugin',
+                'Morpheus-Min-Appliance-Version': "8.0.3"
+        )
+    }
 }
 
 assets {
-	packagePlugin = false //leave this false for plugins
+    packagePlugin = false //leave this false for plugins
 }
 
 
 task(console, dependsOn: 'classes', type: JavaExec) {
-	main = 'groovy.ui.Console'
-	classpath = sourceSets.main.compileClasspath + sourceSets.main.runtimeClasspath
+    main = 'groovy.ui.Console'
+    classpath = sourceSets.main.compileClasspath + sourceSets.main.runtimeClasspath
 }
 
 test {
-	testLogging {
-		exceptionFormat = 'full'
-		showStandardStreams = true
-	}
+    useJUnitPlatform()
+    forkEvery = 1
+    testLogging {
+        exceptionFormat = 'full'
+        showStandardStreams = true
+    }
 }
+
+test.finalizedBy jacocoTestReport
+
+jacocoTestReport.dependsOn test
+
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            limit {
+                minimum = 0.60
+            }
+        }
+
+        rule {
+            element = 'PACKAGE'
+            limit {
+                minimum = 0.0
+            }
+        }
+
+        rule {
+            limit {
+                counter = 'BRANCH'
+                minimum = 0.0
+            }
+        }
+
+        rule {
+            element = 'METHOD'
+            limit {
+                counter = 'COMPLEXITY'
+                value = 'TOTALCOUNT'
+                maximum = 40
+            }
+        }
+    }
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        csv.required = false
+        html.required = true
+    }
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it)
+        }))
+    }
+}
+
+jacocoTestCoverageVerification.dependsOn jacocoTestReport
+
 tasks.assemble.dependsOn tasks.shadowJar
 
 
 shadowJar {
-	archiveClassifier.set('all')
+    archiveClassifier.set('all')
 }
 
 artifactory {
-	publish {
-		// Define the Artifactory URL for publishing artifacts
-		contextUrl = 'https://hpeartifacts.jfrog.io/artifactory'
-		// Define the project repository to which the artifacts will be published
-		repository {
-			// Set the Artifactory repository key
-			repoKey = 'morpheus-plugins'
-			// Specify the publisher username
-			username = getEnvOrProperty('ARTIFACTORY_USER', 'artifactory_user')
-			// Provide the publisher password
-			password = getEnvOrProperty('ARTIFACTORY_PASSWORD', 'artifactory_password')
-		}
+    publish {
+        // Define the Artifactory URL for publishing artifacts
+        contextUrl = 'https://hpeartifacts.jfrog.io/artifactory'
+        // Define the project repository to which the artifacts will be published
+        repository {
+            // Set the Artifactory repository key
+            repoKey = 'morpheus-plugins'
+            // Specify the publisher username
+            username = getEnvOrProperty('ARTIFACTORY_USER', 'artifactory_user')
+            // Provide the publisher password
+            password = getEnvOrProperty('ARTIFACTORY_PASSWORD', 'artifactory_password')
+        }
 
-		// Include all configured publications for all the modules
-		defaults {
-			publications('mavenJava')
-			publishArtifacts = true
-			properties = [
-					'commit_id': gitCommitId,
-					'branch'   : gitBranchName,
-			]
-			publishPom = true
-			//
-			// TODO - Enable once permissions to deploy to
-			//        artifactory-build-info is granted by DevOps.
-			publishBuildInfo = false
-		}
+        // Include all configured publications for all the modules
+        defaults {
+            publications('mavenJava')
+            publishArtifacts = true
+            properties = [
+                    'commit_id': gitCommitId,
+                    'branch'   : gitBranchName,
+            ]
+            publishPom = true
+            //
+            // TODO - Enable once permissions to deploy to
+            //        artifactory-build-info is granted by DevOps.
+            publishBuildInfo = false
+        }
 
-		artifacts {
-			archives shadowJar
-		}
-	}
+        artifacts {
+            archives shadowJar
+        }
+    }
 }
 
 publishing {
-	publications {
-		mavenJava(MavenPublication) {
-			artifact(shadowJar.archiveFile) {
-				classifier = 'all'
-			}
-		}
-	}
+    publications {
+        mavenJava(MavenPublication) {
+            artifact(shadowJar.archiveFile) {
+                classifier = 'all'
+            }
+        }
+    }
 }
