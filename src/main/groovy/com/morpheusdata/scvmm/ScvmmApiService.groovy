@@ -2386,11 +2386,11 @@ For (\$i=0; \$i -le 10; \$i++) {
         def doPool = doStatic && networkConfig?.primaryInterface?.poolType == 'scvmm'
         def ipAddress = networkConfig?.primaryInterface?.ipAddress
         def poolId = networkConfig?.primaryInterface?.networkPool?.externalId
-        def vlanEnabled = networkConfig.primaryInterface?.vlanId > 0
-        def vlanId = networkConfig.primaryInterface?.vlanId
+        def vlanEnabled = networkConfig?.primaryInterface?.vlanId > 0
+        def vlanId = networkConfig?.primaryInterface?.vlanId
         // network may be a vlan network... therefore, the externalId includes the VLAN id.. need to remove it
-        def networkExternalId = networkConfig.primaryInterface.network.externalId?.take(36)
-        def subnetExternalId = networkConfig.primaryInterface.subnet?.externalId?.take(36)
+        def networkExternalId = networkConfig?.primaryInterface?.network?.externalId?.take(36)
+        def subnetExternalId = networkConfig?.primaryInterface?.subnet?.externalId?.take(36)
 
         if (isTemplate && templateId) {
             commands << "\$template = Get-SCVMTemplate -VMMServer localhost | where {\$_.ID -eq \"$templateId\"}"
@@ -2815,11 +2815,11 @@ For (\$i=0; \$i -le 10; \$i++) {
                 diskRoot: diskRoot]
     }
 
-    private getUsername(Cloud cloud) {
+    protected getUsername(Cloud cloud) {
 		((cloud.accountCredentialLoaded && cloud.accountCredentialData) ? cloud.accountCredentialData?.username : cloud.getConfigProperty('username')) ?: 'dunno'
     }
 
-    private getPassword(Cloud cloud) {
+    protected getPassword(Cloud cloud) {
 		(cloud.accountCredentialLoaded && cloud.accountCredentialData) ? cloud.accountCredentialData?.password : cloud.getConfigProperty('password')
     }
 }
