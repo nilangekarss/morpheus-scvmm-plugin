@@ -812,7 +812,9 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                             server.status = 'provisioned'
                             context.async.computeServer.save(server).blockingGet()
                             provisionResponse.success = true
-							provisionResponse.installAgent = false
+							if (server?.platform == 'linux') {
+								provisionResponse.installAgent = false
+							}
                             log.debug("provisionResponse.success: ${provisionResponse.success}")
                         } else {
                             server.statusMessage = 'Failed to run server'
