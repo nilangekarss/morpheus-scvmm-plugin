@@ -1000,7 +1000,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         rtn
     }
 
-    private setDynamicMemory(Map targetMap, ServicePlan plan) {
+    protected setDynamicMemory(Map targetMap, ServicePlan plan) {
         log.debug "setDynamicMemory: ${plan}"
         if (plan) {
             def ranges = plan.getConfigProperty('ranges') ?: [:]
@@ -1009,7 +1009,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         }
     }
 
-    private getVirtualImageLocation(VirtualImage virtualImage, Cloud cloud) {
+    protected getVirtualImageLocation(VirtualImage virtualImage, Cloud cloud) {
         def location = context.services.virtualImage.location.find(new DataQuery().withFilters(
                 new DataFilter('virtualImage.id', virtualImage.id),
                 new DataOrFilter(
@@ -2079,7 +2079,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return resizeWorkloadAndServer(null, server, resizeRequest, opts, false)
     }
 
-    private ServiceResponse resizeWorkloadAndServer(Workload workload, ComputeServer server, ResizeRequest resizeRequest, Map opts, Boolean isWorkload) {
+    protected ServiceResponse resizeWorkloadAndServer(Workload workload, ComputeServer server, ResizeRequest resizeRequest, Map opts, Boolean isWorkload) {
         log.debug("resizeWorkloadAndServer workload.id: ${workload?.id} - opts: ${opts}")
 
         ServiceResponse rtn = ServiceResponse.success()

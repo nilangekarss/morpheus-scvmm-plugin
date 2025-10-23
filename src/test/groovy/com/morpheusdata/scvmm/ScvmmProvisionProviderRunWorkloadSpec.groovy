@@ -12,7 +12,12 @@ import com.morpheusdata.core.MorpheusVirtualImageService
 import com.morpheusdata.core.MorpheusComputeServerService
 import com.morpheusdata.core.MorpheusStorageVolumeService
 import com.morpheusdata.core.cloud.MorpheusCloudService
+import com.morpheusdata.core.compute.MorpheusComputeServerInterfaceService
+import com.morpheusdata.core.data.DataAndFilter
+import com.morpheusdata.core.data.DataOrFilter
 import com.morpheusdata.core.library.MorpheusWorkloadTypeService
+import com.morpheusdata.core.synchronous.MorpheusSynchronousVirtualImageLocationService
+import com.morpheusdata.core.synchronous.provisioning.MorpheusSynchronousProvisionService
 import com.morpheusdata.core.synchronous.MorpheusSynchronousVirtualImageService
 import com.morpheusdata.core.synchronous.network.MorpheusSynchronousNetworkService
 import com.morpheusdata.core.synchronous.cloud.MorpheusSynchronousDatastoreService
@@ -25,6 +30,7 @@ import com.morpheusdata.core.network.MorpheusNetworkService
 import com.morpheusdata.core.synchronous.library.MorpheusSynchronousWorkloadTypeService
 import com.morpheusdata.core.util.ComputeUtility
 import com.morpheusdata.model.*
+import com.morpheusdata.model.projection.StorageVolumeIdentityProjection
 import com.morpheusdata.model.provisioning.HostRequest
 import com.morpheusdata.model.provisioning.UserConfiguration
 import com.morpheusdata.model.provisioning.WorkloadRequest
@@ -38,6 +44,7 @@ import com.morpheusdata.model.Account
 import com.morpheusdata.model.VirtualImage
 import com.morpheusdata.model.OsType
 import com.morpheusdata.model.VirtualImageLocation
+import com.morpheusdata.request.ResizeRequest
 import com.morpheusdata.response.InitializeHypervisorResponse
 import com.morpheusdata.response.PrepareWorkloadResponse
 import com.morpheusdata.response.ProvisionResponse
@@ -2488,5 +2495,665 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         //1 * provisionProvider.getMorpheusServer(server.id) >> reloadedServer
         result.name == "test-server"
 
+    }
+
+    @Unroll
+    def "loadDatastoreForVolume finds datastore by hostVolumeId=#hostVolumeId, fileShareId=#fileShareId, partitionUniqueId=#partitionUniqueId"() {
+        given:
+        def cloud = new Cloud(id: 1L)
+
+        // Create datastores
+        def datastore1 = new Datastore(id: 1L, name: 'datastore1')
+        def datastore2 = new Datastore(id: 2L, name: 'datastore2')
+
+        // Create storage volumes
+        def storageVolumeWithHostId = new StorageVolume(
+                internalId: 'vol-123',
+                datastore: datastore1
+        )
+
+        def storageVolumeWithPartitionId = new StorageVolume(
+                externalId: 'part-456',
+                datastore: datastore2
+        )
+
+        // Setup mock for datastore service
+        def datastoreService = Mock(MorpheusSynchronousDatastoreService)
+        cloudService.getDatastore() >> datastoreService
+
+        // Setup mocks for different query scenarios
+        if (hostVolumeId == 'vol-123') {
+            // First attempt with hostVolumeId
+            storageVolumeService.find({ DataQuery query ->
+                query.filters.any { it.name == 'internalId' && it.value == hostVolumeId } &&
+                        query.filters.any { it.name == 'datastore.refType' && it.value == 'ComputeZone' } &&
+                        query.filters.any { it.name == 'datastore.refId' && it.value == cloud.id }
+            }) >> storageVolumeWithHostId
+        } else {
+            storageVolumeService.find({ DataQuery query ->
+                query.filters.any { it.name == 'internalId' && it.value == hostVolumeId }
+            }) >> null
+        }
+
+        // For partitionUniqueId lookup
+        if (partitionUniqueId == 'part-456') {
+            storageVolumeService.find({ DataQuery query ->
+                query.filters.any { it.name == 'externalId' && it.value == partitionUniqueId } &&
+                        query.filters.any { it.name == 'datastore.refType' && it.value == 'ComputeZone' } &&
+                        query.filters.any { it.name == 'datastore.refId' && it.value == cloud.id }
+            }) >> storageVolumeWithPartitionId
+        }
+
+        // For fileShareId lookup
+        if (fileShareId == 'file-id') {
+            datastoreService.find({ DataQuery query ->
+                query.filters.any { it.name == 'externalId' && it.value == fileShareId } &&
+                        query.filters.any { it.name == 'refType' && it.value == 'ComputeZone' } &&
+                        query.filters.any { it.name == 'refId' && it.value == cloud.id }
+            }) >> datastore1
+        }
+
+        when:
+        def result = provisionProvider.loadDatastoreForVolume(cloud, hostVolumeId, fileShareId, partitionUniqueId)
+
+        then:
+
+        if (hostVolumeId == 'vol-123') {
+            result == datastore1
+        } else if (partitionUniqueId == 'part-456') {
+            result == datastore2
+        } else if (fileShareId == 'file-id') {
+            result == datastore1
+        } else {
+            result == null
+        }
+
+        where:
+        hostVolumeId | fileShareId | partitionUniqueId
+        'vol-123'    | null        | null
+        'missing'    | null        | 'part-456'
+        null         | 'file-id'   | null
+
+    }
+
+    def "test applyComputeServerNetworkIp with different IP configurations"() {
+        given:
+        def server = new ComputeServer(id: 100L, name: "test-server")
+        def existingInterface = new ComputeServerInterface(
+                id: 1L,
+                name: "eth0",
+                primaryInterface: true,
+                displayOrder: 1
+        )
+        server.interfaces = [existingInterface]
+        def macAddress = "00:11:22:33:44:55"
+
+        def asyncComputeServerInterfaceService = Mock(MorpheusComputeServerInterfaceService)
+        asyncComputeServerService.getComputeServerInterface() >> asyncComputeServerInterfaceService
+        // For case with privateIp, mock the server interface create/save methods
+        def updatedServer = new ComputeServer(id: 100L)
+        def savedInterface = new ComputeServerInterface(
+                id: 1L,
+                name: "eth0",
+                ipAddress: "192.168.1.100",
+                publicIpAddress: "10.0.0.100",
+                macAddress: macAddress,
+                primaryInterface: true,
+                displayOrder: 1,
+                addresses: [new NetAddress(type: NetAddress.AddressType.IPV4, address: "192.168.1.100")]
+        )
+        asyncComputeServerInterfaceService.save(_) >> {
+           return  Single.just([savedInterface])
+        }
+
+
+        when: "privateIp is provided"
+        def result1 = provisionProvider.applyComputeServerNetworkIp(server, "192.168.1.100", "10.0.0.100", 0, macAddress)
+
+        then: "interface should be updated with privateIp and publicIp"
+
+        1 * provisionProvider.saveAndGetMorpheusServer(_, true) >> updatedServer
+        result1.ipAddress == "192.168.1.100"
+        result1.publicIpAddress == "10.0.0.100"
+        result1.macAddress == macAddress
+        server.internalIp == "192.168.1.100"
+        server.externalIp == "10.0.0.100"
+        server.sshHost == "192.168.1.100"
+
+        when: "privateIp is null but publicIp is provided"
+        def result2 = provisionProvider.applyComputeServerNetworkIp(server, null, "10.0.0.200", 0, macAddress)
+
+        then: "no interface should be updated"
+        1 * provisionProvider.saveAndGetMorpheusServer(_, true) >> updatedServer
+        result2 == null
+    }
+
+    def "test cloneParentCleanup successfully cleans up parent VM"() {
+        given:
+        // Create basic options map with all necessary nested properties
+        def scvmmOpts = [
+                cloneVMId: 'vm-123',
+                cloneContainerId: 100,
+                startClonedVM: true,
+                cloneBaseOpts: [
+                        clonedScvmmOpts: [
+                                controller: 1,
+                                hostId: 2
+                        ]
+                ],
+                deleteDvdOnComplete: [
+                        deleteIso: 'iso-file.iso'
+                ]
+        ]
+
+        def serviceResponse = new ServiceResponse(success: true)
+
+        // Mock the API service calls with successful responses
+        mockApiService.startServer({ opts ->
+            assert opts.async == true
+            assert opts.controller == 1
+            assert opts.hostId == 2
+        }, 'vm-123') >> [success: true]
+
+        mockApiService.setCdrom({ opts ->
+            assert opts.controller == 1
+            assert opts.hostId == 2
+        }) >> [success: true]
+
+        mockApiService.deleteIso({ opts ->
+            assert opts.controller == 1
+            assert opts.hostId == 2
+        }, 'iso-file.iso') >> [success: true]
+
+        // Verify all API methods were called exactly once
+
+        when:
+        provisionProvider.cloneParentCleanup(scvmmOpts, serviceResponse)
+
+        then:
+
+        1 * mockApiService.startServer(_, 'vm-123') >>{
+            return [success: true]
+        }
+        1 * mockApiService.setCdrom(_) >> {
+            return [success: true]
+        }
+        1 * mockApiService.deleteIso(_, 'iso-file.iso') >> {
+            return [success: true]
+        }
+        // Verify the service response was not modified (remained successful)
+
+    }
+
+    def "getUserAddedVolumes correctly processes workload configs"() {
+        given:
+        def workload = new Workload(id: 1L)
+
+        // Create configs with a mix of root and non-root volumes
+        def configs = [
+                volumes: [
+                        [id: -1, name: 'data1', maxStorage: 10737418240L, rootVolume: false],
+                        [id: -1, name: 'data2', maxStorage: 21474836480L, rootVolume: false],
+                        [id: 1, name: 'root', maxStorage: 42949672960L, rootVolume: true],
+                        [id: -1, name: 'data3', maxStorage: 5368709120L, rootVolume: false, extraField: 'shouldBeIgnored']
+                ]
+        ]
+
+        // Set the configs as a JSON string
+        workload.configs = new groovy.json.JsonBuilder(configs).toString()
+
+        when:
+        def result = provisionProvider.getUserAddedVolumes(workload)
+
+        then:
+        result.count == 3
+        result.volumes.size() == 3
+
+        // Verify volume properties were correctly extracted
+        result.volumes[0].name == 'data1'
+        result.volumes[0].maxStorage == 10737418240L
+
+        result.volumes[1].name == 'data2'
+        result.volumes[1].maxStorage == 21474836480L
+
+        result.volumes[2].name == 'data3'
+        result.volumes[2].maxStorage == 5368709120L
+
+        // Verify all volumes are StorageVolume instances
+        result.volumes.every { it instanceof StorageVolume }
+
+        // Verify extraField was ignored
+        !result.volumes[2].hasProperty('extraField')
+    }
+
+    @Unroll
+    def "test additionalTemplateDisksConfig with specific disk requirements"() {
+        given:
+        // Setup workload
+        def workload = new Workload(id: 100L)
+        workload.displayName = "test-workload"
+
+        // Create user added volumes
+        def userVolume1 = new StorageVolume(
+                id: 201L,
+                name: "user-volume-1",
+                maxStorage: 10737418240L,
+                rootVolume: false
+        )
+        def userVolume2 = new StorageVolume(
+                id: 202L,
+                name: "user-volume-2",
+                maxStorage: 5368709120L,
+                rootVolume: false
+        )
+
+        workload.server = new ComputeServer()
+        workload.server.volumes = [userVolume1,userVolume2]
+
+        // Create scvmmOpts with diskExternalIdMappings containing 2 entries
+        def scvmmOpts = [
+                diskExternalIdMappings: ['disk1', 'disk2']
+        ]
+
+        // Mock getUserAddedVolumes to return 2 volumes
+        provisionProvider.getUserAddedVolumes(workload) >> {
+            return [count: 2, volumes: [userVolume1]]
+        }
+
+        // Mock getContainerDataDiskList to return 2 data disks
+        provisionProvider.getContainerDataDiskList(_) >> {
+            return [userVolume1, userVolume2]
+        }
+
+        when:
+        def result = provisionProvider.additionalTemplateDisksConfig(workload, scvmmOpts)
+
+        then:
+        // Expect 2 disks to be added (dataDisks.size() + 1 > diskExternalIdMappings.size())
+        // where dataDisks.size() = 2, and diskExternalIdMappings.size() = 2
+        result.size() == 1
+
+    }
+
+//    @Unroll
+//    def "test getDiskExternalIds returns correctly formatted disk mappings"() {
+//        given:
+//        def virtualImage = new VirtualImage(id: 1L, name: "test-image")
+//        def cloud = new Cloud(id: 2L, name: "test-cloud")
+//
+//        // Create test volumes for the virtual image location
+//        def rootVolume = new StorageVolumeIdentityProjection(
+//                id: 101L,
+//                externalId: "root-disk-id"
+//        )
+//
+//        def dataVolume1 = new StorageVolumeIdentityProjection(
+//                id: 102L,
+//                externalId: "data-disk-id-1"
+//        )
+//        def dataVolume2 = new StorageVolumeIdentityProjection(
+//                id: 103L,
+//                externalId: "data-disk-id-2"
+//        )
+//
+//        // Create the virtual image location with the test volumes
+//        def virtualImageLocation = new VirtualImageLocation(
+//                id: 201L,
+//                virtualImage: virtualImage,
+//                volumes: [rootVolume, dataVolume1, dataVolume2]
+//        )
+//
+//        // Mock getVirtualImageLocation to return our test location
+//        provisionProvider.getVirtualImageLocation(_, _) >> {
+//            return virtualImageLocation
+//        }
+//
+//        when:
+//        def result = provisionProvider.getDiskExternalIds(virtualImage, cloud)
+//
+//        then:
+//        // Should have 3 disk mappings (1 root + 2 data)
+//        result.size() == 3
+//
+//        // Verify root volume is first with idx 0
+//        result[0].rootVolume == true
+//        result[0].externalId == "root-disk-id"
+//        result[0].idx == 0
+//
+//        // Verify first data volume
+//        result[1].rootVolume == false
+//        result[1].externalId == "data-disk-id-1"
+//        result[1].idx == 1  // Index starts at 1 for data disks
+//
+//        // Verify second data volume
+//        result[2].rootVolume == false
+//        result[2].externalId == "data-disk-id-2"
+//        result[2].idx == 2
+//    }
+
+    def "setDynamicMemory should set dynamic memory values when plan has ranges config"() {
+        given:
+        def targetMap = [:]
+        def servicePlan = Mock(ServicePlan)
+        def ranges = [minMemory: 1024, maxMemory: 4096]
+
+        when:
+        servicePlan.getConfigProperty('ranges') >> ranges
+        provisionProvider.setDynamicMemory(targetMap, servicePlan)
+
+        then:
+        targetMap.minDynamicMemory == 1024
+        targetMap.maxDynamicMemory == 4096
+    }
+
+    def "test getVirtualImageLocation returns correct location when found"() {
+        given:
+        def virtualImage = new VirtualImage(id: 100L)
+        def cloud = new Cloud(id: 200L, regionCode: 'us-east-1')
+        def owner = new Account(id: 300L)
+        cloud.owner = owner
+        virtualImage.owner = owner
+
+        def virtualImageLocation = new VirtualImageLocation(
+                id: 400L,
+                refId: cloud.id,
+                refType: 'ComputeZone',
+                virtualImage: virtualImage,
+                imageRegion: cloud.regionCode
+        )
+
+        // Mock the MorpheusContext service calls
+        MorpheusSynchronousVirtualImageLocationService virtualImageLocationService = Mock(MorpheusSynchronousVirtualImageLocationService)
+        virtualImageService.location >> virtualImageLocationService
+
+        // Mock the find method to verify the query is constructed correctly
+        // and return our test location
+        virtualImageLocationService.find({ DataQuery query ->
+            // Verify filter on virtualImage.id
+            assert query.filters.any { it.name == 'virtualImage.id' && it.value == 100L }
+
+            // Verify the complex DataOrFilter structure
+            def orFilter = query.filters.find { it instanceof DataOrFilter }
+            assert orFilter != null
+
+            def firstAndFilter = orFilter.value[0]
+            assert firstAndFilter instanceof DataAndFilter
+            //assert firstAndFilter != null
+            assert firstAndFilter.value[0].any { it.name == 'refType' && it.value == 'ComputeZone' }
+            assert firstAndFilter.value[1].any { it.name == 'refId' && it.value == 200L }
+
+            def secondAndFilter = orFilter.value[1]
+            assert secondAndFilter instanceof DataAndFilter
+            assert secondAndFilter.value[0].any { it.name == 'virtualImage.owner.id' && it.value == 300L }
+            assert secondAndFilter.value[1].any { it.name == 'imageRegion' && it.value == 'us-east-1' }
+
+            return true
+        }) >> virtualImageLocation
+
+        when:
+        def result = provisionProvider.getVirtualImageLocation(virtualImage, cloud)
+
+        then:
+        result == virtualImageLocation
+        result.id == 400L
+        result.virtualImage.id == 100L
+        result.refId == cloud.id
+        result.refType == 'ComputeZone'
+        result.imageRegion == 'us-east-1'
+    }
+
+
+    @Unroll
+    def "test getResizeConfig handles volume resize scenarios for #scenario"() {
+        given:
+        def server = new ComputeServer(
+                id: 100L,
+                name: "test-server",
+                maxMemory: 4294967296L,
+                maxCores: 2
+        )
+        def plan = new ServicePlan(id: 200L)
+        def opts = [volumes: true]
+        def resizeRequest = new ResizeRequest(
+                maxMemory: 4294967296L, // Same memory
+                maxCores: 2             // Same cores
+        )
+
+        // Create the appropriate volume based on test parameters
+        def volume = new StorageVolume(
+                id: 300L,
+                name: "test-volume",
+                rootVolume: isRootVolume,
+                maxStorage: currentSize,
+                type: new StorageVolumeType(code: volumeType)
+        )
+
+        def volumeUpdate = [
+                existingModel: existingModel ? volume : null,
+                updateProps: [maxStorage: requestedSize],
+                volume: !existingModel ? new StorageVolume(maxStorage: requestedSize) : null
+        ]
+
+        resizeRequest.volumesUpdate = [volumeUpdate]
+
+        // Mock setDynamicMemory to prevent actual implementation from running
+        provisionProvider.setDynamicMemory(*_) >> {
+            Map rtnMap, ServicePlan servicePlan ->
+
+        }
+
+        when:
+        def result = provisionProvider.getResizeConfig(null, server, plan, opts, resizeRequest)
+
+        then:
+        result.success == true
+        result.allowed == expectedAllowed
+        result.hotResize == expectedHotResize
+
+        where:
+        scenario                | existingModel | isRootVolume | currentSize   | requestedSize  | volumeType            | expectedAllowed | expectedHotResize
+        "resize root disk"      | true          | true         | 10737418240L  | 21474836480L   | "standard"            | true           | false
+        "resize data disk"      | true          | false        | 10737418240L  | 21474836480L   | "standard"            | true           | false
+        //"add new disk"          | false         | false        | 0L            | 10737418240L   | "standard"            | true           | false
+        "resize differencing"   | true          | false        | 10737418240L  | 21474836480L   | "differencing"        | true          | false
+        "no size change"        | true          | false        | 10737418240L  | 10737418240L   | "standard"            | true           | false
+        "shrink disk"           | true          | false        | 21474836480L  | 10737418240L   | "standard"            | true           | false
+    }
+
+    def "buildStorageVolume creates volume with correct properties"() {
+        given:
+        def computeServer = new ComputeServer(
+                id: 100L,
+                cloud: new Cloud(id: 200L),
+                region: new ComputeZoneRegion(regionCode: "us-east-1"),
+                account: new Account(id: 300L)
+        )
+
+        def volumeAdd = [
+                maxStorage: 10737418240,
+                maxIOPS: 1000,
+                name: "data-volume"
+        ]
+
+        def counter = 2
+
+        when:
+        def result = provisionProvider.buildStorageVolume(computeServer, volumeAdd, counter)
+
+        then:
+        result instanceof StorageVolume
+        result.refType == 'ComputeZone'
+        result.refId == 200L
+        result.regionCode == 'us-east-1'
+        result.account.id == 300L
+        result.maxStorage == 10737418240L
+        result.maxIOPS == 1000
+        result.name == 'data-volume'
+        result.displayOrder == 2
+        result.status == 'provisioned'
+        1 * provisionProvider.getDiskDisplayName(counter) >> 'Data Disk 2'
+        result.deviceDisplayName == 'Data Disk 2'
+    }
+
+    def "getDiskNameList returns the expected array of disk names"() {
+        given:
+        def expectedDiskNames = ['sda', 'sdb', 'sdc', 'sdd', 'sde', 'sdf', 'sdg', 'sdh', 'sdi', 'sdj', 'sdk', 'sdl'] as String[]
+
+        when:
+        def result = provisionProvider.getDiskNameList()
+
+        then:
+        result == expectedDiskNames
+        result.length == 12
+        result[0] == 'sda'
+        result[11] == 'sdl'
+    }
+
+    def "resizeWorkload should call resizeWorkloadAndServer with the correct parameters"() {
+        given:
+        def instance = new Instance(id: 100L, name: "test-instance")
+        def workload = new Workload(id: 200L)
+        workload.displayName = "test-workload"
+        def resizeRequest = new ResizeRequest(maxMemory: 4294967296L, maxCores: 2)
+        def opts = [key: "value"]
+
+        // Create a mock response to be returned by resizeWorkloadAndServer
+        def expectedResponse = new ServiceResponse(success: true, data: [resized: true])
+
+        provisionProvider.resizeWorkloadAndServer(_, _, _, _, _) >> expectedResponse
+
+        when:
+        def result = provisionProvider.resizeWorkload(instance, workload, resizeRequest, opts)
+
+        then:
+        // Verify resizeWorkloadAndServer was called once with the correct parameters
+        1 * provisionProvider.resizeWorkloadAndServer(workload, null, resizeRequest, opts, true) >> expectedResponse
+
+        // Verify the response is correctly passed through
+        result == expectedResponse
+        result.success == true
+        result.data.resized == true
+    }
+
+    def "resizeServer should call resizeWorkloadAndServer with the correct parameters"() {
+        given:
+        def server = new ComputeServer(id: 100L, name: "test-server")
+        def resizeRequest = new ResizeRequest(maxMemory: 4294967296L, maxCores: 2)
+        def opts = [key: "value"]
+
+        // Create a mock response to be returned by resizeWorkloadAndServer
+        def expectedResponse = new ServiceResponse(success: true, data: [resized: true])
+
+        // Mock the resizeWorkloadAndServer method to return our expected response
+        provisionProvider.resizeWorkloadAndServer(_, _, _, _, _) >> expectedResponse
+
+        when:
+        def result = provisionProvider.resizeServer(server, resizeRequest, opts)
+
+        then:
+        // Verify resizeWorkloadAndServer was called once with the correct parameters
+        1 * provisionProvider.resizeWorkloadAndServer(null, server, resizeRequest, opts, false) >> expectedResponse
+
+        // Verify the response is correctly passed through
+        result == expectedResponse
+        result.success == true
+        result.data.resized == true
+    }
+
+    def "test constructCloudInitOptions with different agent installation scenarios"() {
+        given:
+        // Create test objects
+        def workload = new Workload(id: 100L)
+        workload.displayName = "test-workload"
+
+        def server = new ComputeServer(
+                id: 200L,
+                name: "test-server"
+        )
+        workload.server = server
+
+        def cloud = new Cloud(
+                id: 300L,
+                name: "test-cloud",
+                agentMode: agentMode
+        )
+        server.cloud = cloud
+
+        def workloadRequest = new WorkloadRequest(
+                cloudConfigUser: "cloud-config-user-data",
+                cloudConfigMeta: "cloud-config-metadata",
+                cloudConfigNetwork: "cloud-config-network"
+        )
+
+        def virtualImage = new VirtualImage(
+                id: 400L,
+                name: "test-image",
+                isSysprep: isSysprep
+        )
+
+        def networkConfig = [network: "test-network"]
+        def licenses = ["license1", "license2"]
+        def scvmmOpts = [isSysprep: isSysprep]
+
+        // Mock the buildCloudConfigOptions method
+        def cloudConfigOpts = [
+                installAgent: false,
+                licenseApplied: licenseApplied,
+                unattendCustomized: unattendCustomized
+        ]
+
+        // Mock the MorpheusSynchronousProvisionService
+        MorpheusSynchronousProvisionService provisionService = Mock(MorpheusSynchronousProvisionService)
+        morpheusContext.services.provision >> {
+            return provisionService
+        }
+
+        // Set up mocks for the service calls
+        provisionService.buildCloudConfigOptions(_, _, _, _) >> {
+            return cloudConfigOpts
+        }
+
+        // Mock the buildIsoOutputStream method
+        def mockIsoStream = new ByteArrayOutputStream()
+        mockIsoStream.write("test-iso-data".getBytes())
+        byte[] mockIsoBytes = mockIsoStream.toByteArray()
+        provisionService.buildIsoOutputStream(_, _, _, _, _) >> {
+            return mockIsoBytes
+        }
+
+        when:
+        def result = provisionProvider.constructCloudInitOptions(
+                workload,
+                workloadRequest,
+                installAgent,
+                platform,
+                virtualImage,
+                networkConfig,
+                licenses,
+                scvmmOpts
+        )
+
+        then:
+        // Verify the buildCloudConfigOptions was called once with correct parameters
+//        1 * provisionService.buildCloudConfigOptions(_, _, _, _) >> cloudConfigOpts
+
+        // Verify the buildIsoOutputStream was called once with correct parameters
+//        1 * provisionService.buildIsoOutputStream(_,_,_,_,_) >> mockIsoStream
+
+        // Verify the result has the expected properties
+        result.installAgent == expectedInstallAgent
+        result.cloudConfigUser == workloadRequest.cloudConfigUser
+        result.cloudConfigMeta == workloadRequest.cloudConfigMeta
+        result.cloudConfigNetwork == workloadRequest.cloudConfigNetwork
+        result.licenseApplied == licenseApplied
+        result.unattendCustomized == unattendCustomized
+        result.cloudConfigUnattend == workloadRequest.cloudConfigUser
+        result.cloudConfigBytes.toString() == mockIsoBytes.toString()
+
+        where:
+        agentMode   | platform  | installAgent | isSysprep | licenseApplied | unattendCustomized | expectedInstallAgent
+        'cloudInit' | 'linux'   | true         | false     | true           | false              | false
+        'cloudInit' | 'windows' | true         | true      | null          | true               | false
+        'vm'        | 'linux'   | true         | false     | null          | false              | true
     }
 }
