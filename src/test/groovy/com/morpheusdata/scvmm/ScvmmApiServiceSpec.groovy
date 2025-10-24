@@ -1914,4 +1914,403 @@ class ScvmmApiServiceSpec extends Specification {
         result.memory == '17179869184'
         result.disks == '2199023255552'
     }
+
+    @Unroll
+    def "test getCloud successfully retrieves cloud information"() {
+        given:
+        def opts = [
+                zone: [regionCode: "us-east-1"],
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password',
+                winrmPort: '5985'
+        ]
+
+        // Mock cloud data response
+        def cloudData = [
+                [
+                        ID: "us-east-1",
+                        Name: "East Coast Cloud",
+                        CapabilityProfiles: ["Hyper-V", "Generation2"]
+                ]
+        ]
+
+        def commandOutput = [success: true, data: cloudData]
+
+        when:
+        def result = apiService.getCloud(opts)
+
+        then:
+        // Verify generateCommandString was called with the correct PowerShell command
+        1 * apiService.generateCommandString({ String cmd ->
+            cmd.contains('$cloud = Get-SCCloud -VMMServer localhost') &&
+                    cmd.contains("where { \$_.ID -eq 'us-east-1' }") &&
+                    cmd.contains('ID=$cloud.ID') &&
+                    cmd.contains('Name=$cloud.Name') &&
+                    cmd.contains('CapabilityProfiles=@($cloud.CapabilityProfiles.Name)')
+        }) >> "generated powershell command"
+
+        // Verify wrapExecuteCommand was called with the generated command
+        1 * apiService.wrapExecuteCommand("generated powershell command", opts) >> commandOutput
+
+        // Verify the result
+        result.success == true
+        result.cloud.ID == "us-east-1"
+        result.cloud.Name == "East Coast Cloud"
+        result.cloud.CapabilityProfiles == ["Hyper-V", "Generation2"]
+    }
+
+    @Unroll
+    def "test getCapabilityProfiles successfully retrieves capability profiles"() {
+        given:
+        def opts = [
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password',
+                winrmPort: '5985'
+        ]
+
+        // Mock capability profiles data response
+        def capabilityProfilesData = [
+                [
+                        ID: "profile-1",
+                        Name: "Hyper-V"
+                ],
+                [
+                        ID: "profile-2",
+                        Name: "Generation2"
+                ]
+        ]
+
+        def commandOutput = [success: true, data: capabilityProfilesData]
+
+        when:
+        def result = apiService.getCapabilityProfiles(opts)
+
+        then:
+        // Verify generateCommandString was called with the correct PowerShell command
+        1 * apiService.generateCommandString("Get-SCCapabilityProfile -VMMServer localhost | Select ID,Name") >> "generated powershell command"
+
+        // Verify wrapExecuteCommand was called with the generated command
+        1 * apiService.wrapExecuteCommand("generated powershell command", opts) >> commandOutput
+
+        // Verify the result
+        result.success == true
+        result.capabilityProfiles == capabilityProfilesData
+        result.capabilityProfiles.size() == 2
+        result.capabilityProfiles[0].ID == "profile-1"
+        result.capabilityProfiles[0].Name == "Hyper-V"
+        result.capabilityProfiles[1].ID == "profile-2"
+        result.capabilityProfiles[1].Name == "Generation2"
+    }
+
+    @Unroll
+    def "test listClouds successfully retrieves list of clouds"() {
+        given:
+        def opts = [
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password',
+                winrmPort: '5985'
+        ]
+
+        // Mock clouds data response
+        def cloudsData = [
+                [
+                        ID: "cloud-1",
+                        Name: "Production Cloud"
+                ],
+                [
+                        ID: "cloud-2",
+                        Name: "Development Cloud"
+                ],
+                [
+                        ID: "cloud-3",
+                        Name: "Test Cloud"
+                ]
+        ]
+
+        def commandOutput = [success: true, data: cloudsData]
+
+        when:
+        def result = apiService.listClouds(opts)
+
+        then:
+        // Verify generateCommandString was called with the correct PowerShell command
+        1 * apiService.generateCommandString('Get-SCCloud -VMMServer localhost | Select ID, Name') >> "generated powershell command"
+
+        // Verify wrapExecuteCommand was called with the generated command
+        1 * apiService.wrapExecuteCommand("generated powershell command", opts) >> commandOutput
+
+        // Verify the result
+        result.success == true
+        result.clouds == cloudsData
+        result.clouds.size() == 3
+        result.clouds[0].ID == "cloud-1"
+        result.clouds[0].Name == "Production Cloud"
+        result.clouds[1].ID == "cloud-2"
+        result.clouds[1].Name == "Development Cloud"
+        result.clouds[2].ID == "cloud-3"
+        result.clouds[2].Name == "Test Cloud"
+    }
+
+
+    @Unroll
+    def "test listTemplates successfully retrieves VM templates and VHDs"() {
+        given:
+        def opts = [
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password',
+                winrmPort: '5985'
+        ]
+
+        // Mock template data response
+        def templatesData = [
+                [
+                        ID: "template-1",
+                        ObjectType: "VMTemplate",
+                        Name: "Windows Server 2019 Template",
+                        CPUCount: 2,
+                        Memory: 4294967296L,
+                        OperatingSystem: "Windows Server 2019 Datacenter",
+                        TotalSize: 42949672960L,
+                        UsedSize: 21474836480L,
+                        Generation: 2,
+                        Disks: [
+                                [
+                                        ID: "disk-1",
+                                        Name: "System Disk",
+                                        VHDType: "DynamicallyExpanding",
+                                        VHDFormat: "VHDX",
+                                        Location: "C:\\ClusterStorage\\Volume1\\Templates\\disk1.vhdx",
+                                        TotalSize: 42949672960L,
+                                        UsedSize: 21474836480L,
+                                        HostId: "host-1",
+                                        HostVolumeId: "volume-1",
+                                        VolumeType: "BootAndSystem"
+                                ]
+                        ]
+                ],
+                [
+                        ID: "vhd-1",
+                        Name: "Ubuntu 20.04 VHD",
+                        Location: "C:\\ClusterStorage\\Volume1\\VHDs\\ubuntu.vhdx",
+                        OperatingSystem: "Ubuntu Linux 20.04 (64 bit)",
+                        TotalSize: 21474836480L,
+                        VHDFormatType: "VHDX",
+                        UsedSize: 0,
+                        Disks: [
+                                [
+                                        ID: "vhd-1",
+                                        ObjectType: "VirtualHardDisk",
+                                        Name: "Ubuntu 20.04 VHD",
+                                        VHDType: "DynamicallyExpanding",
+                                        VHDFormat: "VHDX",
+                                        Location: "C:\\ClusterStorage\\Volume1\\VHDs\\ubuntu.vhdx",
+                                        TotalSize: 21474836480L,
+                                        UsedSize: 10737418240L,
+                                        HostId: "host-2",
+                                        HostVolumeId: "volume-2"
+                                ]
+                        ]
+                ]
+        ]
+
+        def commandOutput = [success: true, data: templatesData]
+
+        when:
+        def result = apiService.listTemplates(opts)
+
+        then:
+        // Verify generateCommandString was called with the complex PowerShell command
+        1 * apiService.generateCommandString({ String cmd ->
+            cmd.contains('$report = @()') &&
+                    cmd.contains('Get-SCVMTemplate -VMMServer localhost -All') &&
+                    cmd.contains('where { $_.ID -ne $_.Name -and $_.Status -eq \'Normal\'}') &&
+                    cmd.contains('Get-SCVirtualHardDisk -VMMServer localhost') &&
+                    cmd.contains('$report')
+        }) >> "generated powershell command"
+
+        // Verify wrapExecuteCommand was called with the generated command
+        1 * apiService.wrapExecuteCommand("generated powershell command", opts) >> commandOutput
+
+        // Verify the result
+        result.success == true
+        result.templates == templatesData
+        result.templates.size() == 2
+
+        // Verify template data structure
+        result.templates[0].ID == "template-1"
+        result.templates[0].Name == "Windows Server 2019 Template"
+        result.templates[0].CPUCount == 2
+        result.templates[0].Memory == 4294967296L
+        result.templates[0].Generation == 2
+        result.templates[0].Disks.size() == 1
+        result.templates[0].Disks[0].VHDType == "DynamicallyExpanding"
+
+        // Verify VHD data structure
+        result.templates[1].ID == "vhd-1"
+        result.templates[1].Name == "Ubuntu 20.04 VHD"
+        result.templates[1].VHDFormatType == "VHDX"
+        result.templates[1].Disks.size() == 1
+    }
+
+    @Unroll
+    def "test listClusters successfully retrieves clusters and applies host group filtering"() {
+        given:
+        def opts = [
+                zone: Mock(Cloud) {
+                    getConfigProperty('hostGroup') >> hostGroupFilter
+                },
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password',
+                winrmPort: '5985'
+        ]
+
+        // Mock clusters data response
+        def clustersData = [
+                [
+                        id: "cluster-1",
+                        name: "Production Cluster",
+                        hostGroup: "All Hosts\\Production\\Cluster1",
+                        sharedVolumes: ["CSV-Volume1", "CSV-Volume2"],
+                        description: "Main production cluster"
+                ],
+                [
+                        id: "cluster-2",
+                        name: "Development Cluster",
+                        hostGroup: "All Hosts\\Development\\Cluster1",
+                        sharedVolumes: ["CSV-Dev1"],
+                        description: "Development environment cluster"
+                ],
+                [
+                        id: "cluster-3",
+                        name: "Test Cluster",
+                        hostGroup: "All Hosts\\Production\\TestCluster",
+                        sharedVolumes: [],
+                        description: "Testing cluster"
+                ]
+        ]
+
+        def commandOutput = [success: true, data: clustersData]
+
+        when:
+        def result = apiService.listClusters(opts)
+
+        then:
+        // Verify generateCommandString was called with the correct PowerShell command
+        1 * apiService.generateCommandString({ String cmd ->
+            cmd.contains('$report = @()') &&
+                    cmd.contains('$Clusters = Get-SCVMHostCluster -VMMServer localhost') &&
+                    cmd.contains('foreach ($Cluster in $Clusters)') &&
+                    cmd.contains('id=$Cluster.ID') &&
+                    cmd.contains('name=$Cluster.Name') &&
+                    cmd.contains('hostGroup=$Cluster.HostGroup.Path') &&
+                    cmd.contains('sharedVolumes=@($Cluster.SharedVolumes.Name)') &&
+                    cmd.contains('description=$Cluster.Description') &&
+                    cmd.contains('$report +=$data') &&
+                    cmd.contains('$report')
+        }) >> "generated powershell command"
+
+        // Verify wrapExecuteCommand was called with the generated command
+        1 * apiService.wrapExecuteCommand("generated powershell command", opts) >> commandOutput
+
+        // Verify the result
+        result.success == true
+        result.clusters.size() == expectedClusterCount
+
+        if (expectedClusterCount > 0) {
+            result.clusters.each { cluster ->
+                assert expectedHostGroups.any { cluster.hostGroup?.startsWith(it) }
+            }
+        }
+
+        where:
+        scenario                           | hostGroupFilter              | expectedClusterCount | expectedHostGroups
+        "no host group filter (all)"      | null                        | 3                    | ["All Hosts\\Production", "All Hosts\\Development"]
+        "production host group filter"     | "All Hosts\\Production"     | 2                    | ["All Hosts\\Production"]
+        "development host group filter"    | "All Hosts\\Development"    | 1                    | ["All Hosts\\Development"]
+        "non-matching host group filter"  | "All Hosts\\Staging"        | 0                    | []
+    }
+
+    @Unroll
+    def "test listClusters successfully retrieves clusters and applies host group filtering"() {
+        given:
+        def opts = [
+                zone: Mock(Cloud) {
+                    getConfigProperty('hostGroup') >> hostGroupFilter
+                },
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password',
+                winrmPort: '5985'
+        ]
+
+        // Mock clusters data response
+        def clustersData = [
+                [
+                        id: "cluster-1",
+                        name: "Production Cluster",
+                        hostGroup: "All Hosts\\Production\\Cluster1",
+                        sharedVolumes: ["CSV-Volume1", "CSV-Volume2"],
+                        description: "Main production cluster"
+                ],
+                [
+                        id: "cluster-2",
+                        name: "Development Cluster",
+                        hostGroup: "All Hosts\\Development\\Cluster1",
+                        sharedVolumes: ["CSV-Dev1"],
+                        description: "Development environment cluster"
+                ],
+                [
+                        id: "cluster-3",
+                        name: "Test Cluster",
+                        hostGroup: "All Hosts\\Production\\TestCluster",
+                        sharedVolumes: [],
+                        description: "Testing cluster"
+                ]
+        ]
+
+        def commandOutput = [success: true, data: clustersData]
+
+        when:
+        def result = apiService.listClusters(opts)
+
+        then:
+        // Verify generateCommandString was called with the correct PowerShell command
+        1 * apiService.generateCommandString({ String cmd ->
+            cmd.contains('$report = @()') &&
+                    cmd.contains('$Clusters = Get-SCVMHostCluster -VMMServer localhost') &&
+                    cmd.contains('foreach ($Cluster in $Clusters)') &&
+                    cmd.contains('id=$Cluster.ID') &&
+                    cmd.contains('name=$Cluster.Name') &&
+                    cmd.contains('hostGroup=$Cluster.HostGroup.Path') &&
+                    cmd.contains('sharedVolumes=@($Cluster.SharedVolumes.Name)') &&
+                    cmd.contains('description=$Cluster.Description') &&
+                    cmd.contains('$report +=$data') &&
+                    cmd.contains('$report')
+        }) >> "generated powershell command"
+
+        // Verify wrapExecuteCommand was called with the generated command
+        1 * apiService.wrapExecuteCommand("generated powershell command", opts) >> commandOutput
+
+        // Verify the result
+        result.success == true
+        result.clusters.size() == expectedClusterCount
+
+        if (expectedClusterCount > 0) {
+            result.clusters.each { cluster ->
+                assert expectedHostGroups.any { cluster.hostGroup?.startsWith(it) }
+            }
+        }
+
+        where:
+        scenario                           | hostGroupFilter              | expectedClusterCount | expectedHostGroups
+        "no host group filter (all)"      | null                        | 3                    | ["All Hosts\\Production", "All Hosts\\Development"]
+        "production host group filter"     | "All Hosts\\Production"     | 2                    | ["All Hosts\\Production"]
+        "development host group filter"    | "All Hosts\\Development"    | 1                    | ["All Hosts\\Development"]
+        "non-matching host group filter"  | "All Hosts\\Staging"        | 0                    | []
+    }
 }
