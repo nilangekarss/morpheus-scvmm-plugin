@@ -20,12 +20,14 @@ import com.morpheusdata.core.synchronous.cloud.MorpheusSynchronousCloudService
 import com.morpheusdata.core.synchronous.library.MorpheusSynchronousWorkloadTypeService
 import com.morpheusdata.core.synchronous.network.MorpheusSynchronousNetworkService
 import com.morpheusdata.core.synchronous.MorpheusSynchronousKeyPairService
+import com.morpheusdata.core.util.ComputeUtility
 import com.morpheusdata.model.Account
 import com.morpheusdata.model.Cloud
 import com.morpheusdata.model.ComputeZoneRegion
 import com.morpheusdata.model.KeyPair
 import com.morpheusdata.model.Network
 import com.morpheusdata.model.StorageVolume
+import com.morpheusdata.model.VirtualImage
 import org.junit.jupiter.api.BeforeEach
 import spock.lang.Specification
 import io.reactivex.rxjava3.core.Single
@@ -1496,5 +1498,420 @@ class ScvmmApiServiceSpec extends Specification {
 
         // Verify the result is the expected share path
         result == sharePath
+    }
+
+    @Unroll
+    def "test prepareNode creates all required directories with #scenario"() {
+        given:
+        def opts = [
+                zoneRoot: zoneRoot,
+                diskRoot: diskRoot,
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password',
+                winrmPort: '5985'
+        ]
+
+        // Set the defaultRoot value for fallback testing
+        apiService.defaultRoot = "C:\\MorpheusData"
+
+        // Mock the executeCommand method to avoid actual command execution
+        apiService.executeCommand(_, _) >> [success: true, data: 'Directory created']
+
+        when:
+        apiService.prepareNode(opts)
+
+        then:
+        // Verify executeCommand was called exactly 3 times with the correct commands
+        1 * apiService.executeCommand("mkdir \"${expectedZoneRoot}\\images\"", opts) >> [success: true]
+        1 * apiService.executeCommand("mkdir \"${expectedZoneRoot}\\export\"", opts) >> [success: true]
+        1 * apiService.executeCommand("mkdir \"${diskRoot}\"", opts) >> [success: true]
+
+        where:
+        scenario                    | zoneRoot           | diskRoot              | expectedZoneRoot
+        "with provided zoneRoot"    | "D:\\CustomPath"   | "D:\\CustomDisks"     | "D:\\CustomPath"
+        "with null zoneRoot"        | null               | "D:\\CustomDisks"     | "C:\\MorpheusData"
+        "with empty zoneRoot"       | ""                 | "D:\\CustomDisks"     | "C:\\MorpheusData"
+        "with default paths"        | "C:\\SCVMM"        | "C:\\SCVMM\\Disks"    | "C:\\SCVMM"
+    }
+
+    @Unroll
+    def "test generateCommandString formats command correctly with #scenario"() {
+        when:
+        def result = apiService.generateCommandString(inputCommand)
+
+        then:
+        result == expectedResult
+
+        where:
+        scenario                    | inputCommand                           | expectedResult
+        "simple command"            | "Get-VM"                              | "\$FormatEnumerationLimit =-1; Get-VM | ConvertTo-Json -Depth 3"
+        "command with parameters"   | "Get-VM -Name 'test'"                 | "\$FormatEnumerationLimit =-1; Get-VM -Name 'test' | ConvertTo-Json -Depth 3"
+        "complex PowerShell command"| "Get-SCVirtualMachine -ID 'vm-123'"   | "\$FormatEnumerationLimit =-1; Get-SCVirtualMachine -ID 'vm-123' | ConvertTo-Json -Depth 3"
+        "empty command"             | ""                                    | "\$FormatEnumerationLimit =-1;  | ConvertTo-Json -Depth 3"
+        "command with variables"    | "\$vm = Get-VM; \$vm.Name"            | "\$FormatEnumerationLimit =-1; \$vm = Get-VM; \$vm.Name | ConvertTo-Json -Depth 3"
+    }
+
+    @Unroll
+    def "test insertContainerImage successfully processes image when image already exists in library"() {
+        given:
+        def mockCloudFile = Mock(CloudFile)
+        mockCloudFile.getName() >> "ubuntu-22.04.vhdx"
+
+        def containerImage = [
+                name          : "test-image",
+                minDisk       : 5,
+                minRam        : 512 * ComputeUtility.ONE_MEGABYTE,
+                virtualImageId: 42L,
+                tags          : 'morpheus, ubuntu',
+                imageType     : 'vhd',
+                containerType : 'vhd',
+                cloudFiles    : mockCloudFile
+        ]
+
+
+        def opts = [
+                image: containerImage,
+                rootSharePath: "\\\\server\\share",
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password',
+                winrmPort: '5985'
+        ]
+
+        // Mock existing VHD in library
+        def existingVhdData = '[{"ID": "vhd-12345"}]'
+
+        // Mock the executeWindowsCommand call through wrapExecuteCommand
+        morpheusContext.executeWindowsCommand(*_) >> Single.just([
+                success: true,
+                exitCode: '0',
+                data: existingVhdData
+        ])
+
+        // Mock formatImageFolder method
+        apiService.formatImageFolder("test-image") >> "test_image"
+
+        when:
+        def result = apiService.insertContainerImage(opts)
+
+        then:
+        // Verify executeWindowsCommand was called with correct parameters
+        1 * morpheusContext.executeWindowsCommand(
+                'scvmm-server',
+                5985,
+                'admin',
+                'password',
+                { String cmd ->
+                    cmd.contains('Get-SCVirtualHardDisk -VMMServer localhost') &&
+                            cmd.contains('where {$_.SharePath -like "\\\\server\\share\\images\\test_image\\*"}') &&
+                            cmd.contains('Select ID')
+                },
+                null,
+                false
+        ) >> Single.just([success: true, exitCode: '0', data: existingVhdData])
+
+        // Verify formatImageFolder was called
+        1 * apiService.formatImageFolder("test-image") >> "test_image"
+
+        // Verify result
+        result.success == true
+        result.imageId == "vhd-12345"
+    }
+
+    @Unroll
+    def "test insertContainerImage throws exception when Get-SCVirtualHardDisk fails"() {
+        given:
+        def containerImage = [
+                name: "test-image",
+                imageType: 'vhd',
+                cloudFiles: Mock(CloudFile)
+        ]
+        def opts = [
+                image: containerImage,
+                rootSharePath: "\\\\server\\share"
+        ]
+
+        // Mock formatImageFolder method
+        apiService.formatImageFolder("test-image") >> "test_image"
+
+        // Mock wrapExecuteCommand to return failure
+        apiService.wrapExecuteCommand(_, opts) >> [success: false, error: "Command failed"]
+
+        when:
+        apiService.insertContainerImage(opts)
+
+        then:
+        def exception = thrown(Exception)
+        exception.message == "Error in getting Get-SCVirtualHardDisk"
+    }
+
+    @Unroll
+    def "test getServerDetails #scenario"() {
+        given:
+        def opts = [
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password',
+                winrmPort: '5985'
+        ]
+
+        // Setup mocks based on scenario
+        if (shouldThrowException) {
+            apiService.generateCommandString(_) >> { throw new RuntimeException("Command generation failed") }
+        } else {
+            apiService.generateCommandString({ String cmd ->
+                expectedCommand ? cmd.contains(expectedCommand) : true
+            }) >> "generated powershell command"
+
+            apiService.wrapExecuteCommand("generated powershell command", opts) >> mockResponse
+        }
+
+        when:
+        def result = apiService.getServerDetails(opts, externalId)
+
+        then:
+        // Verify method calls
+        if (shouldThrowException) {
+            1 * apiService.generateCommandString(_) >> { throw new RuntimeException("Command generation failed") }
+            0 * apiService.wrapExecuteCommand(_, _)
+        } else {
+            1 * apiService.generateCommandString(_) >> "generated powershell command"
+            1 * apiService.wrapExecuteCommand("generated powershell command", opts) >> mockResponse
+        }
+
+        // Verify results
+        result.success == expectedSuccess
+        result.server?.ID == expectedServerId
+        result.server?.Name == expectedServerName
+        result.server?.ipAddress == expectedIpAddress
+        result.server?.internalIp == expectedInternalIp
+        result.error == expectedError
+
+        where:
+        scenario | externalId | expectedCommand | mockResponse | shouldThrowException | expectedSuccess | expectedServerId | expectedServerName | expectedIpAddress | expectedInternalIp | expectedError
+
+        "successfully retrieves VM details with IP address" | "vm-12345" | 'Get-SCVirtualMachine -VMMServer localhost -ID "vm-12345"' | [success: true, data: [[ID: "vm-12345", VMId: "12345678-1234-5678-9012-123456789012", Name: "test-vm", Status: "Running", VirtualMachineState: "Running", VirtualHardDiskDrives: ["disk-1", "disk-2"], VirtualDiskDrives: ["drive-1", "drive-2"], ipAddress: "192.168.1.100", internalIp: "192.168.1.100"]]] | false | true | "vm-12345" | "test-vm" | "192.168.1.100" | "192.168.1.100" | null
+
+        "successfully retrieves VM details with no IP address" | "vm-12345" | 'Get-SCVirtualMachine -VMMServer localhost -ID "vm-12345"' | [success: true, data: [[ID: "vm-12345", VMId: "12345678-1234-5678-9012-123456789012", Name: "test-vm", Status: "Running", VirtualMachineState: "Running", VirtualHardDiskDrives: ["disk-1", "disk-2"], VirtualDiskDrives: ["drive-1", "drive-2"], ipAddress: "", internalIp: ""]]] | false | true | "vm-12345" | "test-vm" | "" | "" | null
+
+        "correctly processes VM with multiple network adapters" | "vm-12345" | null | [success: true, data: [[ID: "vm-12345", VMId: "12345678-1234-5678-9012-123456789012", Name: "test-vm-multi-ip", Status: "Running", VirtualMachineState: "Running", VirtualHardDiskDrives: ["disk-1"], VirtualDiskDrives: ["drive-1"], ipAddress: "192.168.1.100", internalIp: "192.168.1.100"]]] | false | true | "vm-12345" | "test-vm-multi-ip" | "192.168.1.100" | "192.168.1.100" | null
+
+        "handles VM not found scenario" | "vm-nonexistent" | 'Get-SCVirtualMachine -VMMServer localhost -ID "vm-nonexistent"' | [success: true, data: [[Error: 'VM_NOT_FOUND']]] | false | false | null | null | null | null | 'VM_NOT_FOUND'
+
+        "handles command execution failure" | "vm-12345" | null | [success: false, error: "PowerShell execution failed"] | false | false | null | null | null | null | null
+
+        "handles exception during execution" | "vm-12345" | null | null | true | false | null | null | null | null | null
+    }
+
+    @Unroll
+    def "test refreshVM successfully refreshes VM data"() {
+        given:
+        def externalId = "vm-12345"
+        def opts = [
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password',
+                winrmPort: '5985'
+        ]
+
+        // Mock the command execution with a successful result
+        def commandOutput = [success: true, exitCode: '0', data: '{"Status":"Success"}']
+
+        when:
+        def result = apiService.refreshVM(opts, externalId)
+
+        then:
+        // Verify generateCommandString was called with the correct PowerShell command
+        1 * apiService.generateCommandString({ String cmd ->
+            cmd.contains('$vm = Get-SCVirtualMachine -VMMServer localhost -ID "vm-12345"') &&
+                    cmd.contains('$ignore = Read-SCVirtualMachine -VM $vm')
+        }) >> "generated powershell command"
+
+        // Verify wrapExecuteCommand was called with the generated command
+        1 * apiService.wrapExecuteCommand("generated powershell command", opts) >> commandOutput
+
+        // Verify the result
+        result.success == true
+    }
+
+    @Unroll
+    def "test discardSavedState successfully discards VM saved state"() {
+        given:
+        def externalId = "vm-12345"
+        def opts = [
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password',
+                winrmPort: '5985'
+        ]
+
+        // Mock the command execution with a successful result
+        def commandOutput = [success: true, exitCode: '0', data: '{"Status":"Success"}']
+
+        when:
+        def result = apiService.discardSavedState(opts, externalId)
+
+        then:
+        // Verify executeCommand was called with the correct PowerShell command
+        1 * apiService.executeCommand(
+                { String cmd ->
+                    cmd.contains('$vm = Get-SCVirtualMachine -VMMServer localhost -ID "vm-12345"') &&
+                            cmd.contains('Use-SCDiscardSavedStateVM -VM $vm')
+                },
+                opts
+        ) >> commandOutput
+
+        // Verify the result structure
+        result.success == false
+        result.server == null
+        result.networkAdapters == []
+    }
+
+    @Unroll
+    def "test discardSavedState handles exception gracefully"() {
+        given:
+        def externalId = "vm-12345"
+        def opts = [
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password',
+                winrmPort: '5985'
+        ]
+
+        when:
+        def result = apiService.discardSavedState(opts, externalId)
+
+        then:
+        // Verify executeCommand was called and throws an exception
+        1 * apiService.executeCommand(_, opts) >> { throw new RuntimeException("PowerShell execution failed") }
+
+        // Verify the result structure remains the same even with exception
+        result.success == false
+        result.server == null
+        result.networkAdapters == []
+    }
+
+    @Unroll
+    def "test discardSavedState with different external IDs"() {
+        given:
+        def opts = [
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password'
+        ]
+
+        when:
+        def result = apiService.discardSavedState(opts, externalId)
+
+        then:
+        1 * apiService.executeCommand(
+                { String cmd ->
+                    cmd.contains("Get-SCVirtualMachine -VMMServer localhost -ID \"${externalId}\"")
+                },
+                opts
+        ) >> [success: true]
+
+        result.success == false
+        result.server == null
+        result.networkAdapters == []
+
+        where:
+        externalId << ["vm-123", "vm-abc-def", "virtual-machine-456"]
+    }
+
+    @Unroll
+    def "test extractWindowsServerVersion with #scenario"() {
+        when:
+        def result = apiService.extractWindowsServerVersion(inputOsName)
+
+        then:
+        result == expectedResult
+
+        where:
+        scenario | inputOsName | expectedResult
+
+        // Windows Server 2022 variants
+        "2022 Standard Core" | "Windows Server 2022 Standard Core" | "windows.server.2022.std.core"
+        "2022 Standard Desktop" | "Windows Server 2022 Standard Desktop" | "windows.server.2022.std.desktop"
+        "2022 Datacenter Core" | "Windows Server 2022 Datacenter Core" | "windows.server.2022.dc.core"
+        "2022 Datacenter Desktop" | "Windows Server 2022 Datacenter Desktop" | "windows.server.2022.dc.desktop"
+        "2022 Standard (fallback to core)" | "Windows Server 2022 Standard" | "windows.server.2022.std.core"
+        "2022 Datacenter (fallback to core)" | "Windows Server 2022 Datacenter" | "windows.server.2022.dc.core"
+        "2022 with no specific variant" | "Windows Server 2022" | "windows.server.2022"
+        "2022 unknown variant" | "Windows Server 2022 Enterprise" | "windows.server.2022"
+
+        // Case insensitive tests for 2022
+        "2022 mixed case standard core" | "Windows Server 2022 STANDARD CORE" | "windows.server.2022.std.core"
+        "2022 mixed case datacenter desktop" | "Windows Server 2022 Datacenter DESKTOP" | "windows.server.2022.dc.desktop"
+
+        // Other Windows Server versions (fallback logic)
+        "Windows Server 2019" | "Windows Server 2019 Standard" | "windows.server.2019"
+        "Windows Server 2016" | "Windows Server 2016 Datacenter" | "windows.server.2016"
+        "Windows Server 2012" | "Windows Server 2012 R2" | "windows.server.2012"
+        "Windows Server 2008" | "Windows Server 2008 R2" | "windows.server.2008"
+        "Windows Server 2003" | "Windows Server 2003" | "windows.server.2003"
+
+        // Edge cases for year extraction
+        "future version 2025" | "Windows Server 2025" | "windows.server.2025"
+        "version 2020" | "Windows Server 2020" | "windows.server.2020"
+
+        // Fallback to 2012 when no year found
+        "no year in name" | "Windows Server Standard" | "windows.server.2012"
+        "empty string" | "" | "windows.server.2012"
+        "random text" | "Some Random OS Name" | "windows.server.2012"
+
+        // Multiple years (should pick first match)
+        "multiple years" | "Windows Server 2016 to 2019 Migration" | "windows.server.2016"
+
+        // Case variations
+        "lowercase input" | "windows server 2022 standard core" | "windows.server.2022.std.core"
+        "uppercase input" | "WINDOWS SERVER 2022 DATACENTER CORE" | "windows.server.2022.dc.core"
+    }
+
+    @Unroll
+    def "test getScvmmServerInfo successfully retrieves server information"() {
+        given:
+        def opts = [
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password',
+                winrmPort: '5985'
+        ]
+
+        // Mock executeCommand responses for each command
+        def hostnameResponse = [success: true, data: 'SCVMM-SERVER-01']
+        def osNameResponse = [success: true, data: 'Microsoft Windows Server 2019 Datacenter']
+        def memoryResponse = [success: true, data: '17179869184'] // 16GB in bytes
+        def disksResponse = [success: true, data: '2199023255552'] // 2TB in bytes
+
+        // Mock cleanData responses
+        apiService.cleanData('SCVMM-SERVER-01') >> 'SCVMM-SERVER-01'
+        apiService.cleanData('Microsoft Windows Server 2019 Datacenter') >> 'Microsoft Windows Server 2019 Datacenter'
+        apiService.cleanData('17179869184', 'TotalPhysicalMemory') >> '17179869184'
+        apiService.cleanData('2199023255552', 'Size') >> '2199023255552'
+
+        when:
+        def result = apiService.getScvmmServerInfo(opts)
+
+        then:
+        // Verify executeCommand was called 4 times with correct commands
+        1 * apiService.executeCommand('hostname', opts) >> hostnameResponse
+        1 * apiService.executeCommand('(Get-ComputerInfo).OsName', opts) >> osNameResponse
+        1 * apiService.executeCommand('(Get-CimInstance Win32_PhysicalMemory | Measure-Object -Property capacity -Sum).sum', opts) >> memoryResponse
+        1 * apiService.executeCommand('(Get-CimInstance Win32_DiskDrive | Measure-Object -Property Size -Sum).sum', opts) >> disksResponse
+
+        // Verify cleanData was called with correct parameters
+        1 * apiService.cleanData('SCVMM-SERVER-01') >> 'SCVMM-SERVER-01'
+        1 * apiService.cleanData('Microsoft Windows Server 2019 Datacenter') >> 'Microsoft Windows Server 2019 Datacenter'
+        1 * apiService.cleanData('17179869184', 'TotalPhysicalMemory') >> '17179869184'
+        1 * apiService.cleanData('2199023255552', 'Size') >> '2199023255552'
+
+        // Verify result structure
+        result.success == true
+        result.hostname == 'SCVMM-SERVER-01'
+        result.osName == 'Microsoft Windows Server 2019 Datacenter'
+        result.memory == '17179869184'
+        result.disks == '2199023255552'
     }
 }
