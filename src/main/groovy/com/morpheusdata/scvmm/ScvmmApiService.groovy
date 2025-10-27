@@ -19,8 +19,10 @@ class ScvmmApiService {
     ScvmmApiService(MorpheusContext morpheusContext) {
         this.morpheusContext = morpheusContext
     }
+
     static defaultRoot = 'C:\\morpheus'
 
+    public
     def executeCommand(command, opts) {
         def winrmPort = opts.sshPort && opts.sshPort != 22 ? opts.sshPort : 5985
         def output = morpheusContext.executeWindowsCommand(opts.sshHost, winrmPort?.toInteger(), opts.sshUsername, opts.sshPassword, command, null, false).blockingGet()
