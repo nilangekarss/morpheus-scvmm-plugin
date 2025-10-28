@@ -767,14 +767,14 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                         server.externalId = createResults.server.id
                         server.internalId = createResults.server.VMId
                         server.parentServer = node
-                        if (server.cloud.getConfigProperty('enableVnc')) {
+                        /*if (server.cloud.getConfigProperty('enableVnc')) {
                             //credentials
                             server.consoleHost = server.parentServer?.name
                             server.consoleType = 'vmrdp'
                             server.sshUsername = server.cloud.accountCredentialData?.username ?: server.cloud.getConfigProperty('username')
                             server.consolePassword = server.cloud.accountCredentialData?.password ?: server.cloud.getConfigProperty('password')
                             server.consolePort = 2179
-                        }
+                        }*/
                         def serverDisks = createResults.server.disks
                         if (serverDisks && server.volumes) {
                             storageVolumes = server.volumes
@@ -813,6 +813,9 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                             server.status = 'provisioned'
                             context.async.computeServer.save(server).blockingGet()
                             provisionResponse.success = true
+							if (server?.platform == 'linux') {
+								provisionResponse.installAgent = false
+							}
                             log.debug("provisionResponse.success: ${provisionResponse.success}")
                         } else {
                             server.statusMessage = 'Failed to run server'
@@ -876,6 +879,16 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 					def startResults = apiService.startServer(startServerOpts, scvmmOpts.cloneVMId)
 					if (!startResults.success) {
 						log.error "Failed to start the parent VM ${scvmmOpts.cloneVMId}: ${startResults.msg}"
+					}
+					Workload savedContainer = context.services.workload.find(new DataQuery().withFilter("id", scvmmOpts.cloneContainerId.toLong()))
+					if (savedContainer) {
+						savedContainer.userStatus = Workload.Status.running.toString()
+						savedContainer.status = Workload.Status.running
+						context.services.workload.save(savedContainer)
+					}
+					ComputeServer savedServer = context.services.computeServer.get(savedContainer.server?.id)
+					if (savedServer) {
+						context.async.computeServer.updatePowerState(savedServer.id, ComputeServer.PowerState.on)
 					}
 				}
 
