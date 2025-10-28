@@ -17,6 +17,7 @@ import com.morpheusdata.core.data.DataAndFilter
 import com.morpheusdata.core.data.DataOrFilter
 import com.morpheusdata.core.library.MorpheusWorkloadTypeService
 import com.morpheusdata.core.synchronous.MorpheusSynchronousVirtualImageLocationService
+import com.morpheusdata.core.synchronous.MorpheusSynchronousWorkloadService
 import com.morpheusdata.core.synchronous.provisioning.MorpheusSynchronousProvisionService
 import com.morpheusdata.core.synchronous.MorpheusSynchronousVirtualImageService
 import com.morpheusdata.core.synchronous.network.MorpheusSynchronousNetworkService
@@ -66,6 +67,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     private MorpheusComputeServerService asyncComputeServerService
     private MorpheusComputeTypeSetService asyncComputeTypeSetService
     private MorpheusProcessService processService
+    private MorpheusSynchronousWorkloadService workloadService
     private MorpheusSynchronousWorkloadTypeService workloadTypeService
     private MorpheusWorkloadTypeService asyncWorkloadTypeService
     private MorpheusCloudService asyncCloudService
@@ -91,6 +93,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         processService = Mock(MorpheusProcessService)
         asyncCloudService = Mock(MorpheusCloudService)
         def asyncNetworkService = Mock(MorpheusNetworkService)
+        workloadService = Mock(MorpheusSynchronousWorkloadService)
         workloadTypeService = Mock(MorpheusSynchronousWorkloadTypeService)
         asyncWorkloadTypeService = Mock(MorpheusWorkloadTypeService)
         storageVolumeService = Mock(MorpheusSynchronousStorageVolumeService)
@@ -104,6 +107,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         def morpheusServices = Mock(MorpheusServices) {
             getComputeServer() >> computeServerService
             getCloud() >> cloudService
+            getWorkload() >> workloadService
             getWorkloadType() >> workloadTypeService
             getStorageVolume() >> storageVolumeService
             getVirtualImage() >> virtualImageService
@@ -2664,6 +2668,26 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
             assert opts.controller == 1
             assert opts.hostId == 2
         }, 'iso-file.iso') >> [success: true]
+
+        Workload dummyWorkload = new Workload(id: 100L, internalName: "parent-workload")
+        dummyWorkload.setStatus(Workload.Status.running)
+        workloadService.find({ DataQuery query ->
+            return query.filters.any { it.name == "id" && it.value == scvmmOpts.cloneContainerId.toLong() }
+        }) >> {
+            return dummyWorkload
+        }
+        workloadService.save(_) >> { Workload w ->
+            return w
+        }
+
+        computeServerService.get(_) >>{
+            return new ComputeServer()
+        }
+
+        asyncComputeServerService.updatePowerState(_, _) >> {
+            return Single.just(dummyWorkload)
+        }
+
 
         // Verify all API methods were called exactly once
 
