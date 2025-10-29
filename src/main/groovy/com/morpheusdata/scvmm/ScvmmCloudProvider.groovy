@@ -1035,7 +1035,7 @@ class ScvmmCloudProvider implements CloudProvider {
 		return rtn
 	}
 
-	private updateHypervisorStatus(server, status, powerState, msg) {
+	protected updateHypervisorStatus(server, status, powerState, msg) {
 		log.debug("server: {}, status: {}, powerState: {}, msg: {}", server, status, powerState, msg)
 		if (server.status != status || server.powerState != powerState) {
 			server.status = status
