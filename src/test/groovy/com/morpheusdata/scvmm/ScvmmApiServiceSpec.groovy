@@ -108,7 +108,6 @@ class ScvmmApiServiceSpec extends Specification {
         morpheusContext.getAsync() >> morpheusAsyncServices
         morpheusContext.getServices() >> morpheusServices
 
-        //apiService = new ScvmmApiService(morpheusContext)
         apiService = Spy(ScvmmApiService, constructorArgs: [morpheusContext])
     }
 
@@ -129,7 +128,6 @@ class ScvmmApiServiceSpec extends Specification {
         // Prepare test data
         def opts = [
                 zoneRoot: "C:\\Temp",
-               // hypervisor: "hypervisor1",
                 sshPort: '22',
                 sshHost: 'localhost',
                 sshUsername: 'admin',
@@ -138,7 +136,6 @@ class ScvmmApiServiceSpec extends Specification {
         // Add this before using opts
         opts.hypervisor = mockedComputerServer
         def inputStreamData = Mock(InputStream)
-        //def inputStreamData = new ByteArrayInputStream("VHD".bytes)
         def metadataFile = Mock(CloudFile)
         metadataFile.name >> "metadata.json"
         metadataFile.inputStream >> inputStreamData
@@ -1218,15 +1215,12 @@ class ScvmmApiServiceSpec extends Specification {
 
         where:
         scenario                    | providedUpdates                                           | commandPattern                                           | shouldCallCommand
-//        "no updates"                | [:]                                                       | []                                                        | false
         "update CPU only"           | [maxCores: 4]                                             | ["-CPUCount 4"]                                           | true
         "update memory only"        | [maxMemory: 8589934592L]                                  | ["\$maxMemory = 8192", "DynamicMemoryEnabled \$false"]    | true
         "update memory and CPU"     | [maxMemory: 4294967296L, maxCores: 2]                     | ["-CPUCount 2", "\$maxMemory = 4096"]                     | true
         "update with min memory"    | [maxMemory: 4294967296L, minDynamicMemory: 2147483648L]   | ["\$minDynamicMemory = 2048", "DynamicMemoryEnabled \$true"] | true
         "update with max memory"    | [maxMemory: 4294967296L, maxDynamicMemory: 8589934592L]   | ["\$maxDynamicMemory = 8192", "DynamicMemoryEnabled \$true"] | true
         "update with all memory"    | [maxMemory: 4294967296L, minDynamicMemory: 2147483648L, maxDynamicMemory: 8589934592L] | ["\$minDynamicMemory = 2048", "\$maxDynamicMemory = 8192", "DynamicMemoryEnabled \$true"] | true
-//        "just min dynamic memory"   | [minDynamicMemory: 2147483648L]                           | ["\$minDynamicMemory = 2048"]                             | true
-//        "just max dynamic memory"   | [maxDynamicMemory: 8589934592L]                           | ["\$maxDynamicMemory = 8192"]                             | true
     }
 
     @Unroll
@@ -1250,141 +1244,11 @@ class ScvmmApiServiceSpec extends Specification {
         "missing network"                       | [scvmmCapabilityProfile: "Hyper-V"]                                                        | false           | 1                  | "networkId"             | "Network is required"
         "empty nodeCount"                       | [scvmmCapabilityProfile: "Hyper-V", networkId: "net-123", nodeCount: ""]                   | false           | 1                  | "nodeCount"             | "You must indicate number of hosts"
         "valid config with networkId"           | [scvmmCapabilityProfile: "Hyper-V", networkId: "net-123"]                                  | true            | 0                  | null                    | null
-        //"valid config with network interfaces"  | [scvmmCapabilityProfile: "Hyper-V", networkInterfaces: [[network: [id: "net-456"]]]]       | true            | 0                  | null                    | null
         "missing network id in interface"       | [scvmmCapabilityProfile: "Hyper-V", networkInterfaces: [[network: [:]]]]                   | false           | 1                  | "networkInterface"      | "Network is required"
         "missing ip address for static"         | [scvmmCapabilityProfile: "Hyper-V", networkInterfaces: [[network: [id: "net-789"], ipMode: "static"]]]   | false | 1 | "networkInterface" | "You must enter an ip address"
-        //"direct networkInterface config"        | [scvmmCapabilityProfile: "Hyper-V", networkInterface: [network: [id: ["net-abc"]]]]        | true            | 0                  | null                    | null
         "invalid networkInterface config"       | [scvmmCapabilityProfile: "Hyper-V", networkInterface: [network: [id: [""]]]]               | false           | 1                  | "networkInterface"      | "Network is required"
         "static IP missing in networkInterface" | [scvmmCapabilityProfile: "Hyper-V", networkInterface: [network: [id: ["net-def"]], ipMode: ["static"], ipAddress: [null]]] | false | 1 | "networkInterface" | "You must enter an ip address"
     }
-
-//    @Unroll
-//    def "test importAndMountIso successfully imports and mounts ISO file"() {
-//        given:
-//        def diskFolder = "C:\\Temp\\VMs\\test-vm"
-//        def imageFolderName = "test-image"
-//
-//        def cloudConfigBytes = "test-cloud-config-content".bytes
-//        def opts = [
-//                hypervisor: Mock(ComputeServer) {
-//                    getName() >> "test-hypervisor"
-//                },
-//                sshHost: 'scvmm-server',
-//                sshUsername: 'admin',
-//                sshPassword: 'password'
-//        ]
-//
-//        // Expected path for the ISO file
-//        def isoPath = "${diskFolder}\\config.iso"
-//        def expectedSharePath = "\\\\server\\share\\config.iso"
-//
-//        // Set up morpheusContext services mock
-//        morpheusContext.getServices() >> Mock(MorpheusServices) {
-//            getFileCopy() >> fileCopyService
-//        }
-//        // Mock fileCopy service
-//        def copyToServerResponse = new ServiceResponse(success: true)
-//
-//
-//        // Mock importPhysicalResource
-//        def importResponse = [success: true, sharePath: expectedSharePath]
-//        apiService.importPhysicalResource(_, _, _, _) >> importResponse
-//
-//        // Mock the directory creation command
-//        apiService.generateCommandString("\$ignore = mkdir \"${diskFolder}\"") >> "powershell mkdir command"
-//        apiService.wrapExecuteCommand("powershell mkdir command", opts) >> [success: true]
-//
-//        fileCopyService.copyToServer( opts.hypervisor,
-//                "config.iso",
-//                isoPath,
-//                { InputStream is -> is instanceof ByteArrayInputStream },
-//                cloudConfigBytes.size()) >> {
-//            return copyToServerResponse
-//        }
-//
-//        // Mock setCdrom
-//        apiService.setCdrom(_, _) >> [success: true]
-//
-//
-//        // Mock the actual implementation method to use encodeBase64 instead of encodeAsBase64
-//        ScvmmApiService.metaClass.static.importAndMountIso = { bytes, folder, imageFolder, options ->
-//            // Use the correct encoding method
-//            bytes.encodeBase64()
-//            return expectedSharePath
-//        }
-//        when:
-//        def result = apiService.importAndMountIso(cloudConfigBytes, diskFolder, imageFolderName, opts)
-//
-//        then:
-//
-//        // Verify the return value
-//        result == expectedSharePath
-//
-//        // Verify command generation for directory creation
-//        1 * apiService.generateCommandString("\$ignore = mkdir \"${diskFolder}\"")
-//
-//        // Verify file copy was called with correct parameters
-//        1 * fileCopyService.copyToServer(
-//                opts.hypervisor,
-//                "config.iso",
-//                isoPath,
-//                { it instanceof ByteArrayInputStream },
-//                cloudConfigBytes.size()
-//        )
-//
-//        // Verify importPhysicalResource was called with correct parameters
-//        1 * apiService.importPhysicalResource(
-//                opts,
-//                isoPath,
-//                imageFolderName,
-//                'config.iso'
-//        )
-//
-//        // Verify setCdrom was called with correct parameters
-//        1 * apiService.setCdrom(opts, expectedSharePath)
-//
-//    }
-//
-//    @Unroll
-//    def "test importAndMountIso throws exception when file copy fails"() {
-//        given:
-//        def diskFolder = "C:\\Temp\\VMs\\test-vm"
-//        def imageFolderName = "test-image"
-//        def cloudConfigBytes = "test-cloud-config-content".bytes
-//        def hypervisorName = "test-hypervisor"
-//        def opts = [
-//                hypervisor: Mock(ComputeServer) {
-//                    getName() >> hypervisorName
-//                },
-//                sshHost: 'scvmm-server',
-//                sshUsername: 'admin',
-//                sshPassword: 'password'
-//        ]
-//
-//        // Mock fileCopy service to return failure
-//        def copyToServerResponse = new ServiceResponse(success: false)
-//        fileCopyService.copyToServer(_, _, _, _, _) >> copyToServerResponse
-//
-//        // Mock the directory creation command
-//        apiService.generateCommandString(_) >> "powershell command"
-//        apiService.wrapExecuteCommand(_, _) >> [success: true]
-//
-//        when:
-//        apiService.importAndMountIso(cloudConfigBytes, diskFolder, imageFolderName, opts)
-//
-//        then:
-//        // Verify exception was thrown with correct message
-//        def exception = thrown(Exception)
-//        exception.message == "ISO Upload to SCVMM Host Failed. Perhaps an agent communication issue...${hypervisorName}"
-//
-//        // Verify command generation for directory creation
-//        1 * apiService.generateCommandString("\$ignore = mkdir \"${diskFolder}\"")
-//
-//        // Verify file copy was called but other methods weren't
-//        1 * fileCopyService.copyToServer(_, _, _, _, _) >> copyToServerResponse
-//        0 * apiService.importPhysicalResource(_, _, _, _)
-//        0 * apiService.setCdrom(_, _)
-//    }
 
     def "test createDVD successfully creates DVD drive"() {
         given:
@@ -3102,13 +2966,10 @@ class ScvmmApiServiceSpec extends Specification {
 
         where:
         scenario                               | externalId    | vhdName           | commandOutput                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | expectedSuccess | expectedDisks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | expectedMsg | shouldThrowException | specificCommandCheck
-        //"successfully retrieves all disks"    | "vm-12345"    | null              | [success: true, exitCode: '0', data: [[ID: "disk-1", Name: "System Disk", VolumeType: "BootAndSystem", BusType: "SCSI", Bus: 0, Lun: 0, VhdID: "vhd-1", VhdName: "system.vhdx", VhdType: "DynamicallyExpanding", VhdFormat: "VHDX", VhdLocation: "C:\\VMs\\system.vhdx", HostVolumeId: "vol-1", FileShareId: "share-1", PartitionUniqueId: "part-1"], [ID: "disk-2", Name: "Data Disk", VolumeType: "None", BusType: "SCSI", Bus: 0, Lun: 1, VhdID: "vhd-2", VhdName: "data.vhdx", VhdType: "Fixed", VhdFormat: "VHDX", VhdLocation: "C:\\VMs\\data.vhdx", HostVolumeId: "vol-2", FileShareId: "share-2", PartitionUniqueId: "part-2"]]] | true            | [[ID: "disk-1", Name: "System Disk", VolumeType: "BootAndSystem", BusType: "SCSI", Bus: 0, Lun: 0, VhdID: "vhd-1", VhdName: "system.vhdx", VhdType: "DynamicallyExpanding", VhdFormat: "VHDX", VhdLocation: "C:\\VMs\\system.vhdx", HostVolumeId: "vol-1", FileShareId: "share-1", PartitionUniqueId: "part-1"], [ID: "disk-2", Name: "Data Disk", VolumeType: "None", BusType: "SCSI", Bus: 0, Lun: 1, VhdID: "vhd-2", VhdName: "data.vhdx", VhdType: "Fixed", VhdFormat: "VHDX", VhdLocation: "C:\\VMs\\data.vhdx", HostVolumeId: "vol-2", FileShareId: "share-2", PartitionUniqueId: "part-2"]] | null        | false                | true
-        //"successfully retrieves specific disk" | "vm-12345"    | "system.vhdx"     | [success: true, exitCode: '0', data: [[ID: "disk-1", Name: "System Disk", VolumeType: "BootAndSystem", BusType: "SCSI", Bus: 0, Lun: 0, VhdID: "vhd-1", VhdName: "system.vhdx", VhdType: "DynamicallyExpanding", VhdFormat: "VHDX", VhdLocation: "C:\\VMs\\system.vhdx", HostVolumeId: "vol-1", FileShareId: "share-1", PartitionUniqueId: "part-1"]]]                                                                                                                                                                                                                                                    | true            | [[ID: "disk-1", Name: "System Disk", VolumeType: "BootAndSystem", BusType: "SCSI", Bus: 0, Lun: 0, VhdID: "vhd-1", VhdName: "system.vhdx", VhdType: "DynamicallyExpanding", VhdFormat: "VHDX", VhdLocation: "C:\\VMs\\system.vhdx", HostVolumeId: "vol-1", FileShareId: "share-1", PartitionUniqueId: "part-1"]]                                                                                                                                                                                                                              | null        | false                | true
         "VM not found - empty disk list"      | "vm-nonexist" | null              | [success: true, exitCode: '0', data: []]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | true            | []                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | null        | false                | false
         "VM has no disks"                     | "vm-12345"    | null              | [success: true, exitCode: '0', data: []]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | true            | []                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | null        | false                | false
         "specific disk not found"             | "vm-12345"    | "missing.vhdx"    | [success: true, exitCode: '0', data: []]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | true            | []                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | null        | false                | false
         "command execution failure"           | "vm-12345"    | null              | [success: false, exitCode: '1', error: "PowerShell execution failed"]                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | false           | []                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | null        | false                | false
-        //"exception handling"                  | "vm-12345"    | null              | null                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | false           | []                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | null        | true                 | false
         "single disk with IDE bus type"       | "vm-legacy"   | null              | [success: true, exitCode: '0', data: [[ID: "disk-ide-1", Name: "IDE Disk", VolumeType: "BootAndSystem", BusType: "IDE", Bus: 0, Lun: 0, VhdID: "vhd-ide-1", VhdName: "legacy.vhd", VhdType: "Fixed", VhdFormat: "VHD", VhdLocation: "C:\\VMs\\legacy.vhd", HostVolumeId: "vol-ide-1", FileShareId: "share-ide-1", PartitionUniqueId: "part-ide-1"]]]                                                                                                                                                                                                                                                                                       | true            | [[ID: "disk-ide-1", Name: "IDE Disk", VolumeType: "BootAndSystem", BusType: "IDE", Bus: 0, Lun: 0, VhdID: "vhd-ide-1", VhdName: "legacy.vhd", VhdType: "Fixed", VhdFormat: "VHD", VhdLocation: "C:\\VMs\\legacy.vhd", HostVolumeId: "vol-ide-1", FileShareId: "share-ide-1", PartitionUniqueId: "part-ide-1"]]                                                                                                                                                                                                                              | null        | false                | false
         "multiple SCSI buses"                 | "vm-multi"    | null              | [success: true, exitCode: '0', data: [[ID: "disk-scsi-1", Name: "SCSI Disk 1", VolumeType: "BootAndSystem", BusType: "SCSI", Bus: 0, Lun: 0, VhdID: "vhd-scsi-1", VhdName: "scsi1.vhdx", VhdType: "DynamicallyExpanding", VhdFormat: "VHDX", VhdLocation: "C:\\VMs\\scsi1.vhdx", HostVolumeId: "vol-scsi-1", FileShareId: "share-scsi-1", PartitionUniqueId: "part-scsi-1"], [ID: "disk-scsi-2", Name: "SCSI Disk 2", VolumeType: "None", BusType: "SCSI", Bus: 1, Lun: 0, VhdID: "vhd-scsi-2", VhdName: "scsi2.vhdx", VhdType: "Fixed", VhdFormat: "VHDX", VhdLocation: "C:\\VMs\\scsi2.vhdx", HostVolumeId: "vol-scsi-2", FileShareId: "share-scsi-2", PartitionUniqueId: "part-scsi-2"]]] | true            | [[ID: "disk-scsi-1", Name: "SCSI Disk 1", VolumeType: "BootAndSystem", BusType: "SCSI", Bus: 0, Lun: 0, VhdID: "vhd-scsi-1", VhdName: "scsi1.vhdx", VhdType: "DynamicallyExpanding", VhdFormat: "VHDX", VhdLocation: "C:\\VMs\\scsi1.vhdx", HostVolumeId: "vol-scsi-1", FileShareId: "share-scsi-1", PartitionUniqueId: "part-scsi-1"], [ID: "disk-scsi-2", Name: "SCSI Disk 2", VolumeType: "None", BusType: "SCSI", Bus: 1, Lun: 0, VhdID: "vhd-scsi-2", VhdName: "scsi2.vhdx", VhdType: "Fixed", VhdFormat: "VHDX", VhdLocation: "C:\\VMs\\scsi2.vhdx", HostVolumeId: "vol-scsi-2", FileShareId: "share-scsi-2", PartitionUniqueId: "part-scsi-2"]] | null        | false                | false
         "filter by wildcard pattern"         | "vm-12345"    | "*.vhdx"          | [success: true, exitCode: '0', data: [[ID: "disk-1", Name: "System Disk", VolumeType: "BootAndSystem", BusType: "SCSI", Bus: 0, Lun: 0, VhdID: "vhd-1", VhdName: "system.vhdx", VhdType: "DynamicallyExpanding", VhdFormat: "VHDX", VhdLocation: "C:\\VMs\\system.vhdx", HostVolumeId: "vol-1", FileShareId: "share-1", PartitionUniqueId: "part-1"]]]                                                                                                                                                                                                                                                                                       | true            | [[ID: "disk-1", Name: "System Disk", VolumeType: "BootAndSystem", BusType: "SCSI", Bus: 0, Lun: 0, VhdID: "vhd-1", VhdName: "system.vhdx", VhdType: "DynamicallyExpanding", VhdFormat: "VHDX", VhdLocation: "C:\\VMs\\system.vhdx", HostVolumeId: "vol-1", FileShareId: "share-1", PartitionUniqueId: "part-1"]]                                                                                                                                                                                                                              | null        | false                | false

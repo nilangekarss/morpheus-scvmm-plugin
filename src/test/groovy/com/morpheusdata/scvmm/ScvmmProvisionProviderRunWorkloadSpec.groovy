@@ -31,24 +31,12 @@ import com.morpheusdata.core.network.MorpheusNetworkService
 import com.morpheusdata.core.synchronous.library.MorpheusSynchronousWorkloadTypeService
 import com.morpheusdata.core.util.ComputeUtility
 import com.morpheusdata.model.*
-import com.morpheusdata.model.projection.StorageVolumeIdentityProjection
 import com.morpheusdata.model.provisioning.HostRequest
 import com.morpheusdata.model.provisioning.UserConfiguration
 import com.morpheusdata.model.provisioning.WorkloadRequest
-import com.morpheusdata.model.ComputeServerInterface
-import com.morpheusdata.model.Workload
-import com.morpheusdata.model.WorkloadType
-import com.morpheusdata.model.Instance
-import com.morpheusdata.model.ServicePlan
-import com.morpheusdata.model.Cloud
-import com.morpheusdata.model.Account
-import com.morpheusdata.model.VirtualImage
-import com.morpheusdata.model.OsType
-import com.morpheusdata.model.VirtualImageLocation
 import com.morpheusdata.request.ResizeRequest
 import com.morpheusdata.response.InitializeHypervisorResponse
 import com.morpheusdata.response.PrepareWorkloadResponse
-import com.morpheusdata.response.ProvisionResponse
 import com.morpheusdata.response.ServiceResponse
 import groovy.json.JsonOutput
 import io.reactivex.rxjava3.core.Maybe
@@ -500,9 +488,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
                     msg: 'Server details retrieved successfully'
             ]
         }
-//        computeServerService.get(_) >> {
-//            computerServer
-//        }
 
         provisionProvider.loadDatastoreForVolume(_, _, _, _) >> { Cloud cld, String hostVolumeId, String fileShareId, String partitionId ->
             return datastore // Return the datastore object you created in your test setup
