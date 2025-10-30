@@ -6,6 +6,7 @@ import com.morpheusdata.model.ComputeServer
 import com.morpheusdata.model.ComputeServerInterface
 import com.morpheusdata.model.ComputeServerType
 import com.morpheusdata.model.Instance
+import com.morpheusdata.model.NetAddress
 import com.morpheusdata.model.Network
 import com.morpheusdata.model.OsType
 import com.morpheusdata.model.ServicePlan
@@ -408,5 +409,119 @@ class ProvisionDataHelper {
                 ],
                 msg: 'CD-ROM settings updated successfully'
         ]
+    }
+
+    static ComputeServer waitForHost_getComputeServer(Cloud cloud) {
+        return new ComputeServer(
+                id: 100L,
+                cloud: cloud,
+                externalId: 'vm-123',
+                name: 'test-server',
+                config: '{"hostId":"200"}'
+        )
+    }
+
+    static ComputeServer waitForHost_getControllerServer(Cloud cloud){
+        new ComputeServer(
+                id: 200L,
+                cloud: cloud,
+                computeServerType: new ComputeServerType(code: 'scvmmController')
+        )
+    }
+
+    static def waitForHost_getServerDetail() {
+        return [
+                success: true,
+                server: [ipAddress: '10.0.0.100']
+        ]
+    }
+
+    static def waitForHost_applyComputeServerNetworkIpResponse() {
+        return new ComputeServerInterface(
+                id: 1L,
+                ipAddress: '10.0.0.5',
+                name: 'eth0',
+                primaryInterface: true,
+                publicIpAddress: '10.0.0.5',
+                macAddress: '00:11:22:33:44:55',
+                displayOrder: 1,
+                addresses: [new NetAddress(type: NetAddress.AddressType.IPV4, address: '10.0.0.5')]
+        )
+    }
+
+    static ComputeServer finalizeHost_getComputeServer(Cloud cloud) {
+        return new ComputeServer(
+                id: 100L,
+                cloud: cloud,
+                externalId: 'vm-123',
+                name: 'test-server',
+                config: '{"hostId":"200"}'
+        )
+    }
+
+    static ComputeServer finalizeHost_getControllerNode(Cloud cloud) {
+        return new ComputeServer(
+                id: 200L,
+                cloud: cloud,
+                computeServerType: new ComputeServerType(code: 'scvmmController')
+        )
+    }
+
+    static Map finalizeHost_getServerDetail() {
+        return [
+                success: true,
+                server: [ipAddress: '10.0.0.100']
+        ]
+    }
+
+    static def finalizeHost_applyComputeServerNetworkIpResponse() {
+        return new ComputeServerInterface(
+                id: 1L,
+                ipAddress: '192.168.1.100',
+                macAddress: '00:11:22:33:44:55'
+        )
+    }
+
+    static def getServerDetails_forComputeServer(type) {
+        switch(type) {
+            case "bothIps":
+                return new ComputeServer(
+                        id: 100L,
+                        name: "server-both-ips",
+                        internalIp: "192.168.1.100",
+                        externalIp: "10.0.1.100"
+                )
+            case "internalOnly":
+                return new ComputeServer(
+                        id: 101L,
+                        name: "server-internal-only",
+                        internalIp: "192.168.1.101",
+                        externalIp: null
+                )
+            case "externalOnly":
+                return new ComputeServer(
+                        id: 102L,
+                        name: "server-external-only",
+                        internalIp: null,
+                        externalIp: "10.0.1.102"
+                )
+            case "noIps":
+                return new ComputeServer(
+                        id: 103L,
+                        name: "server-no-ips",
+                        internalIp: null,
+                        externalIp: null
+                )
+            default:
+                return null
+        }
+    }
+
+    static def getWorkloadData(){
+        return new Workload(
+                id: 100L,
+                internalName: "test-workload",
+                server: new ComputeServer(id: 200L, name: "test-server")
+        )
     }
 }

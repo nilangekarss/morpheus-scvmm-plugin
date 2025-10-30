@@ -784,24 +784,11 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         given:
         Cloud cloud = new Cloud(id: 1L, code: 'scvmm-cloud')
 
-        ComputeServer server = new ComputeServer(
-                id: 100L,
-                cloud: cloud,
-                externalId: 'vm-123',
-                name: 'test-server',
-                config: '{"hostId":"200"}'
-        )
+        ComputeServer server = ProvisionDataHelper.waitForHost_getComputeServer(cloud)
 
-        ComputeServer controllerServer = new ComputeServer(
-                id: 200L,
-                cloud: cloud,
-                computeServerType: new ComputeServerType(code: 'scvmmController')
-        )
+        ComputeServer controllerServer = ProvisionDataHelper.waitForHost_getControllerServer(cloud)
 
-        def serverDetail = [
-                success: true,
-                server: [ipAddress: '10.0.0.100']
-        ]
+        def serverDetail = ProvisionDataHelper.waitForHost_getServerDetail()
 
         morpheusContext.services.computeServer.get(200L) >> {
             return controllerServer
@@ -828,16 +815,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
             return Single.just(serverObj)
         }
         provisionProvider.applyComputeServerNetworkIp(_, _, _, _, _) >> {
-            return new ComputeServerInterface(
-                    id: 1L,
-                    ipAddress: '10.0.0.5',
-                    name: 'eth0',
-                    primaryInterface: true,
-                    publicIpAddress: '10.0.0.5',
-                    macAddress: '00:11:22:33:44:55',
-                    displayOrder: 1,
-                    addresses: [new NetAddress(type: NetAddress.AddressType.IPV4, address: '10.0.0.5')]
-            )
+            return ProvisionDataHelper.waitForHost_applyComputeServerNetworkIpResponse()
         }
 
         when:
@@ -856,25 +834,9 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     def "finalizeHost successfully processes server when checkServerReady succeeds"() {
         given:
         Cloud cloud = new Cloud(id: 1L, code: 'scvmm-cloud')
-
-        ComputeServer server = new ComputeServer(
-                id: 100L,
-                cloud: cloud,
-                externalId: 'vm-123',
-                name: 'test-server',
-                config: '{"hostId":"200"}'
-        )
-
-        ComputeServer controllerNode = new ComputeServer(
-                id: 200L,
-                cloud: cloud,
-                computeServerType: new ComputeServerType(code: 'scvmmController')
-        )
-
-        def serverDetail = [
-                success: true,
-                server: [ipAddress: '10.0.0.100']
-        ]
+        ComputeServer server = ProvisionDataHelper.finalizeHost_getComputeServer(cloud)
+        ComputeServer controllerNode = ProvisionDataHelper.finalizeHost_getControllerNode(cloud)
+        def serverDetail = ProvisionDataHelper.finalizeHost_getServerDetail()
 
         // Mock necessary service calls
         computeServerService.get(200L) >> controllerNode
@@ -888,11 +850,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
         // Mock the network IP application
         provisionProvider.applyComputeServerNetworkIp(_,_,_,_,_) >> {
-            return new ComputeServerInterface(
-                    id: 1L,
-                    ipAddress: '192.168.1.100',
-                    macAddress: '00:11:22:33:44:55'
-            )
+            return ProvisionDataHelper.finalizeHost_applyComputeServerNetworkIpResponse()
         }
 
         // Mock the server save operation
@@ -1028,33 +986,11 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     def "getServerDetails returns response with server IP addresses"() {
         given:
         // Create test servers with different IP configurations
-        def serverWithBothIps = new ComputeServer(
-                id: 100L,
-                name: "server-both-ips",
-                internalIp: "192.168.1.100",
-                externalIp: "10.0.1.100"
-        )
 
-        def serverWithOnlyInternalIp = new ComputeServer(
-                id: 101L,
-                name: "server-internal-only",
-                internalIp: "192.168.1.101",
-                externalIp: null
-        )
-
-        def serverWithOnlyExternalIp = new ComputeServer(
-                id: 102L,
-                name: "server-external-only",
-                internalIp: null,
-                externalIp: "10.0.1.102"
-        )
-
-        def serverWithNoIps = new ComputeServer(
-                id: 103L,
-                name: "server-no-ips",
-                internalIp: null,
-                externalIp: null
-        )
+        def serverWithBothIps = ProvisionDataHelper.getServerDetails_forComputeServer("bothIps")
+        def serverWithOnlyInternalIp = ProvisionDataHelper.getServerDetails_forComputeServer("internalOnly")
+        def serverWithOnlyExternalIp = ProvisionDataHelper.getServerDetails_forComputeServer("externalOnly")
+        def serverWithNoIps = ProvisionDataHelper.getServerDetails_forComputeServer("noIps")
 
         when:
         def responseBothIps = provisionProvider.getServerDetails(serverWithBothIps)
@@ -1090,11 +1026,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
     def "finalizeWorkload returns success response"() {
         given:
-        def workload = new Workload(
-                id: 100L,
-                internalName: "test-workload",
-                server: new ComputeServer(id: 200L, name: "test-server")
-        )
+        def workload = ProvisionDataHelper.getWorkloadData()
 
         when:
         def response = provisionProvider.finalizeWorkload(workload)
@@ -1105,11 +1037,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
     def "createWorkloadResources returns success response"() {
         given:
-        def workload = new Workload(
-                id: 100L,
-                internalName: "test-workload",
-                server: new ComputeServer(id: 200L, name: "test-server")
-        )
+        def workload = ProvisionDataHelper.getWorkloadData()
         def opts = [key: "value"]
 
         when:
@@ -1121,11 +1049,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
     def "restartWorkload returns success response"() {
         given:
-        def workload = new Workload(
-                id: 100L,
-                internalName: "test-workload",
-                server: new ComputeServer(id: 200L, name: "test-server")
-        )
+        def workload = ProvisionDataHelper.getWorkloadData()
 
         when:
         def response = provisionProvider.restartWorkload(workload)
