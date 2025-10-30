@@ -38,6 +38,7 @@ import com.morpheusdata.request.ResizeRequest
 import com.morpheusdata.response.InitializeHypervisorResponse
 import com.morpheusdata.response.PrepareWorkloadResponse
 import com.morpheusdata.response.ServiceResponse
+import com.morpheusdata.scvmm.testdata.ProvisionDataHelper
 import groovy.json.JsonOutput
 import io.reactivex.rxjava3.core.Maybe
 import io.reactivex.rxjava3.core.Observable
@@ -123,156 +124,31 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     }
 
     def storageVols() {
-        def vol1 = new StorageVolume(
-                displayOrder: 0,
-                name: "root",
-                datastoreOption: "auto",
-                rootVolume: true,
-                id: 507,
-                resizeable: true,
-                shortName: "root",
-                maxStorage: 42949672960
-        )
-        def vol2 = new StorageVolume(
-                displayOrder: 2,
-                name: "data-2",
-                rootVolume: false,
-                id: 509,
-                resizeable: true,
-                shortName: "data-2",
-                maxStorage: 9663676416
-        )
-        vol1.setExternalId("external-id-1")
-        vol1.setExternalId("external-id-2")
-        return [vol1, vol2]
+        return ProvisionDataHelper.storageVols()
     }
-
-    def configsMap = [
-            maxMemory: 4294967296,
-            maxStorage: 71940702208,
-            maxCpu: 0,
-            maxCores: 1,
-            maxGpus: 0,
-            template: 168,
-            backup: [
-                    backupJob: [
-                            syntheticFullEnabled: false,
-                            retentionCount: null,
-                            syntheticFullSchedule: null,
-                            scheduleTypeId: null
-                    ],
-                    veeamManagedServer: "",
-                    createBackup: false,
-                    jobAction: "new",
-                    providerBackupType: -1
-            ],
-            isVpcSelectable: true,
-            customOptions: [:],
-            hostId: 2,
-            createBackup: true,
-            hasNoUser: false,
-            expose: [],
-            lbInstances: [],
-            isEC2: false,
-            resourcePoolId: "",
-            layoutSize: 1,
-            createUser: true,
-            memoryDisplay: "MB",
-            scvmmCapabilityProfile: "Hyper-V",
-            noAgent: true,
-            vm: true,
-            networkInterfaces: [
-                    [
-                            id: "network-1",
-                            network: [
-                                    id: 1,
-                                    group: null,
-                                    subnet: null,
-                                    dhcpServer: true,
-                                    name: "vlanbaseVmNetwork",
-                                    pool: null
-                            ],
-                            ipAddress: null,
-                            macAddress: null,
-                            networkInterfaceTypeId: null,
-                            networkInterfaces: [],
-                            ipMode: null
-                    ]
-            ],
-            volumes: [
-                    // Volume details included here...
-                    [
-                            displayOrder: 0,
-                            name: "root",
-                            datastoreOption: "auto",
-                            rootVolume: true,
-                            id: 507,
-                            resizeable: true,
-                            shortName: "root",
-                            maxStorage: 42949672960
-                    ],
-                    [
-                            displayOrder: 2,
-                            name: "data-2",
-                            rootVolume: false,
-                            id: 509,
-                            resizeable: true,
-                            shortName: "data-2",
-                            maxStorage: 9663676416
-                    ]
-            ],
-            storageController: [],
-            provisionPoweredOff: false,
-            skipNetworkWait: false,
-            userData: null,
-            resourcePool: "",
-            hosts: [container35: "127.0.0.1"],
-            evars: [:]
-    ]
 
     def "test runWorkload successful VM creation"() {
         given:
         // Create concrete objects instead of mocks where possible
-        def cloud = new Cloud(id: 1L, name: "test-cloud")
-        def account = new Account(id: 1L, name: "test-account")
+        def cloud = ProvisionDataHelper.runWorkload_getCloud()
+        def account = ProvisionDataHelper.runWorkload_getAccount()
         cloud.account = account
 
-        def osType = new OsType(platform: "linux")
-        def virtualImage = new VirtualImage(id: 2L, name: "test-image",
-                refType: "ComputeZone", remotePath: "somePath", osType: osType,
-                externalId: "external-id-1")
+        def osType = ProvisionDataHelper.runWorkload_getOsType()
+        def virtualImage = ProvisionDataHelper.runWorkload_getVirtualImage(osType)
 
-        def servicePlan = new ServicePlan(id: 3L, maxMemory: 42949672960L, maxCores: 2)
-        def instance = new Instance(id: 4L, name: "test-instance", plan: servicePlan)
+        def servicePlan = ProvisionDataHelper.runWorkload_getServicePlan()
+        def instance = ProvisionDataHelper.runWorkload_getInstance(servicePlan)
 
         // Create ComputeServer with concrete values
-        def computerServer = new ComputeServer(
-                id: 1L,
-                name: "test-server",
-                externalId: "vm-123",
-                cloud: cloud,
-                sourceImage: virtualImage,
-                volumes: storageVols(),
-                interfaces: []
-        )
+        def computerServer = ProvisionDataHelper.runWorkload_getConcreteComputeServer(cloud, virtualImage, storageVols())
 
-        def workloadType = new WorkloadType(refId: 1L, code: "test-workload-type")
-        workloadType.setId(19L)
-
-        String configsJson = JsonOutput.toJson(configsMap)
-
+        def workloadType = ProvisionDataHelper.runWorkload_getWorkloadType()
+        def configMap = ProvisionDataHelper.configsMap
+        String configsJson = JsonOutput.toJson(configMap)
 
         // Create workload with concrete values
-        def workload = new Workload(
-                id: 5L,
-                internalName: "testWorkload",
-                server: computerServer,
-                workloadType: workloadType,
-                instance: instance,
-                //sourceImage: virtualImage,
-                //volumes: []
-        )
-
+        def workload = ProvisionDataHelper.runWorkload_getWorkload(computerServer, workloadType, instance)
         workload.configs = configsJson
 
         // Create UserConfiguration
@@ -287,69 +163,19 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
 
         // Setup required response data
-        def scvmmOpts = [
-                account: account,
-                zoneConfig: [libraryShare: "\\\\server\\share", diskPath: "C:\\Disks", workingPath: "C:\\VMs"],
-                zone: cloud,
-                zoneId: cloud.id,
-                publicKey: "ssh-rsa AAAAB...",
-                privateKey: "-----BEGIN RSA PRIVATE KEY-----\nMIIEpA...",
-                rootSharePath: "\\\\server\\share",
-                regionCode: "default"
-        ]
+        def scvmmOpts = ProvisionDataHelper.runWorkload_getScvmmOpts(account, cloud)
 
-        def controllerServer = new ComputeServer(
-                id: 10L,
-                name: "controller-01",
-                serverType: new ComputeServerType(code: "scvmm-controller"),
-                computeServerType: new ComputeServerType(code: "scvmm-controller"),
-                sshHost: "10.0.0.5",
-                sshUsername: "admin",
-                sshPassword: "password123"
-        )
+        def controllerServer = ProvisionDataHelper.runWorkload_getControllerServer()
 
         def datastore = new Datastore(id: 5L, name: "datastore1", externalId: "ds-123")
         def node = new ComputeServer(id: 2L, name: "node-01")
         // Add this to your test setup
-        def nodeServer = new ComputeServer(
-                id: 2L,
-                name: "node-01",
-                externalId: "host-123",
-                sshHost: "10.0.0.10",
-                serverType: new ComputeServerType(code: "hypervisor"),
-                hostname: "scvmm-host-01"
-        )
-
-        def diskSpec = [
-                type: "IDE",
-                bus: "0",
-                lun: "0",
-                fileName: "testVM-disk1.vhdx",
-                command: "\$ignore = New-SCVirtualDiskDrive -VMMServer localhost -IDE -Bus 0 -LUN 0 -JobGroup guid -VirtualHardDiskSizeMB 40960 -CreateDiffDisk \$false -Dynamic -FileName \"testVM-disk1.vhdx\" -Path \"C:\\Disks\" -VolumeType None"
-        ]
-
-        def provisionResponse = [
-                serverUuid: "server-uuid",
-                success: true,
-                externalId: "vm-12345",
-                publicIp: "10.0.1.100",
-                privateIp: "192.168.1.100",
-                hostname: "testVM"
-        ]
-
+        def nodeServer = ProvisionDataHelper.runWorkload_getNodeServer()
 
         // Define expected response from getHostAndDatastore
         def hostAndDatastoreResponse = [node, datastore, "something", false]
 
-        def mockedControllerOpts = [
-                hypervisorConfig: [diskPath: "C:\\VMs\\Disks", workingPath: "C:\\VMs"],
-                hypervisor: controllerServer,
-                sshHost: "10.0.0.5",        // Using controllerNode.sshHost or default
-                sshUsername: "admin",       // Using controllerNode.sshUsername or default
-                sshPassword: "password123", // Using controllerNode.sshPassword or default
-                zoneRoot: "C:\\VMs",        // Working path
-                diskRoot: "C:\\VMs\\Disks"  // Disk path
-        ]
+        def mockedControllerOpts = ProvisionDataHelper.runWorkload_getMockedControllerOpts(controllerServer)
 
         // First create a mock for the VirtualImageFiles
         def mockCloudFile = Mock(CloudFile)
@@ -386,107 +212,15 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
         // Add this to your test setup or directly in your test case
         provisionProvider.getScvmmContainerOpts(_) >> { Workload container ->
-            return [
-                    config: [serverConfig: 'value'],
-                    vmId: 'vm-123',
-                    name: 'vm-123',
-                    server: container.server,
-                    serverId: container.server?.id,
-                    memory: 4294967296, // Using the values that would come from your test container's plan
-                    maxCpu: 1,
-                    maxCores: 2,
-                    serverFolder: 'morpheus\\morpheus_server_1',
-                    hostname: 'testVM',
-                    network: [id: 1, name: 'vlanbaseVmNetwork'],
-                    networkId: 1,
-                    platform: 'linux',
-                    externalId: 'vm-123',
-                    networkType: 'vlan',
-                    containerConfig: [scvmmCapabilityProfile: 'Hyper-V'],
-                    resourcePool: 'Resource Pool 1',
-                    hostId: 2,
-                    osDiskSize: 42949672960,
-                    maxTotalStorage: 71940702208,
-                    dataDisks: [
-                            new StorageVolume(
-                                    displayOrder: 2,
-                                    name: "data-2",
-                                    rootVolume: false,
-                                    id: 509,
-                                    resizeable: true,
-                                    shortName: "data-2",
-                                    maxStorage: 9663676416
-                            )
-                    ],
-                    scvmmCapabilityProfile: 'Hyper-V',
-                    accountId: 1
-            ]
+            return ProvisionDataHelper.runWorkload_getScvmmContainerOptsResponse(container)
         }
 
         provisionProvider.constructCloudInitOptions(_, _, _, _, _, _, _, _) >> { args ->
-            Workload container = args[0]
-            WorkloadRequest workloadReq = args[1]
-            boolean installAgent = args[2]
-            String platform = args[3]
-            VirtualImage virtualImg = args[4]
-            def networkConfig = args[5]
-            def licenses = args[6]
-            def scvmOpts = args[7]
-
-            return [
-                    cloudConfigUser: '''
-            #cloud-config
-            users:
-              - name: morpheus
-                sudo: ALL=(ALL) NOPASSWD:ALL
-                shell: /bin/bash
-                ssh-authorized-keys:
-                  - ssh-rsa AAAAB3Nz...
-        ''',
-                    cloudConfigMeta: '''
-            instance-id: i-test123
-            local-hostname: testVM
-        ''',
-                    cloudConfigBytes: Base64.encoder.encodeToString('test data'.bytes),
-                    cloudConfigNetwork: '''
-            version: 1
-            config:
-              - type: physical
-                name: eth0
-                subnets:
-                  - type: dhcp
-        ''',
-                    licenseApplied: true,
-                    unattendCustomized: args[3]?.toLowerCase() == 'windows'
-            ]
+            return ProvisionDataHelper.runWorkload_constructCloudInitOptionsResponse(args)
         }
 
         mockApiService.getServerDetails(_, _) >> { Map options, String serverId ->
-            return [
-                    success: true,
-                    server: [
-                            id: serverId ?: 'vm-12345',
-                            name: 'testVM',
-                            status: 'Running',
-                            VMId: 'VMm-123456',
-                            ipAddress: '10.0.1.100',
-                            osType: 'Windows',
-                            generation: 'Generation 2',
-                            description: 'Test virtual machine',
-                            diskSizeMB: 40960,
-                            memoryMB: 4096,
-                            cpuCount: 2,
-                            hostName: 'scvmm-host-01',
-                            hostId: 'host-123',
-                            datastoreName: 'datastore1',
-                            datastoreId: 'ds-123',
-                            diskLayout: [
-                                    systemDisk: '/dev/sda',
-                                    dataDisk: '/dev/sda'
-                            ]
-                    ],
-                    msg: 'Server details retrieved successfully'
-            ]
+            return ProvisionDataHelper.reunWorkload_getServerDetailsResponse(serverId)
         }
 
         provisionProvider.loadDatastoreForVolume(_, _, _, _) >> { Cloud cld, String hostVolumeId, String fileShareId, String partitionId ->
@@ -495,19 +229,11 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
         // Mock applyComputeServerNetworkIp
         provisionProvider.applyComputeServerNetworkIp(_, _, _, _, _) >> { ComputeServer serverObj, String internalIp, String externalIp, int index, def macAddress  ->
-            return new ComputeServerInterface(
-                    id: 1L,
-                    ipAddress: internalIp,
-                    publicIpAddress: externalIp,
-                    externalId: 'nic-123',
-                    primaryInterface: true,
-                    network: new Network(id: 1L, name: 'vlanbaseVmNetwork')
-            )
+            return ProvisionDataHelper.runWorkload_applyComputeServerNetworkIpResponse(internalIp, externalIp)
         }
 
         provisionProvider.cloneParentCleanup(_, _) >> { Map cloneParentCleanOpts, ServiceResponse response ->
-            // You can add verification logic here if needed
-            return null // Or return whatever the method should return
+            return null
         }
 
         // Then modify your existing mock for computeServerService.get() to handle different IDs
@@ -560,17 +286,12 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
         }
 
-
-
         morpheusContext.getAsync() >> Mock(MorpheusAsyncServices) {
             getComputeServer() >> asyncComputeServerService
             getWorkloadType() >> workloadTypeService
             getStorageVolume() >> storageVolumeService
             getVirtualImage() >> asyncVirtualImageService
         }
-
-        // Mock the apiService methods directly with concrete return values
-        //mockApiService.pickScvmmController(_) >> controllerServer
 
         // Using the direct object return instead of a closure
         mockApiService.getScvmmZoneOpts(_, _) >> {
@@ -581,88 +302,15 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         }
 
         mockApiService.createServer(_) >> { Map servOpts ->
-            return [
-                    success: true,
-                    server: [
-                            id: 'vm-12345',
-                            ipAddress: '10.0.1.100',
-                            name: 'testVM',
-                            status: 'Running',
-                            MId: 'VMm-123456',
-                            disks: [
-                                    osDisk: [
-                                            externalId: 'os-disk-id-1'
-                                    ],
-                                    dataDisks: [
-                                            [
-                                                    id: 509,  // This should match the ID of your non-root volume
-                                                    externalId: 'data-disk-id-1'
-                                            ]
-                                    ],
-                                    diskMetaData: [
-                                            'os-disk-id-1': [
-                                                    VhdID: 'vhd-os-123',
-                                                    HostVolumeId: 'hvol-1',
-                                                    FileShareId: 'fs-1',
-                                                    PartitionUniqueId: 'part-1'
-                                            ],
-                                            'data-disk-id-1': [
-                                                    VhdID: 'vhd-data-123',
-                                                    HostVolumeId: 'hvol-2',
-                                                    FileShareId: 'fs-2',
-                                                    PartitionUniqueId: 'part-2'
-                                            ],
-                                            'vhd-os-123': [
-                                                    HostVolumeId: 'hvol-1',
-                                                    FileShareId: 'fs-1',
-                                                    PartitionUniqueId: 'part-1'
-                                            ],
-                                            'vhd-data-123': [
-                                                    HostVolumeId: 'hvol-2',
-                                                    FileShareId: 'fs-2',
-                                                    PartitionUniqueId: 'part-2'
-                                            ]
-                                    ]
-                            ]
-                    ],
-                    deleteDvdOnComplete: [
-                            removeIsoFromDvd: true,
-                            deleteIso: false
-                    ],
-                    cloudConfig: [
-                            isoAttached: true,
-                            dvdDriveId: 'dvd-123'
-                    ],
-                    errors: [],
-                    msg: 'Server created successfully'
-            ]
+            return ProvisionDataHelper.runWorkload_createServerResponse()
         }
 
         mockApiService.checkServerReady(_, _) >> { Map options, String serverId ->
-            return [
-                    success: true,
-                    server: [
-                            id: serverId ?: 'vm-12345',
-                            ipAddress: '10.0.1.100',
-                            name: 'testVM',
-                            status: 'Running',
-                            VMId: 'VMm-123456'
-                    ],
-                    hasIp: true,
-                    ready: true,
-                    waitComplete: true,
-                    msg: 'Server is ready'
-            ]
+            return ProvisionDataHelper.runWorkload_checkServerReadyResponse(serverId)
         }
 
         mockApiService.setCdrom(_) >> { Map setCdromOpts ->
-            return [
-                    success: true,
-                    data: [
-                            dvdRemoved: true
-                    ],
-                    msg: 'CD-ROM settings updated successfully'
-            ]
+            return ProvisionDataHelper.runWorkload_setCdromResponse()
         }
 
 
@@ -674,6 +322,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         response.data.success
 
     }
+
 
     def "getProvisionTypeCode should return scvmm"() {
         expect:
