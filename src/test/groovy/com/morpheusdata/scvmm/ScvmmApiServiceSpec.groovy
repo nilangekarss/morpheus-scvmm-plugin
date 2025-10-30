@@ -28,6 +28,7 @@ import com.morpheusdata.model.KeyPair
 import com.morpheusdata.model.Network
 import com.morpheusdata.model.StorageVolume
 import com.morpheusdata.model.VirtualImage
+import com.morpheusdata.scvmm.testdata.ApiServiceDataHelper
 import org.junit.jupiter.api.BeforeEach
 import spock.lang.Specification
 import io.reactivex.rxjava3.core.Single
@@ -126,13 +127,7 @@ class ScvmmApiServiceSpec extends Specification {
                                                                   data: "{\"Mode\":\"d-----\",\"Name\":\"testImage\",\"Attributes\":\"Directory\"}"])
 
         // Prepare test data
-        def opts = [
-                zoneRoot: "C:\\Temp",
-                sshPort: '22',
-                sshHost: 'localhost',
-                sshUsername: 'admin',
-                sshPassword: 'password'
-        ]
+        def opts = [zoneRoot: "C:\\Temp", sshPort: '22', sshHost: 'localhost', sshUsername: 'admin', sshPassword: 'password']
         // Add this before using opts
         opts.hypervisor = mockedComputerServer
         def inputStreamData = Mock(InputStream)
@@ -163,13 +158,7 @@ class ScvmmApiServiceSpec extends Specification {
             id >> 1L
             name >> "test-vm"
         }
-        def opts = [
-                zoneRoot: "C:\\Temp",
-                hypervisor: server,
-                sshHost: 'localhost',
-                sshUsername: 'admin',
-                sshPassword: 'password'
-        ]
+        def opts = [zoneRoot: "C:\\Temp", hypervisor: server, sshHost: 'localhost', sshUsername: 'admin', sshPassword: 'password']
 
         morpheusContext.executeWindowsCommand(*_) >> Single.just([success: true, data: '{"Status":"Success"}'])
 
@@ -204,12 +193,7 @@ class ScvmmApiServiceSpec extends Specification {
     def "test snapshotServer successfully creates a checkpoint"() {
         given:
         def vmId = "vm-12345"
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = [sshHost: 'scvmm-server', sshUsername: 'admin', sshPassword: 'password', winrmPort: '5985']
 
         // Mock the command execution with a successful result
         morpheusContext.executeWindowsCommand(*_) >> Single.just([
@@ -241,12 +225,7 @@ class ScvmmApiServiceSpec extends Specification {
         given:
         def vmId = "vm-12345"
         def snapshotId = "snapshot-6789"
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = [sshHost: 'scvmm-server', sshUsername: 'admin', sshPassword: 'password', winrmPort: '5985']
 
         // Mock the command execution with a successful result
         morpheusContext.executeWindowsCommand(*_) >> Single.just([
@@ -282,12 +261,7 @@ class ScvmmApiServiceSpec extends Specification {
         given:
         def vmId = "vm-12345"
         def snapshotId = "snapshot-6789"
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = [sshHost: 'scvmm-server', sshUsername: 'admin', sshPassword: 'password', winrmPort: '5985']
 
         // Mock the command execution with a successful result
         morpheusContext.executeWindowsCommand(*_) >> Single.just([
@@ -321,89 +295,7 @@ class ScvmmApiServiceSpec extends Specification {
     def "test buildCreateServerCommands generates correct PowerShell script"() {
         given:
         // Setup complete options for VM creation
-        def opts = [
-                // Basic VM configuration
-                name: 'test-vm',
-                hostname: 'test-hostname',
-                memory: 4294967296L, // 4GB
-                maxCpu: 2,
-                maxCores: 4,
-
-                // Dynamic memory settings
-                minDynamicMemory: 2147483648L, // 2GB
-                maxDynamicMemory: 8589934592L, // 8GB
-
-                // VM identifiers
-                vmId: 'vm-12345',
-                cloneVMId: 'clone-vm-6789',
-                imageId: 'img-9876',
-
-                // VM type and generation
-                scvmmCapabilityProfile: 'Hyper-V',
-                scvmmGeneration: 'generation2',
-
-                // Template information
-                isTemplate: false,
-                templateId: 'template-5678',
-
-                // Storage configuration
-                volumePath: 'C:\\ClusterStorage\\Volume1\\VMs',
-                volumePaths: [
-                        'C:\\ClusterStorage\\Volume1\\VMs\\test-vm\\disk0.vhdx',
-                        'C:\\ClusterStorage\\Volume1\\VMs\\test-vm\\disk1.vhdx',
-                        'C:\\ClusterStorage\\Volume1\\VMs\\test-vm\\disk2.vhdx'
-                ],
-
-                // Data disks configuration
-                dataDisks: [
-                        [name: 'data1', maxStorage: 10737418240L],
-                        [name: 'data2', maxStorage: 21474836480L]
-                ],
-
-                // Disk external ID mappings for clone operations
-                diskExternalIdMappings: [
-                        'disk-ext-id-1',
-                        'disk-ext-id-2'
-                ],
-
-                // Host and availability settings
-                hostExternalId: 'host-ext-id-456',
-                highlyAvailable: true,
-
-                // Image configuration
-                isSyncdImage: true,
-
-                // Sysprep settings
-                isSysprep: true,
-                unattendPath: 'C:\\Temp\\unattend.xml',
-                OSName: 'Windows Server 2019',
-
-                // Zone/Region configuration
-                zone: [
-                        id: 10L,
-                        name: 'Test Zone',
-                        regionCode: 'us-east'
-                ],
-
-                // Network configuration
-                networkConfig: [
-                        doStatic: true,
-                        primaryInterface: [
-                                ipAddress: '192.168.1.100',
-                                poolType: 'scvmm',
-                                networkPool: [
-                                        externalId: 'pool-123'
-                                ],
-                                vlanId: 42,
-                                network: [
-                                        externalId: 'network-abcd1234-5678-90ef-ghij-klmnopqrstuv'
-                                ],
-                                subnet: [
-                                        externalId: 'subnet-abcd1234-5678-90ef-ghij-klmnopqrstuv'
-                                ]
-                        ]
-                ]
-        ]
+        def opts = ApiServiceDataHelper.buildCreateServerCommands_getPowerShellOpts
 
         when:
         def result = apiService.buildCreateServerCommands(opts)
@@ -431,73 +323,7 @@ class ScvmmApiServiceSpec extends Specification {
     def "test buildCreateServerCommands generates correct hardware profile commands from template"() {
         given:
         // Setup complete options with template-specific settings
-        def opts = [
-                // Basic VM configuration
-                name: 'test-vm',
-                hostname: 'test-hostname',
-                memory: 4294967296L, // 4GB
-                maxCpu: 2,
-                maxCores: 4,
-                memoryMB: 4096,
-
-                // Dynamic memory settings
-                minDynamicMemory: 2147483648L, // 2GB
-                maxDynamicMemory: 8589934592L, // 8GB
-                minDynamicMemoryMB: 2048,
-                maxDynamicMemoryMB: 8192,
-
-                // Template-specific settings - these are needed to trigger our condition
-                isTemplate: true,
-                templateId: 'template-5678',
-                hardwareProfileName: 'test-hw-profile',
-                hardwareGuid: '{12345678-1234-5678-1234-567812345678}',
-                generationNumber: 2,
-                highlyAvailable: true,
-                scvmmCapabilityProfile: 'Hyper-V',
-
-                // Zone/Region configuration
-                zone: [
-                        id: 10L,
-                        name: 'Test Zone',
-                        regionCode: 'us-east'
-                ],
-
-                // Template values that should be preserved
-                template: [
-                        CPUExpectedUtilizationPercent: 30,
-                        DiskIops: 500,
-                        CPUMaximumPercent: 90,
-                        NetworkUtilizationMbps: 100,
-                        DynamicMemoryEnabled: true,
-                        Memory: 2048,
-                        DynamicMemoryMinimumMB: 1024,
-                        DynamicMemoryMaximumMB: 4096,
-                        DynamicMemoryBufferPercentage: 20,
-                        FirstBootDevice: 'CD',
-                        NumaIsolationRequired: true,
-                        CPUPerVirtualNumaNodeMaximum: 2,
-                        MemoryPerVirtualNumaNodeMaximumMB: 2048,
-                        VirtualNumaNodesPerSocketMaximum: 2
-                ],
-                // Network configuration
-                networkConfig: [
-                        doStatic: true,
-                        primaryInterface: [
-                                ipAddress: '192.168.1.100',
-                                poolType: 'scvmm',
-                                networkPool: [
-                                        externalId: 'pool-123'
-                                ],
-                                vlanId: 42,
-                                network: [
-                                        externalId: 'network-abcd1234-5678-90ef-ghij-klmnopqrstuv'
-                                ],
-                                subnet: [
-                                        externalId: 'subnet-abcd1234-5678-90ef-ghij-klmnopqrstuv'
-                                ]
-                        ]
-                ]
-        ]
+        def opts = ApiServiceDataHelper.buildCreateServerCommands_getTemplateOpts
 
         when:
         def result = apiService.buildCreateServerCommands(opts)
@@ -899,8 +725,7 @@ class ScvmmApiServiceSpec extends Specification {
         // Verify the result based on whether a controllerId was provided
 
         opts.controllerServer == serverToReturn
-//        opts.controllerServer.id == controllerId
-//        opts.controllerServer.name == "controller-server"
+
         1 * computeServerService.get(controllerId) >> serverToReturn
 
     }
@@ -1932,56 +1757,7 @@ class ScvmmApiServiceSpec extends Specification {
         ]
 
         // Mock template data response
-        def templatesData = [
-                [
-                        ID: "template-1",
-                        ObjectType: "VMTemplate",
-                        Name: "Windows Server 2019 Template",
-                        CPUCount: 2,
-                        Memory: 4294967296L,
-                        OperatingSystem: "Windows Server 2019 Datacenter",
-                        TotalSize: 42949672960L,
-                        UsedSize: 21474836480L,
-                        Generation: 2,
-                        Disks: [
-                                [
-                                        ID: "disk-1",
-                                        Name: "System Disk",
-                                        VHDType: "DynamicallyExpanding",
-                                        VHDFormat: "VHDX",
-                                        Location: "C:\\ClusterStorage\\Volume1\\Templates\\disk1.vhdx",
-                                        TotalSize: 42949672960L,
-                                        UsedSize: 21474836480L,
-                                        HostId: "host-1",
-                                        HostVolumeId: "volume-1",
-                                        VolumeType: "BootAndSystem"
-                                ]
-                        ]
-                ],
-                [
-                        ID: "vhd-1",
-                        Name: "Ubuntu 20.04 VHD",
-                        Location: "C:\\ClusterStorage\\Volume1\\VHDs\\ubuntu.vhdx",
-                        OperatingSystem: "Ubuntu Linux 20.04 (64 bit)",
-                        TotalSize: 21474836480L,
-                        VHDFormatType: "VHDX",
-                        UsedSize: 0,
-                        Disks: [
-                                [
-                                        ID: "vhd-1",
-                                        ObjectType: "VirtualHardDisk",
-                                        Name: "Ubuntu 20.04 VHD",
-                                        VHDType: "DynamicallyExpanding",
-                                        VHDFormat: "VHDX",
-                                        Location: "C:\\ClusterStorage\\Volume1\\VHDs\\ubuntu.vhdx",
-                                        TotalSize: 21474836480L,
-                                        UsedSize: 10737418240L,
-                                        HostId: "host-2",
-                                        HostVolumeId: "volume-2"
-                                ]
-                        ]
-                ]
-        ]
+        def templatesData = ApiServiceDataHelper.listTemplates_getTemplateData
 
         def commandOutput = [success: true, data: templatesData]
 
@@ -2036,29 +1812,7 @@ class ScvmmApiServiceSpec extends Specification {
         ]
 
         // Mock clusters data response
-        def clustersData = [
-                [
-                        id: "cluster-1",
-                        name: "Production Cluster",
-                        hostGroup: "All Hosts\\Production\\Cluster1",
-                        sharedVolumes: ["CSV-Volume1", "CSV-Volume2"],
-                        description: "Main production cluster"
-                ],
-                [
-                        id: "cluster-2",
-                        name: "Development Cluster",
-                        hostGroup: "All Hosts\\Development\\Cluster1",
-                        sharedVolumes: ["CSV-Dev1"],
-                        description: "Development environment cluster"
-                ],
-                [
-                        id: "cluster-3",
-                        name: "Test Cluster",
-                        hostGroup: "All Hosts\\Production\\TestCluster",
-                        sharedVolumes: [],
-                        description: "Testing cluster"
-                ]
-        ]
+        def clustersData = ApiServiceDataHelper.listClusters_getClusterData
 
         def commandOutput = [success: true, data: clustersData]
 
@@ -2101,84 +1855,6 @@ class ScvmmApiServiceSpec extends Specification {
         "non-matching host group filter"  | "All Hosts\\Staging"        | 0                    | []
     }
 
-    @Unroll
-    def "test listClusters successfully retrieves clusters and applies host group filtering"() {
-        given:
-        def opts = [
-                zone: Mock(Cloud) {
-                    getConfigProperty('hostGroup') >> hostGroupFilter
-                },
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
-
-        // Mock clusters data response
-        def clustersData = [
-                [
-                        id: "cluster-1",
-                        name: "Production Cluster",
-                        hostGroup: "All Hosts\\Production\\Cluster1",
-                        sharedVolumes: ["CSV-Volume1", "CSV-Volume2"],
-                        description: "Main production cluster"
-                ],
-                [
-                        id: "cluster-2",
-                        name: "Development Cluster",
-                        hostGroup: "All Hosts\\Development\\Cluster1",
-                        sharedVolumes: ["CSV-Dev1"],
-                        description: "Development environment cluster"
-                ],
-                [
-                        id: "cluster-3",
-                        name: "Test Cluster",
-                        hostGroup: "All Hosts\\Production\\TestCluster",
-                        sharedVolumes: [],
-                        description: "Testing cluster"
-                ]
-        ]
-
-        def commandOutput = [success: true, data: clustersData]
-
-        when:
-        def result = apiService.listClusters(opts)
-
-        then:
-        // Verify generateCommandString was called with the correct PowerShell command
-        1 * apiService.generateCommandString({ String cmd ->
-            cmd.contains('$report = @()') &&
-                    cmd.contains('$Clusters = Get-SCVMHostCluster -VMMServer localhost') &&
-                    cmd.contains('foreach ($Cluster in $Clusters)') &&
-                    cmd.contains('id=$Cluster.ID') &&
-                    cmd.contains('name=$Cluster.Name') &&
-                    cmd.contains('hostGroup=$Cluster.HostGroup.Path') &&
-                    cmd.contains('sharedVolumes=@($Cluster.SharedVolumes.Name)') &&
-                    cmd.contains('description=$Cluster.Description') &&
-                    cmd.contains('$report +=$data') &&
-                    cmd.contains('$report')
-        }) >> "generated powershell command"
-
-        // Verify wrapExecuteCommand was called with the generated command
-        1 * apiService.wrapExecuteCommand("generated powershell command", opts) >> commandOutput
-
-        // Verify the result
-        result.success == true
-        result.clusters.size() == expectedClusterCount
-
-        if (expectedClusterCount > 0) {
-            result.clusters.each { cluster ->
-                assert expectedHostGroups.any { cluster.hostGroup?.startsWith(it) }
-            }
-        }
-
-        where:
-        scenario                           | hostGroupFilter              | expectedClusterCount | expectedHostGroups
-        "no host group filter (all)"      | null                        | 3                    | ["All Hosts\\Production", "All Hosts\\Development"]
-        "production host group filter"     | "All Hosts\\Production"     | 2                    | ["All Hosts\\Production"]
-        "development host group filter"    | "All Hosts\\Development"    | 1                    | ["All Hosts\\Development"]
-        "non-matching host group filter"  | "All Hosts\\Staging"        | 0                    | []
-    }
 
     @Unroll
     def "test internalListHostGroups successfully retrieves host groups"() {
@@ -2191,29 +1867,7 @@ class ScvmmApiServiceSpec extends Specification {
         ]
 
         // Mock host groups data response
-        def hostGroupsData = [
-                [
-                        id: "12345678-1234-5678-9012-123456789012",
-                        name: "All Hosts",
-                        path: "All Hosts",
-                        parent: null,
-                        root: true
-                ],
-                [
-                        id: "87654321-4321-8765-2109-876543210987",
-                        name: "Production",
-                        path: "All Hosts\\Production",
-                        parent: "All Hosts",
-                        root: false
-                ],
-                [
-                        id: "11111111-2222-3333-4444-555555555555",
-                        name: "Development",
-                        path: "All Hosts\\Development",
-                        parent: "All Hosts",
-                        root: false
-                ]
-        ]
+        def hostGroupsData = ApiServiceDataHelper.internalListHostGroups_getHostGroupData
 
         def commandOutput = [success: true, data: hostGroupsData]
 
@@ -2264,23 +1918,7 @@ class ScvmmApiServiceSpec extends Specification {
         ]
 
         // Mock library shares data response
-        def librarySharesData = [
-                [
-                        ID: "12345678-1234-5678-9012-123456789012",
-                        Name: "Library Share 1",
-                        Path: "\\\\server1\\LibraryShare1"
-                ],
-                [
-                        ID: "87654321-4321-8765-2109-876543210987",
-                        Name: "Library Share 2",
-                        Path: "\\\\server2\\LibraryShare2"
-                ],
-                [
-                        ID: "11111111-2222-3333-4444-555555555555",
-                        Name: "Local Library",
-                        Path: "C:\\ProgramData\\Virtual Machine Manager Library Files"
-                ]
-        ]
+        def librarySharesData = ApiServiceDataHelper.listLibraryShares_getLibraryShareData
 
         def commandOutput = [success: true, data: librarySharesData]
 
@@ -2717,54 +2355,10 @@ class ScvmmApiServiceSpec extends Specification {
         ]
 
         // Mock IP pools data response
-        def ipPoolsData = [
-                [
-                        ID: "pool-1",
-                        Name: "Production Pool",
-                        NetworkID: "network-1",
-                        LogicalNetworkID: "logical-net-1",
-                        Subnet: "192.168.1.0/24",
-                        SubnetID: "subnet-1",
-                        DefaultGateways: ["192.168.1.1"],
-                        TotalAddresses: 254,
-                        AvailableAddresses: 200,
-                        DNSSearchSuffixes: ["domain.com"],
-                        DNSServers: ["8.8.8.8", "8.8.4.4"],
-                        IPAddressRangeStart: "192.168.1.10",
-                        IPAddressRangeEnd: "192.168.1.254"
-                ],
-                [
-                        ID: "pool-2",
-                        Name: "Development Pool",
-                        NetworkID: "network-2",
-                        LogicalNetworkID: "logical-net-2",
-                        Subnet: "10.0.1.0/24",
-                        SubnetID: "subnet-2",
-                        DefaultGateways: ["10.0.1.1"],
-                        TotalAddresses: 100,
-                        AvailableAddresses: 80,
-                        DNSSearchSuffixes: ["dev.domain.com"],
-                        DNSServers: ["10.0.1.2"],
-                        IPAddressRangeStart: "10.0.1.50",
-                        IPAddressRangeEnd: "10.0.1.150"
-                ]
-        ]
+        def ipPoolsData = ApiServiceDataHelper.listNetworkPools_getIpPoolsData
 
         // Mock network mapping data response
-        def networkMappingData = [
-                [
-                        ID: "network-1",
-                        Name: "Production Network",
-                        LogicalNetwork: "Production Logical",
-                        LogicalNetworkId: "logical-net-1"
-                ],
-                [
-                        ID: "network-2",
-                        Name: "Development Network",
-                        LogicalNetwork: "Development Logical",
-                        LogicalNetworkId: "logical-net-2"
-                ]
-        ]
+        def networkMappingData = ApiServiceDataHelper.listNetworkIPPools_getnetworkMappingData
 
         // Mock the first command execution (IP pools)
         def ipPoolsCommand = [success: true, exitCode: '0', data: ipPoolsData]

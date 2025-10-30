@@ -561,24 +561,10 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
                 (datastoreParam == 'datastore2' ? datastore2 : null)
 
         // Setup computeServer/node
-        def node1 = new ComputeServer(
-                id: 20L,
-                name: 'node1',
-                enabled: true,
-                cloud: cloud,
-                computeServerType: new ComputeServerType(code: 'scvmmHypervisor'),
-                powerState: ComputeServer.PowerState.on,
-                capacityInfo: new ComputeCapacityInfo(maxMemory: 8589934592L, usedMemory: 2147483648L)
-        )
-        def node2 = new ComputeServer(
-                id: 21L,
-                name: 'node2',
-                enabled: true,
-                cloud: cloud,
-                computeServerType: new ComputeServerType(code: 'scvmmHypervisor'),
-                powerState: ComputeServer.PowerState.on,
-                capacityInfo: new ComputeCapacityInfo(maxMemory: 17179869184L, usedMemory: 4294967296L)
-        )
+
+        def nodes = ProvisionDataHelper.getHostAndDatastore_ComuteServerNodes(cloud)
+        def node1 = nodes[0]
+        def node2 = nodes[1]
 
         // Setup storage volumes for the nodes
         def volume1 = new StorageVolume(id: 30L, datastore: datastore1)
@@ -1218,26 +1204,10 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         def sharedController = sharedControllerId ?
                 new ComputeServer(id: sharedControllerId, name: "shared-controller") : null
 
-        def scvmmController = new ComputeServer(
-                id: 2L,
-                name: "scvmm-controller",
-                cloud: cloud,
-                computeServerType: new ComputeServerType(code: "scvmmController")
-        )
-
-        def scvmmHypervisor = new ComputeServer(
-                id: 3L,
-                name: "scvmm-hypervisor",
-                cloud: cloud,
-                computeServerType: new ComputeServerType(code: "scvmmHypervisor")
-        )
-
-        def legacyHypervisor = new ComputeServer(
-                id: 4L,
-                name: "legacy-hypervisor",
-                cloud: cloud,
-                serverType: "hypervisor"
-        )
+        def controllers = ProvisionDataHelper.pickScvmmController_ComputeServers(cloud)
+        def scvmmController = controllers.scvmmController
+        def scvmmHypervisor = controllers.scvmmHypervisor
+        def legacyHypervisor = controllers.legacyHypervisor
 
         // Mock the computeServerService based on different scenarios
         if (sharedControllerId) {
@@ -1306,30 +1276,13 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
     def "getContainerRootDisk returns the root volume from server volumes"() {
         given:
-        def rootVolume = new StorageVolume(
-                id: 1L,
-                name: "root",
-                rootVolume: true,
-                maxStorage: 42949672960L
-        )
+        def rootVolume = new StorageVolume(id: 1L, name: "root", rootVolume: true, maxStorage: 42949672960L)
 
-        def dataVolume = new StorageVolume(
-                id: 2L,
-                name: "data",
-                rootVolume: false,
-                maxStorage: 10737418240L
-        )
+        def dataVolume = new StorageVolume(id: 2L, name: "data", rootVolume: false, maxStorage: 10737418240L)
 
-        def server = new ComputeServer(
-                id: 100L,
-                name: "test-server",
-                volumes: [dataVolume, rootVolume]
-        )
+        def server = new ComputeServer(id: 100L, name: "test-server", volumes: [dataVolume, rootVolume])
 
-        def containerWithVolumes = new Workload(
-                id: 200L,
-                server: server
-        )
+        def containerWithVolumes = new Workload(id: 200L, server: server)
         containerWithVolumes.displayName = "test-container"
 
         def containerWithNoServer = new Workload(
@@ -1358,25 +1311,13 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     def "getContainerRootSize returns correct size based on priority when all values are present"() {
         given:
         // Create root volume with size
-        def rootVolume = new StorageVolume(
-                id: 1L,
-                name: "root",
-                rootVolume: true,
-                maxStorage: 42949672960L // ~40GB
-        )
+        def rootVolume = new StorageVolume(id: 1L, name: "root", rootVolume: true, maxStorage: 42949672960L)
 
         // Create server with volumes
-        def server = new ComputeServer(
-                id: 100L,
-                volumes: [rootVolume]
-        )
+        def server = new ComputeServer(id: 100L, volumes: [rootVolume])
 
         // Create container with server and maxStorage
-        def container = new Workload(
-                id: 200L,
-                server: server,
-                maxStorage: 10737418240L // ~10GB
-        )
+        def container = new Workload(id: 200L, server: server, maxStorage: 10737418240L )
 
         // Add instance with plan
         def plan = new ServicePlan(id: 300L, maxStorage: 21474836480L) // ~20GB
@@ -1406,30 +1347,16 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         }
 
         // Create server with volumes if needed
-        def server = hasVolumes ? new ComputeServer(
-                id: 100L,
-                volumes: volumes
-        ) : null
+        def server = hasVolumes ? new ComputeServer(id: 100L, volumes: volumes) : null
 
         // Create plan with maxStorage if needed
-        def plan = hasPlan ? new ServicePlan(
-                id: 300L,
-                maxStorage: planMaxStorage
-        ) : null
+        def plan = hasPlan ? new ServicePlan(id: 300L, maxStorage: planMaxStorage) : null
 
         // Create instance with plan if needed
-        def instance = hasPlan ? new Instance(
-                id: 400L,
-                plan: plan
-        ) : null
+        def instance = hasPlan ? new Instance(id: 400L, plan: plan) : null
 
         // Create container with all the components
-        def container = new Workload(
-                id: 200L,
-                server: server,
-                maxStorage: containerMaxStorage,
-                instance: instance
-        )
+        def container = new Workload(id: 200L, server: server, maxStorage: containerMaxStorage, instance: instance)
 
         when:
         def result = provisionProvider.getContainerVolumeSize(container)
@@ -1487,73 +1414,36 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         def virtualImage = new VirtualImage(id: 2L, name: "test-image", osType: osType)
 
         // Create service plan with specific values
-        def servicePlan = new ServicePlan(
-                id: 3L,
-                maxMemory: 4294967296L, // 4GB
-                maxCpu: 1,
-                maxCores: 2,
-                maxStorage: 42949672960L // 40GB
-        )
+        def servicePlan = new ServicePlan(id: 3L, maxMemory: 4294967296L, maxCpu: 1, maxCores: 2,
+                maxStorage: 42949672960L)
 
         def instance = new Instance(id: 4L, name: "test-instance", plan: servicePlan)
 
         // Create storage volumes for the computer server
-        def rootVolume = new StorageVolume(
-                id: 507L,
-                displayOrder: 0,
-                name: "root",
-                rootVolume: true,
-                maxStorage: 42949672960L // 40GB
-        )
+        def rootVolume = new StorageVolume(id: 507L, displayOrder: 0, name: "root", rootVolume: true,
+                maxStorage: 42949672960L )
 
-        def dataVolume = new StorageVolume(
-                id: 509L,
-                displayOrder: 2,
-                name: "data-2",
-                rootVolume: false,
-                maxStorage: 9663676416L // ~9GB
-        )
+        def dataVolume = new StorageVolume(id: 509L, displayOrder: 2, name: "data-2", rootVolume: false,
+                maxStorage: 9663676416L)
 
         // Create resource pool
         def resourcePool = new ComputeZonePool(id: 5L, name: "Resource Pool 1", externalId: "Resource Pool 1")
 
         // Create ComputeServer with concrete values
-        def computerServer = new ComputeServer(
-                id: 1L,
-                name: "test-server",
-                externalId: "vm-123",
-                cloud: cloud,
-                sourceImage: virtualImage,
-                volumes: [rootVolume, dataVolume],
-                resourcePool: resourcePool,
-                serverOs: serverOs,
-                interfaces: []
-        )
+        def computerServer = new ComputeServer(id: 1L, name: "test-server", externalId: "vm-123", cloud: cloud,
+                sourceImage: virtualImage, volumes: [rootVolume, dataVolume], resourcePool: resourcePool,
+                serverOs: serverOs, interfaces: [])
 
         def workloadType = new WorkloadType(refId: 1L, code: "test-workload-type")
         workloadType.setId(19L)
 
         // Define container config
-        def containerConfig = [
-                networkId: "1",
-                networkType: "vlan",
-                hostId: 2,
-                scvmmCapabilityProfile: "Hyper-V"
-        ]
+        def containerConfig = [networkId: "1", networkType: "vlan", hostId: 2, scvmmCapabilityProfile: "Hyper-V"]
 
         // Create workload with concrete values
-        def workload = new Workload(
-                id: 5L,
-                internalName: "testWorkload",
-                server: computerServer,
-                workloadType: workloadType,
-                instance: instance,
-                account: account,
-                maxMemory: null, // Using plan's value
-                maxCpu: null,    // Using plan's value
-                maxCores: null,  // Using plan's value
-                hostname: "testVM"
-        )
+        def workload = new Workload(id: 5L, internalName: "testWorkload", server: computerServer,
+                workloadType: workloadType, instance: instance, account: account, maxMemory: null,
+                maxCpu: null,    maxCores: null, hostname: "testVM")
 
         // Set the config map for the workload
         workload.setConfigProperty("networkId", "1")
@@ -1721,43 +1611,12 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     def "getServerRootDisk returns root volume when present"() {
         given:
         // Create volumes with one root volume and one non-root volume
-        def rootVolume = new StorageVolume(
-                id: 1L,
-                name: "root",
-                rootVolume: true,
-                maxStorage: 42949672960L
-        )
-        def dataVolume = new StorageVolume(
-                id: 2L,
-                name: "data",
-                rootVolume: false,
-                maxStorage: 10737418240L
-        )
-
-        // Create servers with different volume configurations
-        def serverWithRootVolume = new ComputeServer(
-                id: 100L,
-                name: "server-with-root",
-                volumes: [dataVolume, rootVolume]
-        )
-
-        def serverWithoutRootVolume = new ComputeServer(
-                id: 101L,
-                name: "server-without-root",
-                volumes: [dataVolume]
-        )
-
-        def serverWithEmptyVolumes = new ComputeServer(
-                id: 102L,
-                name: "server-empty-volumes",
-                volumes: []
-        )
-
-        def serverWithNullVolumes = new ComputeServer(
-                id: 103L,
-                name: "server-null-volumes",
-                volumes: null
-        )
+        def servers = ProvisionDataHelper.getServerRootDisk_differentServers()
+        def serverWithRootVolume = servers.serverWithRootVolume
+        def serverWithoutRootVolume = servers.serverWithoutRootVolume
+        def serverWithEmptyVolumes = servers.serverWithEmptyVolumes
+        def serverWithNullVolumes = servers.serverWithNullVolumes
+        def rootVolume = servers.rootVolume
 
         when:
         def resultWithRoot = provisionProvider.getServerRootDisk(serverWithRootVolume)
@@ -1848,14 +1707,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         given:
         // Create a network to be returned by the network service
         def network = new Network(id: 123L, name: "test-network")
-
-        // Create storage volumes for the server
-//        def rootVolume = new StorageVolume(
-//                id: 507L,
-//                name: "root",
-//                rootVolume: true,
-//                maxStorage: 42949672960L // 40GB
-//        )
 
         def dataVolume = new StorageVolume(
                 id: 509L,
@@ -2357,61 +2208,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
     }
 
-//    @Unroll
-//    def "test getDiskExternalIds returns correctly formatted disk mappings"() {
-//        given:
-//        def virtualImage = new VirtualImage(id: 1L, name: "test-image")
-//        def cloud = new Cloud(id: 2L, name: "test-cloud")
-//
-//        // Create test volumes for the virtual image location
-//        def rootVolume = new StorageVolumeIdentityProjection(
-//                id: 101L,
-//                externalId: "root-disk-id"
-//        )
-//
-//        def dataVolume1 = new StorageVolumeIdentityProjection(
-//                id: 102L,
-//                externalId: "data-disk-id-1"
-//        )
-//        def dataVolume2 = new StorageVolumeIdentityProjection(
-//                id: 103L,
-//                externalId: "data-disk-id-2"
-//        )
-//
-//        // Create the virtual image location with the test volumes
-//        def virtualImageLocation = new VirtualImageLocation(
-//                id: 201L,
-//                virtualImage: virtualImage,
-//                volumes: [rootVolume, dataVolume1, dataVolume2]
-//        )
-//
-//        // Mock getVirtualImageLocation to return our test location
-//        provisionProvider.getVirtualImageLocation(_, _) >> {
-//            return virtualImageLocation
-//        }
-//
-//        when:
-//        def result = provisionProvider.getDiskExternalIds(virtualImage, cloud)
-//
-//        then:
-//        // Should have 3 disk mappings (1 root + 2 data)
-//        result.size() == 3
-//
-//        // Verify root volume is first with idx 0
-//        result[0].rootVolume == true
-//        result[0].externalId == "root-disk-id"
-//        result[0].idx == 0
-//
-//        // Verify first data volume
-//        result[1].rootVolume == false
-//        result[1].externalId == "data-disk-id-1"
-//        result[1].idx == 1  // Index starts at 1 for data disks
-//
-//        // Verify second data volume
-//        result[2].rootVolume == false
-//        result[2].externalId == "data-disk-id-2"
-//        result[2].idx == 2
-//    }
 
     def "setDynamicMemory should set dynamic memory values when plan has ranges config"() {
         given:
@@ -2551,11 +2347,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
                 account: new Account(id: 300L)
         )
 
-        def volumeAdd = [
-                maxStorage: 10737418240,
-                maxIOPS: 1000,
-                name: "data-volume"
-        ]
+        def volumeAdd = [maxStorage: 10737418240, maxIOPS: 1000, name: "data-volume"]
 
         def counter = 2
 
@@ -2648,41 +2440,24 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         def workload = new Workload(id: 100L)
         workload.displayName = "test-workload"
 
-        def server = new ComputeServer(
-                id: 200L,
-                name: "test-server"
-        )
+        def server = new ComputeServer(id: 200L, name: "test-server")
         workload.server = server
 
-        def cloud = new Cloud(
-                id: 300L,
-                name: "test-cloud",
-                agentMode: agentMode
-        )
+        def cloud = new Cloud(id: 300L, name: "test-cloud", agentMode: agentMode)
         server.cloud = cloud
 
-        def workloadRequest = new WorkloadRequest(
-                cloudConfigUser: "cloud-config-user-data",
-                cloudConfigMeta: "cloud-config-metadata",
-                cloudConfigNetwork: "cloud-config-network"
-        )
+        def workloadRequest = new WorkloadRequest(cloudConfigUser: "cloud-config-user-data",
+                cloudConfigMeta: "cloud-config-metadata", cloudConfigNetwork: "cloud-config-network")
 
-        def virtualImage = new VirtualImage(
-                id: 400L,
-                name: "test-image",
-                isSysprep: isSysprep
-        )
+        def virtualImage = new VirtualImage(id: 400L, name: "test-image", isSysprep: isSysprep)
 
         def networkConfig = [network: "test-network"]
         def licenses = ["license1", "license2"]
         def scvmmOpts = [isSysprep: isSysprep]
 
         // Mock the buildCloudConfigOptions method
-        def cloudConfigOpts = [
-                installAgent: false,
-                licenseApplied: licenseApplied,
-                unattendCustomized: unattendCustomized
-        ]
+        def cloudConfigOpts = [installAgent: false, licenseApplied: licenseApplied,
+                               unattendCustomized: unattendCustomized]
 
         // Mock the MorpheusSynchronousProvisionService
         MorpheusSynchronousProvisionService provisionService = Mock(MorpheusSynchronousProvisionService)
@@ -2716,11 +2491,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         )
 
         then:
-        // Verify the buildCloudConfigOptions was called once with correct parameters
-//        1 * provisionService.buildCloudConfigOptions(_, _, _, _) >> cloudConfigOpts
-
-        // Verify the buildIsoOutputStream was called once with correct parameters
-//        1 * provisionService.buildIsoOutputStream(_,_,_,_,_) >> mockIsoStream
 
         // Verify the result has the expected properties
         result.installAgent == expectedInstallAgent

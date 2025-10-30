@@ -2,6 +2,7 @@ package com.morpheusdata.scvmm.testdata
 
 import com.morpheusdata.model.Account
 import com.morpheusdata.model.Cloud
+import com.morpheusdata.model.ComputeCapacityInfo
 import com.morpheusdata.model.ComputeServer
 import com.morpheusdata.model.ComputeServerInterface
 import com.morpheusdata.model.ComputeServerType
@@ -523,5 +524,102 @@ class ProvisionDataHelper {
                 internalName: "test-workload",
                 server: new ComputeServer(id: 200L, name: "test-server")
         )
+    }
+
+    static def getHostAndDatastore_ComuteServerNodes(cloud) {
+        def node1 = new ComputeServer(
+                id: 20L,
+                name: 'node1',
+                enabled: true,
+                cloud: cloud,
+                computeServerType: new ComputeServerType(code: 'scvmmHypervisor'),
+                powerState: ComputeServer.PowerState.on,
+                capacityInfo: new ComputeCapacityInfo(maxMemory: 8589934592L, usedMemory: 2147483648L)
+        )
+        def node2 = new ComputeServer(
+                id: 21L,
+                name: 'node2',
+                enabled: true,
+                cloud: cloud,
+                computeServerType: new ComputeServerType(code: 'scvmmHypervisor'),
+                powerState: ComputeServer.PowerState.on,
+                capacityInfo: new ComputeCapacityInfo(maxMemory: 17179869184L, usedMemory: 4294967296L)
+        )
+        return [node1, node2]
+    }
+    static Map pickScvmmController_ComputeServers(Cloud cloud) {
+        def scvmmController = new ComputeServer(
+                id: 2L,
+                name: "scvmm-controller",
+                cloud: cloud,
+                computeServerType: new ComputeServerType(code: "scvmmController")
+        )
+
+        def scvmmHypervisor = new ComputeServer(
+                id: 3L,
+                name: "scvmm-hypervisor",
+                cloud: cloud,
+                computeServerType: new ComputeServerType(code: "scvmmHypervisor")
+        )
+
+        def legacyHypervisor = new ComputeServer(
+                id: 4L,
+                name: "legacy-hypervisor",
+                cloud: cloud,
+                serverType: "hypervisor"
+        )
+
+        return [
+                scvmmController: scvmmController,
+                scvmmHypervisor: scvmmHypervisor,
+                legacyHypervisor: legacyHypervisor
+        ]
+    }
+
+    static Map getServerRootDisk_differentServers() {
+        def rootVolume = new StorageVolume(
+                id: 1L,
+                name: "root",
+                rootVolume: true,
+                maxStorage: 42949672960L
+        )
+        def dataVolume = new StorageVolume(
+                id: 2L,
+                name: "data",
+                rootVolume: false,
+                maxStorage: 10737418240L
+        )
+
+        def serverWithRootVolume = new ComputeServer(
+                id: 100L,
+                name: "server-with-root",
+                volumes: [dataVolume, rootVolume]
+        )
+
+        def serverWithoutRootVolume = new ComputeServer(
+                id: 101L,
+                name: "server-without-root",
+                volumes: [dataVolume]
+        )
+
+        def serverWithEmptyVolumes = new ComputeServer(
+                id: 102L,
+                name: "server-empty-volumes",
+                volumes: []
+        )
+
+        def serverWithNullVolumes = new ComputeServer(
+                id: 103L,
+                name: "server-null-volumes",
+                volumes: null
+        )
+
+        return [
+                serverWithRootVolume: serverWithRootVolume,
+                serverWithoutRootVolume: serverWithoutRootVolume,
+                serverWithEmptyVolumes: serverWithEmptyVolumes,
+                serverWithNullVolumes: serverWithNullVolumes,
+                rootVolume: rootVolume
+        ]
     }
 }
