@@ -2869,4 +2869,108 @@ class ScvmmApiServiceSpec extends Specification {
 
     }
 
+    @Unroll
+    def "test insertContainerImage successfully transfers and imports new image"() {
+        given:
+
+        def mockCloudFile = Mock(CloudFile)
+        mockCloudFile.getName() >> "ubuntu-22.04.vhdx"
+
+        def containerImage = [
+                name          : "new-test-image",
+                minDisk       : 5,
+                minRam        : 512 * ComputeUtility.ONE_MEGABYTE,
+                virtualImageId: 43L,
+                tags          : 'morpheus, ubuntu',
+                imageType     : 'vhdx',
+                containerType : 'vhdx',
+                cloudFiles    : mockCloudFile
+        ]
+
+        def opts = [
+                image: containerImage,
+                rootSharePath: "\\\\server\\share",
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password',
+                winrmPort: '5985'
+        ]
+
+
+        apiService.formatImageFolder("new-test-image") >> {
+            return "new_test_image"
+        }
+
+        apiService.findImage(opts, "new-test-image") >> [ [success: true, imageExists: false], [imageName: "\\\\server\\temp\\new-test-image.vhdx"] ]
+
+        def cmdString = "\$FormatEnumerationLimit =-1; Get-SCVirtualHardDisk -VMMServer localhost | where {\$_.SharePath -like \"\\\\server\\share\\images\\new_test_image\\*\"} | Select ID | ConvertTo-Json -Depth 3"
+
+        apiService.wrapExecuteCommand(cmdString, opts) >> {
+            return [success: true, data: []]
+        }
+
+
+        apiService.transferImage(opts, mockCloudFile, "new-test-image") >> {
+            return [success: true]
+        }
+
+
+        apiService.wrapExecuteCommand(_, opts) >> {
+            return [success: true, data: [[ID: "vhd-new-12345"]], error: null]
+        }
+
+        apiService.deleteImage(opts, "new-test-image") >> {
+            return [success: true, imageExists: false]
+        }
+
+        when:
+
+        def result = apiService.insertContainerImage(opts)
+
+        then:
+
+        result.success == true
+        result.imageId == "vhd-new-12345"
+    }
+
+    @Unroll
+    def "test insertContainerImage successfully processes existing image without transfer"() {
+        given:
+        def containerImage = [
+                name          : "existing-image",
+                imageType     : 'vhd',
+                cloudFiles    : Mock(CloudFile)
+        ]
+
+        def opts = [
+                image: containerImage,
+                rootSharePath: "\\\\server\\share"
+        ]
+
+        def cmdString = "\$FormatEnumerationLimit =-1; Get-SCVirtualHardDisk -VMMServer localhost | where {\$_.SharePath -like \"\\\\server\\share\\images\\new_test_image\\*\"} | Select ID | ConvertTo-Json -Depth 3"
+
+        // Mock wrapExecuteCommand for initial VHD check (empty)
+        apiService.wrapExecuteCommand(cmdString, opts) >> [success: true, data: []]
+
+        // Mock formatImageFolder method
+        apiService.formatImageFolder("existing-image") >> "existing_image"
+
+        // Mock findImage - image already exists
+        apiService.findImage(opts, "existing-image") >> [[imageExists: true], [imageName: "\\\\server\\temp\\existing-image.vhd"]]
+
+
+        // Mock wrapExecuteCommand for import operation
+        apiService.wrapExecuteCommand(_, opts) >> [success: true, data: [[ID: "vhd-existing-789"]], error: null]
+
+        // Mock deleteImage cleanup
+        apiService.deleteImage(opts, "existing-image")
+        when:
+        def result = apiService.insertContainerImage(opts)
+
+        then:
+
+        result.success == true
+        result.imageId == "vhd-existing-789"
+    }
+
 }

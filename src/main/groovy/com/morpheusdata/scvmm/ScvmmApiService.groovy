@@ -56,7 +56,8 @@ class ScvmmApiService {
         def rootSharePath = opts.rootSharePath ?: getRootSharePath(opts)
         def tgtFolder = "${rootSharePath}\\images\\$imageFolderName"
         def tgtFullPath = "${tgtFolder}\\$imageName.$imageType"
-        def out = wrapExecuteCommand(generateCommandString("Get-SCVirtualHardDisk -VMMServer localhost | where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID"), opts)
+        def cmdString = generateCommandString("Get-SCVirtualHardDisk -VMMServer localhost | where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID")
+        def out = wrapExecuteCommand(cmdString, opts)
 
         if (!out.success) {
             throw new Exception("Error in getting Get-SCVirtualHardDisk")
