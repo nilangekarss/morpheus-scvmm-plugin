@@ -28,6 +28,18 @@ plugins {
     id 'com.jfrog.artifactory' version "5.+"
     id 'maven-publish'
     id 'jacoco'
+    id 'codenarc'
+}
+
+codenarc {
+    toolVersion = '3.5.0'
+    configFile = file('config/codenarc/codenarc.groovy')
+    reportFormat = 'html'
+    sourceSets = [sourceSets.main]
+    ignoreFailures = true  // This makes CodeNarc not fail the build
+    maxPriority1Violations = -1  // No limit on P1 violations
+    maxPriority2Violations = -1  // No limit on P2 violations
+    maxPriority3Violations = -1  // No limit on P3 violations
 }
 
 // Include required files in the JAR
@@ -257,4 +269,257 @@ publishing {
             }
         }
     }
+}
+
+codenarcMain {
+    reports {
+        html {
+            required = true
+            outputLocation = layout.buildDirectory.file('reports/codenarc/main.html')
+        }
+        xml {
+            required = true
+            outputLocation = layout.buildDirectory.file('reports/codenarc/main.xml')
+        }
+    }
+    ignoreFailures = true
+    source = sourceSets.main.allGroovy
+}
+
+tasks.register('testSummary') {
+    description = 'Generate test summary from results (no test execution)'
+    group = 'verification'
+    dependsOn codenarcMain
+
+    doFirst {
+        println "\n" + "=" * 120
+        println "         TEST RESULTS SUMMARY       "
+        println "=" * 120
+    }
+
+    doLast {
+        def buildDir = layout.buildDirectory.asFile.get()
+        println "DEBUG: Build Dir: ${layout.buildDirectory.asFile.get().absolutePath}"
+        println "DEBUG: main.html exists? " + file("${layout.buildDirectory.asFile.get()}/reports/codenarc/main.html").exists()
+        println "DEBUG: main.xml exists? " + file("${layout.buildDirectory.asFile.get()}/reports/codenarc/main.xml").exists()
+        /*
+         // 1. FIRST: Show detailed test case results (consolidated table only)
+         println "\n1. TEST EXECUTION RESULTS"
+         println "=" * 120
+         def unitTestResults = parseTestResultsFromDir("${buildDir}/test-results/test", "Unit Tests")
+         def integrationTestResults = parseTestResultsFromDir("${buildDir}/test-results/integrationTest", "Integration Tests")
+         def totalResults = displayTestResultsSummary(unitTestResults, integrationTestResults)
+
+         // 2. SECOND: Show code coverage details
+         println "\n2. CODE COVERAGE ANALYSIS (JACOCO)"
+         println "=" * 120
+         def coverageData = displayCoverageResults(buildDir, false)
+        */
+
+        // 3. THIRD: Show CodeNarc static analysis
+        println "\n3. STATIC CODE ANALYSIS (CODENARC)"
+        println "=" * 120
+        def codenarcData = displayCodenarcResults(buildDir)
+
+        // 4. All report locations consolidated at the end
+        println "\n4. GENERATED REPORTS"
+        println "=" * 120
+        displayReportLocations(buildDir)
+    }
+}
+
+// Common method to parse CodeNarc report data
+def parseCodenarcReport(buildDir) {
+    def codenarcData = [
+            totalViolations: 0,
+            priority1: 0,
+            priority2: 0,
+            priority3: 0,
+            filesAnalyzed: 0,
+            reportExists: false,
+            fileViolations: [:] // Map to track violations per file
+    ]
+
+    def codenarcHtml = file("${buildDir}/reports/codenarc/main.html")
+    def codenarcXml = file("${buildDir}/reports/codenarc/main.xml")
+
+    if (codenarcHtml.exists()) {
+        codenarcData.reportExists = true
+        // Try to parse XML report if available for more accurate data
+        if (codenarcXml.exists()) {
+            try {
+                def parser = configureXmlParser()
+                def codenarc = parser.parse(codenarcXml)
+
+                // Get files analyzed count from PackageSummary or Package totalFiles attribute
+                def packageSummary = codenarc.PackageSummary
+                if (packageSummary.size() > 0) {
+                    codenarcData.filesAnalyzed = (packageSummary[0].@totalFiles.toString() ?: "0") as Integer
+                } else {
+                    // Fallback to Package element if PackageSummary not found
+                    def packages = codenarc.Package
+                    if (packages.size() > 0) {
+                        codenarcData.filesAnalyzed = (packages[0].@totalFiles.toString() ?: "0") as Integer
+                    }
+                }
+
+                // Parse package and file information for violations
+                codenarc.Package.each { pkg ->
+                    def pkgPath = pkg.@path?.toString() ?: ""
+
+                    pkg.File.each { file ->
+                        codenarcData.filesAnalyzed++
+                        def fileName = file.@name?.toString() ?: "Unknown"
+                        def filePath = pkgPath ? "${pkgPath}/${fileName}" : fileName
+
+                        def fileViolations = [
+                                total: 0,
+                                priority1: 0,
+                                priority2: 0,
+                                priority3: 0
+                        ]
+                        // Count violations for this file
+                        file.Violation.each { violation ->
+                            codenarcData.totalViolations++
+                            fileViolations.total++
+
+                            def priority = violation.@priority?.toString() ?: "3" // Default to medium if unspecified
+                            switch(priority) {
+                                case '1':
+                                    codenarcData.priority1++
+                                    fileViolations.priority1++
+                                    break
+                                case '2':
+                                    codenarcData.priority2++
+                                    fileViolations.priority2++
+                                    break
+                                case '3':
+                                    codenarcData.priority3++
+                                    fileViolations.priority3++
+                                    break
+                                default:
+                                    codenarcData.priority3++ // Treat unknown priority as medium
+                                    fileViolations.priority3++
+                            }
+                        }
+
+                        // Only add files with violations to the map
+                        if (fileViolations.total > 0) {
+                            codenarcData.fileViolations[filePath] = fileViolations
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Fallback to basic parsing if XML parsing fails
+                codenarcData.totalViolations = -1 // Indicates XML parsing failed
+            }
+        }
+    }
+
+    return codenarcData
+}
+
+// Common method to display CodeNarc results
+def displayCodenarcResults(buildDir) {
+    // Using colors from the common colors map
+    def codenarcData = parseCodenarcReport(buildDir)
+
+    if (codenarcData.reportExists) {
+        if (codenarcData.totalViolations >= 0) {
+            println "  Files Analyzed:          ${codenarcData.filesAnalyzed}"
+
+            // Format total violations count with color if high
+            def totalViolations = codenarcData.totalViolations
+            def totalViolationsStr = totalViolations > 1000 ? "${colors.BOLD}${totalViolations}${colors.RESET}" : "${totalViolations}"
+            println "  Total Violations:        ${totalViolationsStr}"
+
+            // Only show P1/P2/P3 counts if there are violations
+            if (totalViolations > 0) {
+                // Format priority counts with requested colors: P1 red, P2 orange, P3 yellow
+                def p1Str = codenarcData.priority1 > 0 ? "${colors.RED}${codenarcData.priority1}${colors.RESET}" : "${codenarcData.priority1}"
+                def p2Str = codenarcData.priority2 > 0 ? "${colors.ORANGE}${codenarcData.priority2}${colors.RESET}" : "${codenarcData.priority2}"
+                def p3Str = codenarcData.priority3 > 0 ? "${colors.YELLOW}${codenarcData.priority3}${colors.RESET}" : "${codenarcData.priority3}"
+
+                println "  Priority 1 (Critical):   ${p1Str}"
+                println "  Priority 2 (High):       ${p2Str}"
+                println "  Priority 3 (Medium):     ${p3Str}"
+
+                // Provide status assessment with consistent color scheme
+
+                if (codenarcData.priority1 > 0) {
+                    println "  Status:                  ${colors.BOLD}${colors.RED}CRITICAL VIOLATIONS FOUND${colors.RESET}"
+                } else if (codenarcData.priority2 > 0) {
+                    println "  Status:                  ${colors.BOLD}${colors.ORANGE}HIGH PRIORITY VIOLATIONS FOUND${colors.RESET}"
+                } else {
+                    println "  Status:                  ${colors.BOLD}${colors.YELLOW}MEDIUM PRIORITY VIOLATIONS FOUND${colors.RESET}"
+                }
+
+                // Display violations per file - optimized layout with file names only
+                println ""
+                println  "-" * 120
+
+                // Get the max width needed for the file name column
+                def maxFileNameWidth = 0
+                codenarcData.fileViolations.keySet().each { path ->
+                    def fileName = path.contains('/') ? path.substring(path.lastIndexOf('/') + 1) : path
+                    maxFileNameWidth = Math.max(maxFileNameWidth, fileName.length())
+                }
+                // Use reasonable column width based on terminal size
+                maxFileNameWidth = Math.min(Math.max(maxFileNameWidth, 30), 50) // Min 30, max 50 chars
+                // Print header with adjusted widths and colored labels
+                // Calculate actual table width based on column widths and separators
+                def tableWidth = maxFileNameWidth + 4 + 4 + 4 + 5 + 8 // columns + separator spaces and bars
+
+                println String.format("  %-${maxFileNameWidth}s | %8s | %8s | %8s | %7s",
+                        "File",
+                        "P1${colors.RESET}",
+                        "P2${colors.RESET}",
+                        "P3${colors.RESET}",
+                        "Total")
+                println "-" * 120
+
+                // Sort files by total violations (descending)
+                def sortedFiles = codenarcData.fileViolations.sort { -it.value.total }
+
+                // Display all files with violations
+                sortedFiles.each { filePath, violations ->
+                    // Extract just the file name without path for cleaner output
+                    def fileName = filePath.contains('/') ? filePath.substring(filePath.lastIndexOf('/') + 1) : filePath
+                    if (fileName.length() > maxFileNameWidth) {
+                        fileName = fileName.substring(0, maxFileNameWidth - 3) + "..."
+                    }
+
+                    // Format numbers as strings first for consistent formatting
+                    def totalStrFormatted = String.format("%5d", violations.total)
+                    def p1StrFormatted = String.format("%4d", violations.priority1)
+                    def p2StrFormatted = String.format("%4d", violations.priority2)
+                    def p3StrFormatted = String.format("%4d", violations.priority3)
+
+                    // Apply colors: P1 in red, P2 in orange, P3 in yellow
+                    if (violations.total > 100) totalStrFormatted = "${colors.BOLD}${totalStrFormatted}${colors.RESET}"
+                    if (violations.priority1 > 0) p1StrFormatted = "${colors.RED}${p1StrFormatted}${colors.RESET}"
+
+                    // Use ORANGE from common colors map
+                    if (violations.priority2 > 0) p2StrFormatted = "${colors.ORANGE}${p2StrFormatted}${colors.RESET}"
+
+                    if (violations.priority3 > 0) p3StrFormatted = "${colors.YELLOW}${p3StrFormatted}${colors.RESET}"
+
+                    println String.format("  %-${maxFileNameWidth}s | %s | %s | %s | %s",
+                            fileName,
+                            p1StrFormatted,
+                            p2StrFormatted,
+                            p3StrFormatted,
+                            totalStrFormatted)
+                }
+            } else {
+                println "  Status:                  NO VIOLATIONS FOUND"
+            }
+        } else {
+            println "  Status:                  REPORT AVAILABLE (detailed parsing unavailable)"
+        }
+        println "=" * 120
+        println ""
+    }
+
+    return codenarcData
 }
