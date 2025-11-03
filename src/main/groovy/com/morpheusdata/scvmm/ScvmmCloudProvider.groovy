@@ -38,7 +38,7 @@ import com.morpheusdata.scvmm.sync.TemplatesSync
 import com.morpheusdata.scvmm.sync.VirtualMachineSync
 import java.time.Instant
 
-@SuppressWarnings(['CompileStatic', 'MethodCount'])
+@SuppressWarnings(['CompileStatic', 'MethodCount', 'ClassSize'])
 class ScvmmCloudProvider implements CloudProvider {
     public static final String CLOUD_PROVIDER_CODE = 'scvmm'
     private static final String ZONE_TYPE_SCVMM = 'zoneType.scvmm'
@@ -130,7 +130,7 @@ class ScvmmCloudProvider implements CloudProvider {
     protected MorpheusContext context
     protected ScvmmPlugin plugin
     ScvmmApiService apiService
-    private LogInterface log = LogWrapper.instance
+    private final LogInterface log = LogWrapper.instance
 
     ScvmmCloudProvider(ScvmmPlugin plugin, MorpheusContext context) {
         super()
@@ -143,6 +143,7 @@ class ScvmmCloudProvider implements CloudProvider {
      * Grabs the description for the CloudProvider
      * @return String
      */
+    @SuppressWarnings('GetterMethodCouldBeProperty')
     @Override
     String getDescription() {
         return 'System Center Virtual Machine Manager'
@@ -169,12 +170,12 @@ class ScvmmCloudProvider implements CloudProvider {
         return new Icon(path: SCVMM_CIRCULAR_SVG, darkPath: SCVMM_CIRCULAR_SVG)
     }
 
-
     /**
      * Provides a Collection of OptionType inputs that define the required input fields for defining
      * a cloud integration
      * @return Collection of OptionType
      */
+    @SuppressWarnings('MethodSize')
     @Override
     Collection<OptionType> getOptionTypes() {
         def displayOrder = 0
@@ -439,6 +440,7 @@ class ScvmmCloudProvider implements CloudProvider {
      * Provides a Collection of {@link StorageVolumeType} related to this CloudProvider
      * @return Collection of StorageVolumeType
      */
+    @SuppressWarnings(['UnnecessaryGetter'])
     @Override
     Collection<StorageVolumeType> getStorageVolumeTypes() {
         return StorageVolumeTypeHelper.getAllStorageVolumeTypes()
@@ -473,6 +475,7 @@ class ScvmmCloudProvider implements CloudProvider {
      * a sync or during a provision.
      * @return collection of ComputeServerType
      */
+    @SuppressWarnings('MethodSize')
     @Override
     Collection<ComputeServerType> getComputeServerTypes() {
         Collection<ComputeServerType> serverTypes = []
@@ -594,6 +597,7 @@ class ScvmmCloudProvider implements CloudProvider {
      * @param validateCloudRequest Additional validation information
      * @return ServiceResponse
      */
+    @SuppressWarnings('UnnecessaryGetter')
     @Override
     ServiceResponse validate(Cloud cloudInfo, ValidateCloudRequest validateCloudRequest) {
         log.debug("validate cloud: {}", cloudInfo)
@@ -620,7 +624,7 @@ class ScvmmCloudProvider implements CloudProvider {
                     rtn.errors.password = ENTER_PASSWORD_MSG
                 }
                 if (rtn.errors.size() == 0) {
-                    //set install agent
+                    // set install agent
                     def installAgent = MorpheusUtils.parseBooleanConfig(zoneConfig.installAgent)
                     cloudInfo.setConfigProperty(INSTALL_AGENT_CONFIG, installAgent)
                     // build opts
@@ -630,7 +634,7 @@ class ScvmmCloudProvider implements CloudProvider {
                             sshUsername: validateCloudRequest?.credentialUsername,
                             sshPassword: validateCloudRequest?.credentialPassword,
                             zoneRoot   : zoneConfig.workingPath,
-                            diskRoot   : zoneConfig.diskPath
+                            diskRoot   : zoneConfig.diskPath,
                     ]
                     def vmSitches = apiService.listClouds(scvmmOpts)
                     log.debug("vmSitches: ${vmSitches}")
@@ -679,6 +683,7 @@ class ScvmmCloudProvider implements CloudProvider {
         return rtn
     }
 
+    @SuppressWarnings(['AbcMetric', 'MethodReturnTypeRequired'])
     def initializeHypervisor(Cloud cloud) {
         def rtn = [success: false]
         log.debug("cloud: ${cloud}")
@@ -714,18 +719,20 @@ class ScvmmCloudProvider implements CloudProvider {
                 if (serverInfo.hostname) {
                     newServer.hostname = serverInfo.hostname
                 }
-                newServer.sshHost = cloud.getConfigProperty(HOST_CONFIG_PROPERTY)
-                newServer.internalIp = newServer.sshHost
-                newServer.externalIp = newServer.sshHost
-                newServer.sshUsername = apiService.getUsername(cloud)
-                newServer.sshPassword = apiService.getPassword(cloud)
-                newServer.setConfigProperty(WORKING_PATH_CONFIG, cloud.getConfigProperty(WORKING_PATH_CONFIG))
-                newServer.setConfigProperty(DISK_PATH_CONFIG, cloud.getConfigProperty(DISK_PATH_CONFIG))
+                newServer.with {
+                    sshHost = cloud.getConfigProperty(HOST_CONFIG_PROPERTY)
+                    internalIp = sshHost
+                    externalIp = sshHost
+                    sshUsername = apiService.getUsername(cloud)
+                    sshPassword = apiService.getPassword(cloud)
+                    setConfigProperty(WORKING_PATH_CONFIG, cloud.getConfigProperty(WORKING_PATH_CONFIG))
+                    setConfigProperty(DISK_PATH_CONFIG, cloud.getConfigProperty(DISK_PATH_CONFIG))
+                }
             }
 
-            def maxStorage = getMaxStorage(serverInfo)
-            def maxMemory = getMaxMemory(serverInfo)
-            def maxCores = 1
+            def maximumStorage = getMaxStorage(serverInfo)
+            def maximumMemory = getMaxMemory(serverInfo)
+            def maximumCores = 1
             newServer.serverOs =
                     context.async.osType.find(new DataQuery().withFilter(CODE_FIELD, versionCode)).blockingGet()
             newServer.platform = WINDOWS_OS
@@ -737,15 +744,28 @@ class ScvmmCloudProvider implements CloudProvider {
                                 new DataQuery().withFilter(
                                         CODE_FIELD, "windows.server.${version}")).blockingGet()
             }
-            newServer.platformVersion = version
-            newServer.statusDate = Date.from(Instant.now())
-            newServer.status = 'provisioning'
-            newServer.powerState = POWER_STATE_ON
-            newServer.serverType = SERVER_TYPE_HYPERVISOR_VALUE
-            newServer.osType = WINDOWS_OS //linux, windows, unmanaged
-            newServer.maxMemory = maxMemory
-            newServer.maxCores = maxCores
-            newServer.maxStorage = maxStorage
+
+            newServer.with {
+                platform = WINDOWS_OS
+                platformVersion = version
+                statusDate = Date.from(Instant.now())
+                status = 'provisioning'
+                powerState = POWER_STATE_ON
+                serverType = SERVER_TYPE_HYPERVISOR_VALUE
+                osType = WINDOWS_OS // linux, windows, unmanaged
+                maxMemory = maximumMemory
+                maxCores = maximumCores
+                maxStorage = maximumStorage
+            }
+//            newServer.platformVersion = version
+//            newServer.statusDate = Date.from(Instant.now())
+//            newServer.status = 'provisioning'
+//            newServer.powerState = POWER_STATE_ON
+//            newServer.serverType = SERVER_TYPE_HYPERVISOR_VALUE
+//            newServer.osType = WINDOWS_OS // linux, windows, unmanaged
+//            newServer.maxMemory = maxMemory
+//            newServer.maxCores = maxCores
+//            newServer.maxStorage = maxStorage
 
             // initializeHypervisor from context
             log.debug("newServer: ${newServer}")
@@ -769,6 +789,7 @@ class ScvmmCloudProvider implements CloudProvider {
      * if not specified. So, to indicate that the Cloud is offline,
      * return `ServiceResponse.error('cloud is not reachable', null, [status: Cloud.Status.offline])`
      */
+    @SuppressWarnings('AbcMetric')
     @Override
     ServiceResponse refresh(Cloud cloudInfo) {
         log.debug("refresh: {}", cloudInfo)
@@ -860,9 +881,11 @@ class ScvmmCloudProvider implements CloudProvider {
         return response
     }
 
+    @SuppressWarnings(['MethodReturnTypeRequired', 'MethodParameterTypeRequired'])
     def checkCommunication(cloud, node) {
         log.debug("checkCommunication: {} {}", cloud, node)
-        def rtn = [success: false]
+        def rtn = [:]
+        rtn.success = false
         try {
             def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(context, cloud, node)
             def listResults = apiService.listAllNetworks(scvmmOpts)
@@ -875,6 +898,7 @@ class ScvmmCloudProvider implements CloudProvider {
         return rtn
     }
 
+    @SuppressWarnings('MethodReturnTypeRequired')
     def getScvmmController(Cloud cloud) {
         def sharedControllerId = cloud.getConfigProperty(SHARED_CONTROLLER_ERROR_KEY)
         def sharedController =
@@ -887,7 +911,7 @@ class ScvmmCloudProvider implements CloudProvider {
                 .withFilter(COMPUTE_SERVER_TYPE_CODE_FIELD, SCVMM_CONTROLLER_CODE)
                 .withJoin(COMPUTE_SERVER_TYPE_JOIN))
         if (rtn == null) {
-            //old zone with wrong type
+            // old zone with wrong type
             rtn = context.services.computeServer.find(new DataQuery()
                     .withFilter(ZONE_ID_FIELD, cloud.id)
                     .withFilter(COMPUTE_SERVER_TYPE_CODE_FIELD, SCVMM_CONTROLLER_CODE)
@@ -897,7 +921,7 @@ class ScvmmCloudProvider implements CloudProvider {
                         .withFilter(ZONE_ID_FIELD, cloud.id)
                         .withFilter(SERVER_TYPE_HYPERVISOR_FIELD, SERVER_TYPE_HYPERVISOR_VALUE))
             }
-            //if we have tye type
+            // if we have tye type
             if (rtn) {
                 def serverType =
                         context.async.cloud.findComputeServerTypeByCode(SCVMM_CONTROLLER_CODE).blockingGet()
@@ -1040,6 +1064,7 @@ class ScvmmCloudProvider implements CloudProvider {
         return provisionProvider.stopServer(computeServer)
     }
 
+    @SuppressWarnings('MethodParameterTypeRequired')
     protected long getMaxMemory(serverInfo) {
         def maxMemory = 0L
         if (serverInfo?.memory && serverInfo?.memory?.toString()?.trim()) {
@@ -1052,6 +1077,7 @@ class ScvmmCloudProvider implements CloudProvider {
         return maxMemory
     }
 
+    @SuppressWarnings('MethodParameterTypeRequired')
     protected long getMaxStorage(serverInfo) {
         def maxStorage = 0L
         if (serverInfo?.disks && serverInfo?.disks?.toString()?.trim()) {
@@ -1069,6 +1095,7 @@ class ScvmmCloudProvider implements CloudProvider {
      * @param computeServer server to delete
      * @return ServiceResponse
      */
+    @SuppressWarnings('DuplicateMapLiteral')
     @Override
     ServiceResponse deleteServer(ComputeServer computeServer) {
         log.debug("deleteServer: ${computeServer}")
@@ -1097,9 +1124,10 @@ class ScvmmCloudProvider implements CloudProvider {
      * @param providerCode String representation of the provider short code
      * @return the ProvisionProvider requested
      */
+    @SuppressWarnings('UnnecessaryGetter')
     @Override
     ProvisionProvider getProvisionProvider(String providerCode) {
-        return getAvailableProvisionProviders().find { it.code == providerCode }
+        return getAvailableProvisionProviders().find { provider -> provider.code == providerCode }
     }
 
     /**
@@ -1135,6 +1163,7 @@ class ScvmmCloudProvider implements CloudProvider {
      * that is seeded or generated related to this provider will reference it by this code.
      * @return short code string that should be unique across all other plugin implementations.
      */
+    @SuppressWarnings('GetterMethodCouldBeProperty')
     @Override
     String getCode() {
         return CLOUD_PROVIDER_CODE
@@ -1146,11 +1175,13 @@ class ScvmmCloudProvider implements CloudProvider {
      *
      * @return either an English name of a Provider or an i18n based key that can be scanned for in a properties file.
      */
+    @SuppressWarnings('GetterMethodCouldBeProperty')
     @Override
     String getName() {
         return 'SCVMM'
     }
 
+    @SuppressWarnings(['MethodParameterTypeRequired', 'MethodReturnTypeRequired'])
     def validateRequiredConfigFields(fieldArray, config) {
         def errors = [:]
         fieldArray.each { field ->
@@ -1162,6 +1193,7 @@ class ScvmmCloudProvider implements CloudProvider {
         return errors
     }
 
+    @SuppressWarnings(['MethodReturnTypeRequired', 'InvertedIfElse'])
     def validateSharedController(Cloud cloud) {
         log.debug "validateSharedController: ${cloud}"
         def rtn = [success: true]
@@ -1200,6 +1232,7 @@ class ScvmmCloudProvider implements CloudProvider {
         return rtn
     }
 
+    @SuppressWarnings(['MethodParameterTypeRequired', 'MethodReturnTypeRequired', 'DuplicateMapLiteral'])
     def removeOrphanedResourceLibraryItems(cloud, node) {
         log.debug("removeOrphanedResourceLibraryItems: {} {}", cloud, node)
         def rtn = [success: false]
@@ -1212,6 +1245,7 @@ class ScvmmCloudProvider implements CloudProvider {
         return rtn
     }
 
+    @SuppressWarnings(['MethodParameterTypeRequired', 'MethodReturnTypeRequired'])
     protected updateHypervisorStatus(server, status, powerState, msg) {
         log.debug("server: {}, status: {}, powerState: {}, msg: {}", server, status, powerState, msg)
         if (server.status != status || server.powerState != powerState) {
