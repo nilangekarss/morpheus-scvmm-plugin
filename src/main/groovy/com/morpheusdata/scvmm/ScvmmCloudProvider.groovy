@@ -13,6 +13,8 @@ import com.morpheusdata.model.StorageControllerType
 import com.morpheusdata.model.StorageVolumeType
 import com.morpheusdata.model.PlatformType
 import com.morpheusdata.scvmm.helper.morpheus.types.StorageVolumeTypeHelper
+import com.morpheusdata.scvmm.helper.morpheus.types.OptionTypeHelper
+import com.morpheusdata.scvmm.helper.morpheus.types.ComputeServerTypeHelper
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
 import com.morpheusdata.scvmm.sync.CloudCapabilityProfilesSync
@@ -41,30 +43,10 @@ import java.time.Instant
 @SuppressWarnings(['CompileStatic', 'MethodCount', 'ClassSize'])
 class ScvmmCloudProvider implements CloudProvider {
     public static final String CLOUD_PROVIDER_CODE = 'scvmm'
-    private static final String ZONE_TYPE_SCVMM = 'zoneType.scvmm'
     private static final String CONFIG_CONTEXT = 'config'
     private static final String SCVMM_SOURCE_TYPE = 'scvmm'
-    private static final String SCVMM_HOST_FIELD = 'SCVMM Host'
-    private static final String CREDENTIALS_FIELD = 'Credentials'
-    private static final String USERNAME_FIELD = 'Username'
-    private static final String PASSWORD_FIELD = 'Password'
-    private static final String CLOUD_FIELD = 'Cloud'
-    private static final String HOST_GROUP_FIELD = 'Host Group'
-    private static final String CLUSTER_FIELD = 'Cluster'
     private static final String HOST_CONFIG_PROPERTY = 'host'
-    private static final String LIBRARY_SHARE_FIELD = 'Library Share'
     private static final String SCVMM_CIRCULAR_SVG = 'scvmm-circular.svg'
-    private static final String SHARED_CONTROLLER_FIELD = 'Shared Controller'
-    private static final String WORKING_PATH_FIELD = 'Working Path'
-    private static final String DISK_PATH_FIELD = 'Disk Path'
-    private static final String HIDE_HOST_SELECTION_FIELD = 'Hide Host Selection From Users'
-    private static final String INVENTORY_EXISTING_FIELD = 'Inventory Existing Instances'
-    private static final String ENABLE_HYPERVISOR_CONSOLE_FIELD = 'Enable Hypervisor Console'
-    private static final String INSTALL_AGENT_CODE = 'gomorpheus.label.installAgent'
-    private static final String INSTALL_AGENT_FIELD = 'Install Agent'
-    private static final String CREDENTIAL_DEPENDS_ON =
-            'config.host, config.username, config.password, credential.type, credential.username, credential.password'
-    private static final int DISPLAY_ORDER_INCREMENT = 10
     private static final String SHARED_CONTROLLER_REQUIRED_MSG = 'You must specify a shared controller'
     private static final String SCVMM_CONTROLLER_CODE = 'scvmmController'
     private static final String ZONE_ID_FIELD = 'zone.id'
@@ -90,8 +72,6 @@ class ScvmmCloudProvider implements CloudProvider {
     private static final String MORPHEUS_NODE = 'morpheus-node'
     private static final String KUBE_MASTER_NODE = 'kube-master'
     private static final String KUBE_WORKER_NODE = 'kube-worker'
-    private static final String USERNAME_OPTION_TYPE = 'gomorpheus.optiontype.Username'
-    private static final String PASSWORD_OPTION_TYPE = 'gomorpheus.optiontype.Password'
     private static final String ENABLED_FIELD = 'enabled'
     private static final String ACCOUNT_ID_FIELD = 'account.id'
 
@@ -178,222 +158,7 @@ class ScvmmCloudProvider implements CloudProvider {
     @SuppressWarnings('MethodSize')
     @Override
     Collection<OptionType> getOptionTypes() {
-        def displayOrder = 0
-        Collection<OptionType> options = []
-
-        options << new OptionType(
-                name: SCVMM_HOST_FIELD,
-                category: ZONE_TYPE_SCVMM,
-                code: 'zoneType.scvmm.host',
-                fieldName: HOST_CONFIG_PROPERTY,
-                displayOrder: displayOrder,
-                fieldCode: 'gomorpheus.scvmm.option.host',
-                fieldLabel: SCVMM_HOST_FIELD,
-                required: true,
-                inputType: OptionType.InputType.TEXT,
-                fieldContext: CONFIG_CONTEXT,
-        )
-
-        options << new OptionType(
-                name: CREDENTIALS_FIELD,
-                category: ZONE_TYPE_SCVMM,
-                code: 'zoneType.scvmm.credential',
-                fieldName: 'type',
-                displayOrder: displayOrder += DISPLAY_ORDER_INCREMENT,
-                fieldCode: 'gomorpheus.label.credentials',
-                fieldLabel: CREDENTIALS_FIELD,
-                required: true,
-                defaultValue: 'local',
-                inputType: OptionType.InputType.CREDENTIAL,
-                fieldContext: 'credential',
-                optionSource: 'credentials',
-                config: '{"credentialTypes":["username-password"]}'
-        )
-
-        options << new OptionType(
-                name: USERNAME_FIELD,
-                category: ZONE_TYPE_SCVMM,
-                code: 'zoneType.scvmm.username',
-                fieldName: 'username',
-                displayOrder: displayOrder += DISPLAY_ORDER_INCREMENT,
-                fieldCode: USERNAME_OPTION_TYPE,
-                fieldLabel: USERNAME_FIELD,
-                required: true,
-                inputType: OptionType.InputType.TEXT,
-                fieldContext: CONFIG_CONTEXT,
-                localCredential: true
-        )
-
-        options << new OptionType(
-                name: PASSWORD_FIELD,
-                category: ZONE_TYPE_SCVMM,
-                code: 'zoneType.scvmm.password',
-                fieldName: 'password',
-                displayOrder: displayOrder += DISPLAY_ORDER_INCREMENT,
-                fieldCode: PASSWORD_OPTION_TYPE,
-                fieldLabel: PASSWORD_FIELD,
-                required: true,
-                inputType: OptionType.InputType.PASSWORD,
-                fieldContext: CONFIG_CONTEXT,
-                localCredential: true
-        )
-
-        options << new OptionType(
-                name: CLOUD_FIELD,
-                category: ZONE_TYPE_SCVMM,
-                code: 'zoneType.scvmm.cloud',
-                fieldName: 'regionCode',
-                optionSourceType: SCVMM_SOURCE_TYPE,
-                displayOrder: displayOrder += DISPLAY_ORDER_INCREMENT,
-                fieldCode: 'gomorpheus.optiontype.Cloud',
-                fieldLabel: CLOUD_FIELD,
-                inputType: OptionType.InputType.SELECT,
-                optionSource: 'scvmmCloud',
-                fieldContext: 'domain',
-                noBlank: true,
-                dependsOn: CREDENTIAL_DEPENDS_ON
-        )
-
-        options << new OptionType(
-                name: HOST_GROUP_FIELD,
-                category: ZONE_TYPE_SCVMM,
-                code: 'zoneType.scvmm.hostGroup',
-                fieldName: 'hostGroup',
-                optionSourceType: SCVMM_SOURCE_TYPE,
-                displayOrder: displayOrder += DISPLAY_ORDER_INCREMENT,
-                fieldCode: 'gomorpheus.optiontype.HostGroup',
-                fieldLabel: HOST_GROUP_FIELD,
-                inputType: OptionType.InputType.SELECT,
-                optionSource: 'scvmmHostGroup',
-                fieldContext: CONFIG_CONTEXT,
-                noBlank: true,
-                dependsOn: CREDENTIAL_DEPENDS_ON,
-        )
-
-        options << new OptionType(
-                name: CLUSTER_FIELD,
-                category: ZONE_TYPE_SCVMM,
-                code: 'zoneType.scvmm.Cluster',
-                fieldName: 'cluster',
-                optionSourceType: SCVMM_SOURCE_TYPE,
-                displayOrder: displayOrder += DISPLAY_ORDER_INCREMENT,
-                fieldCode: 'gomorpheus.optiontype.Cluster',
-                fieldLabel: CLUSTER_FIELD,
-                inputType: OptionType.InputType.SELECT,
-                optionSource: 'scvmmCluster',
-                fieldContext: CONFIG_CONTEXT,
-                noBlank: true,
-                dependsOn: 'config.host, config.username, config.password, config.hostGroup, ' +
-                        'credential.type, credential.username, credential.password'
-        )
-
-        options << new OptionType(
-                name: LIBRARY_SHARE_FIELD,
-                category: ZONE_TYPE_SCVMM,
-                code: 'zoneType.scvmm.libraryShare',
-                fieldName: LIBRARY_SHARE_CONFIG,
-                optionSourceType: SCVMM_SOURCE_TYPE,
-                displayOrder: displayOrder += DISPLAY_ORDER_INCREMENT,
-                fieldCode: 'gomorpheus.optiontype.LibraryShare',
-                fieldLabel: LIBRARY_SHARE_FIELD,
-                inputType: OptionType.InputType.SELECT,
-                optionSource: 'scvmmLibraryShares',
-                fieldContext: CONFIG_CONTEXT,
-                noBlank: true,
-                dependsOn: CREDENTIAL_DEPENDS_ON
-        )
-
-        options << new OptionType(
-                name: SHARED_CONTROLLER_FIELD,
-                category: ZONE_TYPE_SCVMM,
-                code: 'zoneType.scvmm.sharedController',
-                fieldName: SHARED_CONTROLLER_ERROR_KEY,
-                optionSourceType: SCVMM_SOURCE_TYPE,
-                displayOrder: displayOrder += DISPLAY_ORDER_INCREMENT,
-                fieldCode: 'gomorpheus.optiontype.SharedController',
-                fieldLabel: SHARED_CONTROLLER_FIELD,
-                required: false,
-                inputType: OptionType.InputType.SELECT,
-                optionSource: 'scvmmSharedControllers',
-                fieldContext: CONFIG_CONTEXT,
-                editable: false
-        )
-
-        options << new OptionType(
-                name: WORKING_PATH_FIELD,
-                code: 'zoneType.scvmm.workingPath',
-                fieldName: WORKING_PATH_CONFIG,
-                displayOrder: displayOrder += DISPLAY_ORDER_INCREMENT,
-                fieldCode: 'gomorpheus.optiontype.WorkingPath',
-                fieldLabel: WORKING_PATH_FIELD,
-                required: true,
-                inputType: OptionType.InputType.TEXT,
-                defaultValue: 'c:\\Temp'
-        )
-
-        options << new OptionType(
-                name: DISK_PATH_FIELD,
-                code: 'zoneType.scvmm.diskPath',
-                fieldName: DISK_PATH_CONFIG,
-                displayOrder: displayOrder += DISPLAY_ORDER_INCREMENT,
-                fieldCode: 'gomorpheus.optiontype.DiskPath',
-                fieldLabel: DISK_PATH_FIELD,
-                required: true,
-                inputType: OptionType.InputType.TEXT,
-                defaultValue: 'c:\\VirtualDisks'
-        )
-
-        options << new OptionType(
-                name: HIDE_HOST_SELECTION_FIELD,
-                code: 'zoneType.scvmm.hideHostSelection',
-                fieldName: 'HideHostSelectionFromUsers',
-                displayOrder: displayOrder += DISPLAY_ORDER_INCREMENT,
-                fieldLabel: HIDE_HOST_SELECTION_FIELD,
-                required: false,
-                inputType: OptionType.InputType.CHECKBOX,
-                fieldContext: CONFIG_CONTEXT,
-        )
-
-        options << new OptionType(
-                name: INVENTORY_EXISTING_FIELD,
-                code: 'zoneType.scvmm.importExisting',
-                fieldName: IMPORT_EXISTING_CONFIG,
-                displayOrder: displayOrder += DISPLAY_ORDER_INCREMENT,
-                fieldLabel: INVENTORY_EXISTING_FIELD,
-                required: false,
-                inputType: OptionType.InputType.CHECKBOX,
-                fieldContext: CONFIG_CONTEXT,
-        )
-
-        options << new OptionType(
-                name: ENABLE_HYPERVISOR_CONSOLE_FIELD,
-                code: 'zoneType.scvmm.enableHypervisorConsole',
-                fieldName: 'enableHypervisorConsole',
-                displayOrder: displayOrder += DISPLAY_ORDER_INCREMENT,
-                fieldLabel: ENABLE_HYPERVISOR_CONSOLE_FIELD,
-                required: false,
-                inputType: OptionType.InputType.CHECKBOX,
-                fieldContext: CONFIG_CONTEXT,
-        )
-
-        options << new OptionType(
-                name: INSTALL_AGENT_FIELD,
-                code: INSTALL_AGENT_CODE,
-                inputType: OptionType.InputType.CHECKBOX,
-                fieldName: INSTALL_AGENT_CONFIG,
-                fieldContext: CONFIG_CONTEXT,
-                fieldCode: INSTALL_AGENT_CODE,
-                fieldLabel: INSTALL_AGENT_FIELD,
-                fieldGroup: 'Advancedend',
-                displayOrder: displayOrder += DISPLAY_ORDER_INCREMENT,
-                required: false,
-                enabled: true,
-                editable: false,
-                global: false,
-                custom: true,
-        )
-
-        return options
+        return OptionTypeHelper.getAllOptionTypes()
     }
 
     /**
@@ -456,19 +221,6 @@ class ScvmmCloudProvider implements CloudProvider {
         return controllerTypes
     }
 
-    /**
-     * Create the SSH options.
-     *
-     * @return The SSH options.
-     */
-    protected static Collection<OptionType> createSshOptions() {
-        Collection<OptionType> sshOptions = []
-        sshOptions << new OptionType(code: 'computeServerType.global.sshHost')
-        sshOptions << new OptionType(code: 'computeServerType.global.sshPort')
-        sshOptions << new OptionType(code: 'computeServerType.global.sshUsername')
-        sshOptions << new OptionType(code: 'computeServerType.global.sshPassword')
-        return sshOptions
-    }
 
     /**
      * Grabs all {@link ComputeServerType} objects that this CloudProvider can represent during
@@ -478,115 +230,7 @@ class ScvmmCloudProvider implements CloudProvider {
     @SuppressWarnings('MethodSize')
     @Override
     Collection<ComputeServerType> getComputeServerTypes() {
-        Collection<ComputeServerType> serverTypes = []
-        Collection<OptionType> sshOptions = createSshOptions()
-
-        // Host option type is used by multiple compute server types.
-        OptionType hostOptionType = new OptionType(code: 'computeServerType.scvmm.capabilityProfile',
-                inputType: OptionType.InputType.SELECT, name: CAPABILITY_PROFILE_NAME, category: PROVISION_TYPE_SCVMM,
-                optionSourceType: SCVMM_SOURCE_TYPE, fieldName: SCVMM_CAPABILITY_PROFILE_FIELD,
-                fieldCode: 'gomorpheus.optiontype.CapabilityProfile', fieldLabel: CAPABILITY_PROFILE_NAME,
-                fieldContext: CONFIG_CONTEXT, fieldGroup: 'Options', required: true, enabled: true,
-                optionSource: SCVMM_CAPABILITY_PROFILE_FIELD, editable: true, global: false, placeHolder: null,
-                helpBlock: '', defaultValue: null, custom: false, displayOrder: DISPLAY_ORDER_OPTION_TEN,
-                fieldClass: null
-        )
-
-        serverTypes << new ComputeServerType(code: UNMANAGED_NODE_TYPE, name: 'Linux VM', description: 'vm',
-                platform: PlatformType.linux, nodeType: UNMANAGED_NODE_TYPE, enabled: true, selectable: false,
-                externalDelete: false, managed: false, controlPower: false, controlSuspend: false, creatable: true,
-                computeService: 'unmanagedComputeService', displayOrder: 100, hasAutomation: false,
-                containerHypervisor: false, bareMetalHost: false, vmHypervisor: false, agentType: null,
-                managedServerType: 'managed', guestVm: true, provisionTypeCode: UNMANAGED_NODE_TYPE,
-                optionTypes: sshOptions
-        )
-
-        // scvmm
-        serverTypes << new ComputeServerType(code: SCVMM_CONTROLLER_CODE, name: 'SCVMM Manager',
-                description: EMPTY_DESCRIPTION, platform: PlatformType.windows, nodeType: MORPHEUS_SCVMM_NODE,
-                enabled: true, selectable: false, externalDelete: false, managed: false, controlPower: false,
-                controlSuspend: false, creatable: false, computeService: SCVMM_COMPUTE_SERVICE, displayOrder: 0,
-                hasAutomation: false, containerHypervisor: false, bareMetalHost: false, vmHypervisor: true,
-                agentType: ComputeServerType.AgentType.node, provisionTypeCode: SCVMM_HYPERVISOR_PROVISION_TYPE
-        )
-
-        // vms
-        serverTypes << new ComputeServerType(code: 'scvmmHypervisor', name: 'SCVMM Hypervisor',
-                description: EMPTY_DESCRIPTION, platform: PlatformType.windows, nodeType: MORPHEUS_SCVMM_NODE,
-                enabled: true, selectable: false, externalDelete: false, managed: false, controlPower: false,
-                controlSuspend: false, creatable: false, computeService: SCVMM_COMPUTE_SERVICE, displayOrder: 0,
-                hasAutomation: false, containerHypervisor: false, bareMetalHost: false, vmHypervisor: true,
-                agentType: ComputeServerType.AgentType.node, provisionTypeCode: SCVMM_HYPERVISOR_PROVISION_TYPE
-        )
-        serverTypes << new ComputeServerType(code: 'scvmmWindows', name: 'SCVMM Windows Node',
-                description: EMPTY_DESCRIPTION, platform: PlatformType.windows, nodeType: 'morpheus-windows-node',
-                enabled: true, selectable: false, externalDelete: true, managed: true, controlPower: true,
-                controlSuspend: false, creatable: false, computeService: SCVMM_COMPUTE_SERVICE, displayOrder: 7,
-                hasAutomation: true, reconfigureSupported: true, containerHypervisor: false, bareMetalHost: false,
-                vmHypervisor: false, agentType: ComputeServerType.AgentType.node, guestVm: true,
-                provisionTypeCode: SCVMM_PROVISION_TYPE
-        )
-        serverTypes << new ComputeServerType(code: SCVMM_VM_CODE, name: SCVMM_INSTANCE_NAME,
-                description: EMPTY_DESCRIPTION, platform: PlatformType.linux, nodeType: MORPHEUS_VM_NODE,
-                enabled: true, selectable: false, externalDelete: true, managed: true, controlPower: true,
-                controlSuspend: false, creatable: false, computeService: SCVMM_COMPUTE_SERVICE, displayOrder: 0,
-                hasAutomation: true, reconfigureSupported: true, containerHypervisor: false, bareMetalHost: false,
-                vmHypervisor: false, agentType: ComputeServerType.AgentType.guest, guestVm: true,
-                provisionTypeCode: SCVMM_PROVISION_TYPE
-        )
-        // windows container host - not used
-        serverTypes << new ComputeServerType(code: 'scvmmWindowsVm', name: 'SCVMM Windows Instance',
-                description: EMPTY_DESCRIPTION, platform: PlatformType.windows, nodeType: MORPHEUS_WINDOWS_VM_NODE,
-                enabled: true, selectable: false, externalDelete: true, managed: true, controlPower: true,
-                controlSuspend: false, creatable: false, computeService: SCVMM_COMPUTE_SERVICE, displayOrder: 0,
-                hasAutomation: true, reconfigureSupported: true, containerHypervisor: false, bareMetalHost: false,
-                vmHypervisor: false, agentType: ComputeServerType.AgentType.guest, guestVm: true,
-                provisionTypeCode: SCVMM_PROVISION_TYPE
-        )
-        serverTypes << new ComputeServerType(code: 'scvmmUnmanaged', name: SCVMM_INSTANCE_NAME,
-                description: 'scvmm vm',
-                platform: PlatformType.linux, nodeType: UNMANAGED_NODE_TYPE, enabled: true, selectable: false,
-                externalDelete: true, managed: false, controlPower: true, controlSuspend: false, creatable: false,
-                computeService: SCVMM_COMPUTE_SERVICE, displayOrder: 99, hasAutomation: false,
-                containerHypervisor: false,
-                bareMetalHost: false, vmHypervisor: false, agentType: ComputeServerType.AgentType.guest,
-                managedServerType: SCVMM_VM_CODE, guestVm: true, provisionTypeCode: SCVMM_PROVISION_TYPE
-        )
-
-        // docker
-        serverTypes << new ComputeServerType(code: 'scvmmLinux', name: 'SCVMM Docker Host',
-                description: EMPTY_DESCRIPTION,
-                platform: PlatformType.linux, nodeType: MORPHEUS_NODE, enabled: true, selectable: false,
-                externalDelete: true, managed: true, controlPower: true, controlSuspend: false,
-                creatable: false, computeService: SCVMM_COMPUTE_SERVICE, displayOrder: 6, hasAutomation: true,
-                reconfigureSupported: true, containerHypervisor: true, bareMetalHost: false, vmHypervisor: false,
-                agentType: ComputeServerType.AgentType.node, containerEngine: DOCKER_ENGINE,
-                provisionTypeCode: SCVMM_PROVISION_TYPE, computeTypeCode: 'docker-host', optionTypes: [hostOptionType]
-        )
-
-        // kubernetes
-        serverTypes << new ComputeServerType(code: 'scvmmKubeMaster', name: 'SCVMM Kubernetes Master',
-                description: EMPTY_DESCRIPTION, platform: PlatformType.linux, nodeType: KUBE_MASTER_NODE,
-                hasMaintenanceMode: true, reconfigureSupported: true, enabled: true, selectable: false,
-                externalDelete: true, managed: true, controlPower: true, controlSuspend: true, creatable: true,
-                supportsConsoleKeymap: true, computeService: SCVMM_COMPUTE_SERVICE,
-                displayOrder: DISPLAY_ORDER_OPTION_TEN, hasAutomation: true, containerHypervisor: true,
-                bareMetalHost: false, vmHypervisor: false, agentType: ComputeServerType.AgentType.host,
-                containerEngine: DOCKER_ENGINE, provisionTypeCode: SCVMM_PROVISION_TYPE,
-                computeTypeCode: KUBE_MASTER_NODE, optionTypes: [hostOptionType]
-        )
-        serverTypes << new ComputeServerType(code: 'scvmmKubeWorker', name: 'SCVMM Kubernetes Worker',
-                description: EMPTY_DESCRIPTION, platform: PlatformType.linux, nodeType: KUBE_WORKER_NODE,
-                hasMaintenanceMode: true, reconfigureSupported: true, enabled: true, selectable: false,
-                externalDelete: true, managed: true, controlPower: true, controlSuspend: true, creatable: true,
-                supportsConsoleKeymap: true, computeService: SCVMM_COMPUTE_SERVICE,
-                displayOrder: DISPLAY_ORDER_OPTION_TEN, hasAutomation: true, containerHypervisor: true,
-                bareMetalHost: false, vmHypervisor: false, agentType: ComputeServerType.AgentType.guest,
-                containerEngine: DOCKER_ENGINE, provisionTypeCode: SCVMM_PROVISION_TYPE,
-                computeTypeCode: KUBE_WORKER_NODE, optionTypes: [hostOptionType]
-        )
-
-        return serverTypes
+        return ComputeServerTypeHelper.getAllComputeServerTypes()
     }
 
     /**
@@ -683,8 +327,8 @@ class ScvmmCloudProvider implements CloudProvider {
         return rtn
     }
 
-    @SuppressWarnings(['AbcMetric', 'MethodReturnTypeRequired'])
-    def initializeHypervisor(Cloud cloud) {
+    @SuppressWarnings('AbcMetric')
+    Map initializeHypervisor(Cloud cloud) {
         def rtn = [success: false]
         log.debug("cloud: ${cloud}")
         def sharedController = cloud.getConfigProperty(SHARED_CONTROLLER_ERROR_KEY)
@@ -757,15 +401,6 @@ class ScvmmCloudProvider implements CloudProvider {
                 maxCores = maximumCores
                 maxStorage = maximumStorage
             }
-//            newServer.platformVersion = version
-//            newServer.statusDate = Date.from(Instant.now())
-//            newServer.status = 'provisioning'
-//            newServer.powerState = POWER_STATE_ON
-//            newServer.serverType = SERVER_TYPE_HYPERVISOR_VALUE
-//            newServer.osType = WINDOWS_OS // linux, windows, unmanaged
-//            newServer.maxMemory = maxMemory
-//            newServer.maxCores = maxCores
-//            newServer.maxStorage = maxStorage
 
             // initializeHypervisor from context
             log.debug("newServer: ${newServer}")
