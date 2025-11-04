@@ -11,7 +11,6 @@ import com.morpheusdata.model.OptionType
 import com.morpheusdata.model.OsType
 import com.morpheusdata.model.StorageControllerType
 import com.morpheusdata.model.StorageVolumeType
-import com.morpheusdata.model.PlatformType
 import com.morpheusdata.scvmm.helper.morpheus.types.StorageVolumeTypeHelper
 import com.morpheusdata.scvmm.helper.morpheus.types.OptionTypeHelper
 import com.morpheusdata.scvmm.helper.morpheus.types.ComputeServerTypeHelper
@@ -43,8 +42,6 @@ import java.time.Instant
 @SuppressWarnings(['CompileStatic', 'MethodCount', 'ClassSize'])
 class ScvmmCloudProvider implements CloudProvider {
     public static final String CLOUD_PROVIDER_CODE = 'scvmm'
-    private static final String CONFIG_CONTEXT = 'config'
-    private static final String SCVMM_SOURCE_TYPE = 'scvmm'
     private static final String HOST_CONFIG_PROPERTY = 'host'
     private static final String SCVMM_CIRCULAR_SVG = 'scvmm-circular.svg'
     private static final String SHARED_CONTROLLER_REQUIRED_MSG = 'You must specify a shared controller'
@@ -57,28 +54,10 @@ class ScvmmCloudProvider implements CloudProvider {
     private static final String SHARED_CONTROLLER_ERROR_KEY = 'sharedController'
 
     // Add these constants to the existing ones at the top of the class
-    private static final String SCVMM_COMPUTE_SERVICE = 'scvmmComputeService'
-    private static final String SCVMM_PROVISION_TYPE = 'scvmm'
-    private static final String SCVMM_HYPERVISOR_PROVISION_TYPE = 'scvmm-hypervisor'
-    private static final String SCVMM_INSTANCE_NAME = 'SCVMM Instance'
-    private static final String MORPHEUS_SCVMM_NODE = 'morpheus-scvmm-node'
-    private static final String DOCKER_ENGINE = 'docker'
-    private static final String EMPTY_DESCRIPTION = ''
-    private static final String UNMANAGED_NODE_TYPE = 'unmanaged'
-
-    // Add these constants to the existing ones at the top of the class
-    private static final String MORPHEUS_VM_NODE = 'morpheus-vm-node'
-    private static final String MORPHEUS_WINDOWS_VM_NODE = 'morpheus-windows-vm-node'
-    private static final String MORPHEUS_NODE = 'morpheus-node'
-    private static final String KUBE_MASTER_NODE = 'kube-master'
-    private static final String KUBE_WORKER_NODE = 'kube-worker'
     private static final String ENABLED_FIELD = 'enabled'
     private static final String ACCOUNT_ID_FIELD = 'account.id'
 
     // Add these constants to the existing ones at the top of the class
-    private static final String PROVISION_TYPE_SCVMM = 'provisionType.scvmm'
-    private static final String SCVMM_CAPABILITY_PROFILE_FIELD = 'scvmmCapabilityProfile'
-    private static final String CAPABILITY_PROFILE_NAME = 'capability profile'
     private static final int SCVMM_PORT = 5985
     private static final String ERROR_CONNECTING_MSG = 'error connecting'
     private static final String ERROR_CONNECTING_TO_CONTROLLER_MSG = 'error connecting to controller'
@@ -87,7 +66,6 @@ class ScvmmCloudProvider implements CloudProvider {
     private static final String STATUS_ERROR = 'error'
 
     // Add these constants to the existing ones at the top of the class
-    private static final String SCVMM_VM_CODE = 'scvmmVm'
     private static final String WORKING_PATH_CONFIG = 'workingPath'
     private static final String DISK_PATH_CONFIG = 'diskPath'
     private static final String LIBRARY_SHARE_CONFIG = 'libraryShare'
@@ -96,7 +74,6 @@ class ScvmmCloudProvider implements CloudProvider {
     private static final String ENTER_PASSWORD_MSG = 'Enter a password'
     private static final String NO_ZONE_FOUND_MSG = 'No zone found'
     private static final String CONTROLLER_NOT_FOUND_MSG = 'controller not found'
-    private static final int DISPLAY_ORDER_OPTION_TEN = 10
     private static final int TOKEN_INDEX = 2
 
     // Add these constants to fix duplicate string literals
@@ -155,7 +132,7 @@ class ScvmmCloudProvider implements CloudProvider {
      * a cloud integration
      * @return Collection of OptionType
      */
-    @SuppressWarnings('MethodSize')
+    @SuppressWarnings('UnnecessaryGetter')
     @Override
     Collection<OptionType> getOptionTypes() {
         return OptionTypeHelper.getAllOptionTypes()
@@ -221,13 +198,12 @@ class ScvmmCloudProvider implements CloudProvider {
         return controllerTypes
     }
 
-
     /**
      * Grabs all {@link ComputeServerType} objects that this CloudProvider can represent during
      * a sync or during a provision.
      * @return collection of ComputeServerType
      */
-    @SuppressWarnings('MethodSize')
+    @SuppressWarnings('UnnecessaryGetter')
     @Override
     Collection<ComputeServerType> getComputeServerTypes() {
         return ComputeServerTypeHelper.getAllComputeServerTypes()
@@ -516,8 +492,8 @@ class ScvmmCloudProvider implements CloudProvider {
         return response
     }
 
-    @SuppressWarnings(['MethodReturnTypeRequired', 'MethodParameterTypeRequired'])
-    def checkCommunication(cloud, node) {
+    // @SuppressWarnings(['MethodReturnTypeRequired', 'MethodParameterTypeRequired'])
+    Map checkCommunication(Cloud cloud, ComputeServer node) {
         log.debug("checkCommunication: {} {}", cloud, node)
         def rtn = [:]
         rtn.success = false
@@ -533,8 +509,8 @@ class ScvmmCloudProvider implements CloudProvider {
         return rtn
     }
 
-    @SuppressWarnings('MethodReturnTypeRequired')
-    def getScvmmController(Cloud cloud) {
+    // @SuppressWarnings('MethodReturnTypeRequired')
+    ComputeServer getScvmmController(Cloud cloud) {
         def sharedControllerId = cloud.getConfigProperty(SHARED_CONTROLLER_ERROR_KEY)
         def sharedController =
                 sharedControllerId ? context.services.computeServer.get(sharedControllerId.toLong()) : null
@@ -699,8 +675,8 @@ class ScvmmCloudProvider implements CloudProvider {
         return provisionProvider.stopServer(computeServer)
     }
 
-    @SuppressWarnings('MethodParameterTypeRequired')
-    protected long getMaxMemory(serverInfo) {
+    // @SuppressWarnings('MethodParameterTypeRequired')
+    protected long getMaxMemory(Map serverInfo) {
         def maxMemory = 0L
         if (serverInfo?.memory && serverInfo?.memory?.toString()?.trim()) {
             try {
@@ -712,8 +688,8 @@ class ScvmmCloudProvider implements CloudProvider {
         return maxMemory
     }
 
-    @SuppressWarnings('MethodParameterTypeRequired')
-    protected long getMaxStorage(serverInfo) {
+    // @SuppressWarnings('MethodParameterTypeRequired')
+    protected long getMaxStorage(Map serverInfo) {
         def maxStorage = 0L
         if (serverInfo?.disks && serverInfo?.disks?.toString()?.trim()) {
             try {
@@ -816,8 +792,8 @@ class ScvmmCloudProvider implements CloudProvider {
         return 'SCVMM'
     }
 
-    @SuppressWarnings(['MethodParameterTypeRequired', 'MethodReturnTypeRequired'])
-    def validateRequiredConfigFields(fieldArray, config) {
+    // @SuppressWarnings(['MethodParameterTypeRequired', 'MethodReturnTypeRequired'])
+    Map validateRequiredConfigFields(List<String> fieldArray, Map config) {
         def errors = [:]
         fieldArray.each { field ->
             if (config[field] != null && config[field]?.size() == 0) {
@@ -828,8 +804,8 @@ class ScvmmCloudProvider implements CloudProvider {
         return errors
     }
 
-    @SuppressWarnings(['MethodReturnTypeRequired', 'InvertedIfElse'])
-    def validateSharedController(Cloud cloud) {
+    @SuppressWarnings('InvertedIfElse')
+    Map validateSharedController(Cloud cloud) {
         log.debug "validateSharedController: ${cloud}"
         def rtn = [success: true]
 
@@ -867,8 +843,8 @@ class ScvmmCloudProvider implements CloudProvider {
         return rtn
     }
 
-    @SuppressWarnings(['MethodParameterTypeRequired', 'MethodReturnTypeRequired', 'DuplicateMapLiteral'])
-    def removeOrphanedResourceLibraryItems(cloud, node) {
+    // @SuppressWarnings('DuplicateMapLiteral')
+    Map removeOrphanedResourceLibraryItems(Cloud cloud, ComputeServer node) {
         log.debug("removeOrphanedResourceLibraryItems: {} {}", cloud, node)
         def rtn = [success: false]
         try {
@@ -880,8 +856,8 @@ class ScvmmCloudProvider implements CloudProvider {
         return rtn
     }
 
-    @SuppressWarnings(['MethodParameterTypeRequired', 'MethodReturnTypeRequired'])
-    protected updateHypervisorStatus(server, status, powerState, msg) {
+    // @SuppressWarnings(['MethodParameterTypeRequired', 'MethodReturnTypeRequired'])
+    protected void updateHypervisorStatus(ComputeServer server, String status, String powerState, String msg) {
         log.debug("server: {}, status: {}, powerState: {}, msg: {}", server, status, powerState, msg)
         if (server.status != status || server.powerState != powerState) {
             server.status = status
