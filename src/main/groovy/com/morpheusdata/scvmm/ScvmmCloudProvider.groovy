@@ -39,7 +39,7 @@ import com.morpheusdata.scvmm.sync.TemplatesSync
 import com.morpheusdata.scvmm.sync.VirtualMachineSync
 import java.time.Instant
 
-@SuppressWarnings(['CompileStatic', 'MethodCount', 'ClassSize'])
+@SuppressWarnings(['CompileStatic', 'MethodCount'])
 class ScvmmCloudProvider implements CloudProvider {
     public static final String CLOUD_PROVIDER_CODE = 'scvmm'
     private static final String HOST_CONFIG_PROPERTY = 'host'
@@ -492,7 +492,6 @@ class ScvmmCloudProvider implements CloudProvider {
         return response
     }
 
-    // @SuppressWarnings(['MethodReturnTypeRequired', 'MethodParameterTypeRequired'])
     Map checkCommunication(Cloud cloud, ComputeServer node) {
         log.debug("checkCommunication: {} {}", cloud, node)
         def rtn = [:]
@@ -509,7 +508,6 @@ class ScvmmCloudProvider implements CloudProvider {
         return rtn
     }
 
-    // @SuppressWarnings('MethodReturnTypeRequired')
     ComputeServer getScvmmController(Cloud cloud) {
         def sharedControllerId = cloud.getConfigProperty(SHARED_CONTROLLER_ERROR_KEY)
         def sharedController =
@@ -675,7 +673,6 @@ class ScvmmCloudProvider implements CloudProvider {
         return provisionProvider.stopServer(computeServer)
     }
 
-    // @SuppressWarnings('MethodParameterTypeRequired')
     protected long getMaxMemory(Map serverInfo) {
         def maxMemory = 0L
         if (serverInfo?.memory && serverInfo?.memory?.toString()?.trim()) {
@@ -688,7 +685,6 @@ class ScvmmCloudProvider implements CloudProvider {
         return maxMemory
     }
 
-    // @SuppressWarnings('MethodParameterTypeRequired')
     protected long getMaxStorage(Map serverInfo) {
         def maxStorage = 0L
         if (serverInfo?.disks && serverInfo?.disks?.toString()?.trim()) {
@@ -843,7 +839,6 @@ class ScvmmCloudProvider implements CloudProvider {
         return rtn
     }
 
-    // @SuppressWarnings('DuplicateMapLiteral')
     Map removeOrphanedResourceLibraryItems(Cloud cloud, ComputeServer node) {
         log.debug("removeOrphanedResourceLibraryItems: {} {}", cloud, node)
         def rtn = [success: false]
@@ -856,7 +851,6 @@ class ScvmmCloudProvider implements CloudProvider {
         return rtn
     }
 
-    // @SuppressWarnings(['MethodParameterTypeRequired', 'MethodReturnTypeRequired'])
     protected void updateHypervisorStatus(ComputeServer server, String status, String powerState, String msg) {
         log.debug("server: {}, status: {}, powerState: {}, msg: {}", server, status, powerState, msg)
         if (server.status != status || server.powerState != powerState) {
