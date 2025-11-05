@@ -1957,8 +1957,9 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         }
     }
 
-    private applyComputeServerNetworkIp(ComputeServer server, privateIp, publicIp, index, macAddress) {
+    private saveAndGetNetworkInterface(ComputeServer server, privateIp, publicIp, index, macAddress) {
         log.debug("applyComputeServerNetworkIp: ${privateIp}")
+		def rtn = [:]
         ComputeServerInterface netInterface
         if (privateIp) {
             privateIp = privateIp?.toString().contains("\n") ? privateIp.toString().replace("\n", "") : privateIp.toString()
@@ -2001,9 +2002,19 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             else
                 context.async.computeServer.computeServerInterface.save([netInterface]).blockingGet()
         }
-        saveAndGetMorpheusServer(server, true)
-        return netInterface
+        def savedServer = saveAndGetMorpheusServer(server, true)
+		rtn.netInterface = netInterface
+		rtn.server = savedServer
+        return rtn
     }
+
+	private applyComputeServerNetworkIp(ComputeServer server, privateIp, publicIp, index, macAddress){
+		return saveAndGetNetworkInterface(server, privateIp, publicIp, index, macAddress).netInterface
+	}
+
+	private getUpdatedComputeServer(ComputeServer server, privateIp, publicIp, index, macAddress){
+		return saveAndGetNetworkInterface(server, privateIp, publicIp, index, macAddress).server
+	}
 
     @Override
     ServiceResponse<ProvisionResponse> waitForHost(ComputeServer server) {
@@ -2042,15 +2053,16 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         try {
             def config = server.getConfigMap()
             def node = config.hostId ? context.services.computeServer.get(config.hostId.toLong()) : pickScvmmController(server.cloud)
-            def scvmmOpts = apiService.getScvmmCloudOpts(context, server.cloud, node)
-            scvmmOpts += apiService.getScvmmControllerOpts(server.cloud, node)
-            scvmmOpts += getScvmmServerOpts(server)
-            def serverDetail = apiService.checkServerReady(scvmmOpts, server.externalId)
+			def compServer = context.services.computeServer.get(server.id)
+            def scvmmOpts = apiService.getScvmmCloudOpts(context, compServer.cloud, node)
+            scvmmOpts += apiService.getScvmmControllerOpts(compServer.cloud, node)
+            scvmmOpts += getScvmmServerOpts(compServer)
+            def serverDetail = apiService.checkServerReady(scvmmOpts, compServer.externalId)
             if (serverDetail.success == true) {
 				def newIpAddress = serverDetail.server?.ipAddress
 				def macAddress = serverDetail.server?.macAddress
-				applyComputeServerNetworkIp(server, newIpAddress, newIpAddress, 0, macAddress)
-                context.async.computeServer.save(server).blockingGet()
+				def savedServer = getUpdatedComputeServer(compServer, newIpAddress, newIpAddress, 0, macAddress)
+                context.async.computeServer.save(savedServer).blockingGet()
                 rtn.success = true
             }
         } catch (e) {
