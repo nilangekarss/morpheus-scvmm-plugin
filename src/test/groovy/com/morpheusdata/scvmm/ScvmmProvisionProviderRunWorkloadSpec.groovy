@@ -313,6 +313,25 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
             return ProvisionDataHelper.runWorkload_setCdromResponse()
         }
 
+        def asyncComputeServerInterfaceService = Mock(MorpheusComputeServerInterfaceService)
+        asyncComputeServerService.getComputeServerInterface() >> asyncComputeServerInterfaceService
+        // For case with privateIp, mock the server interface create/save methods
+        def macAddress = "00:11:22:33:44:55"
+        // def updatedServer = new ComputeServer(id: 100L)
+        def savedInterface = new ComputeServerInterface(
+                id: 1L,
+                name: "eth0",
+                ipAddress: "192.168.1.100",
+                publicIpAddress: "10.0.0.100",
+                macAddress: macAddress,
+                primaryInterface: true,
+                displayOrder: 1,
+                addresses: [new NetAddress(type: NetAddress.AddressType.IPV4, address: "192.168.1.100")]
+        )
+        asyncComputeServerInterfaceService.create(_, _) >> {
+            return  Single.just([savedInterface])
+        }
+
 
         when:
         def response = provisionProvider.runWorkload(workload, workloadRequest, opts)
@@ -783,6 +802,9 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         morpheusContext.services.computeServer.get(200L) >> {
             return controllerServer
         }
+        morpheusContext.services.computeServer.get(100L) >> {
+            return server
+        }
         mockApiService.getScvmmCloudOpts(morpheusContext, cloud, controllerServer) >> {
             return [cloud: cloud.id]
         }
@@ -808,6 +830,10 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
             return ProvisionDataHelper.waitForHost_applyComputeServerNetworkIpResponse()
         }
 
+        provisionProvider.applyNetworkIpAndGetServer(_, _, _, _, _) >> {
+            return server
+        }
+
         when:
         def response = provisionProvider.waitForHost(server)
 
@@ -830,6 +856,9 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
         // Mock necessary service calls
         computeServerService.get(200L) >> controllerNode
+        morpheusContext.services.computeServer.get(100L) >> {
+            return server
+        }
 
         mockApiService.getScvmmCloudOpts(morpheusContext, server.cloud, controllerNode) >> [cloudId: 1L]
         mockApiService.getScvmmControllerOpts(server.cloud, controllerNode) >> [controllerId: 200L]
@@ -841,6 +870,10 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         // Mock the network IP application
         provisionProvider.applyComputeServerNetworkIp(_,_,_,_,_) >> {
             return ProvisionDataHelper.finalizeHost_applyComputeServerNetworkIpResponse()
+        }
+
+        provisionProvider.applyNetworkIpAndGetServer(_, _, _, _, _) >> {
+            return server
         }
 
         // Mock the server save operation

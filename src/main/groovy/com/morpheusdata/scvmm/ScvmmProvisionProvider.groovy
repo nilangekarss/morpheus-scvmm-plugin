@@ -907,25 +907,25 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 }
                 // If cloning.. gotta stop it first
                 if (opts.cloneContainerId) {
-                    Workload cloneContainer = context.services.workload.get(opts.cloneContainerId.toLong())
-                    scvmmOpts.cloneContainerId = cloneContainer.id
-                    scvmmOpts.cloneVMId = cloneContainer.server.externalId
-                    if (cloneContainer.status == Workload.Status.running) {
-                        stopWorkload(cloneContainer)
+                    Workload parentContainer = context.services.workload.get(opts.cloneContainerId.toLong())
+                    scvmmOpts.cloneContainerId = parentContainer.id
+                    scvmmOpts.cloneVMId = parentContainer.server.externalId
+                    if (parentContainer.status == Workload.Status.running) {
+                        stopWorkload(parentContainer)
                         scvmmOpts.startClonedVM = true
                     }
                     log.debug "Handling startup of the original VM"
                     def cloneBaseOpts = [:]
-                    cloneBaseOpts.cloudInitIsoNeeded = (cloneContainer.server.sourceImage &&
-                            cloneContainer.server.sourceImage.isCloudInit &&
-                            cloneContainer.server.serverOs?.platform != WINDOWS_PLATFORM)
+                    cloneBaseOpts.cloudInitIsoNeeded = (parentContainer.server.sourceImage &&
+							parentContainer.server.sourceImage.isCloudInit &&
+							parentContainer.server.serverOs?.platform != WINDOWS_PLATFORM)
                     if (cloneBaseOpts.cloudInitIsoNeeded) {
-                        def initOptions = constructCloudInitOptions(cloneContainer, workloadRequest,
-                                opts.installAgent, scvmmOpts.platform, virtualImage, scvmmOpts.networkConfig,
-                                scvmmOpts.licenses, scvmmOpts)
+                        def initOptions = constructCloudInitOptions(parentContainer, workloadRequest,
+								opts.installAgent, scvmmOpts.platform, virtualImage, scvmmOpts.networkConfig,
+								scvmmOpts.licenses, scvmmOpts)
                         def clonedScvmmOpts = apiService.getScvmmZoneOpts(context, cloud)
                         clonedScvmmOpts += apiService.getScvmmControllerOpts(cloud, controllerNode)
-                        clonedScvmmOpts += getScvmmContainerOpts(cloneContainer)
+                        clonedScvmmOpts += getScvmmContainerOpts(parentContainer)
                         cloneBaseOpts.imageFolderName = clonedScvmmOpts.serverFolder
                         cloneBaseOpts.diskFolder = "${clonedScvmmOpts.diskRoot}\\${cloneBaseOpts.imageFolderName}"
                         cloneBaseOpts.cloudConfigBytes = initOptions.cloudConfigBytes
@@ -1023,7 +1023,12 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                             server.status = PROVISIONED_STATUS
                             context.async.computeServer.save(server).blockingGet()
                             provisionResponse.success = true
-                            if (server?.platform == LINUX_PLATFORM) {
+							// By default installAgent is true.
+							// 1. The below section instructs the subsequent code to
+							// 1a. skip agent installation for Linux VMs (as cloud init will take care of
+							// installing agent)
+							// 1b. If we are in a Clone scenario, we don't want to skip agent installation here.
+                            if (server?.platform == LINUX_PLATFORM && !scvmmOpts.cloneVMId) {
                                 provisionResponse.installAgent = false
                             }
                             log.debug("provisionResponse.success: ${provisionResponse.success}")
@@ -2249,8 +2254,9 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         }
     }
 
-    protected applyComputeServerNetworkIp(ComputeServer server, privateIp, publicIp, index, macAddress) {
+    protected saveAndGetNetworkInterface(ComputeServer server, privateIp, publicIp, index, macAddress) {
         log.debug("applyComputeServerNetworkIp: ${privateIp}")
+		def rtn = [:]
         ComputeServerInterface netInterface
         if (privateIp) {
             privateIp = privateIp?.toString()?.contains(NEWLINE) ?
@@ -2297,9 +2303,19 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             else
                 context.async.computeServer.computeServerInterface.save([netInterface]).blockingGet()
         }
-        saveAndGetMorpheusServer(server, true)
-        return netInterface
+        def savedServer = saveAndGetMorpheusServer(server, true)
+		rtn.netInterface = netInterface
+		rtn.server = savedServer
+        return rtn
     }
+
+	private applyComputeServerNetworkIp(ComputeServer server, privateIp, publicIp, index, macAddress) {
+		return saveAndGetNetworkInterface(server, privateIp, publicIp, index, macAddress).netInterface
+	}
+
+	protected applyNetworkIpAndGetServer(ComputeServer server, privateIp, publicIp, index, macAddress) {
+		return saveAndGetNetworkInterface(server, privateIp, publicIp, index, macAddress).server
+	}
 
     @Override
     ServiceResponse<ProvisionResponse> waitForHost(ComputeServer server) {
@@ -2340,17 +2356,18 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         try {
             def config = server.getConfigMap()
             def node = config.hostId
-                    ? context.services.computeServer.get(config.hostId.toLong())
-                    : pickScvmmController(server.cloud)
-            def scvmmOpts = apiService.getScvmmCloudOpts(context, server.cloud, node)
-            scvmmOpts += apiService.getScvmmControllerOpts(server.cloud, node)
-            scvmmOpts += getScvmmServerOpts(server)
-            def serverDetail = apiService.checkServerReady(scvmmOpts, server.externalId)
+					? context.services.computeServer.get(config.hostId.toLong())
+					: pickScvmmController(server.cloud)
+			def compServer = context.services.computeServer.get(server.id)
+            def scvmmOpts = apiService.getScvmmCloudOpts(context, compServer.cloud, node)
+            scvmmOpts += apiService.getScvmmControllerOpts(compServer.cloud, node)
+            scvmmOpts += getScvmmServerOpts(compServer)
+            def serverDetail = apiService.checkServerReady(scvmmOpts, compServer.externalId)
             if (serverDetail.success == true) {
-                def newIpAddress = serverDetail.server?.ipAddress
-                def macAddress = serverDetail.server?.macAddress
-                applyComputeServerNetworkIp(server, newIpAddress, newIpAddress, 0, macAddress)
-                context.async.computeServer.save(server).blockingGet()
+				def newIpAddress = serverDetail.server?.ipAddress
+				def macAddress = serverDetail.server?.macAddress
+				def savedServer = applyNetworkIpAndGetServer(compServer, newIpAddress, newIpAddress, 0, macAddress)
+                context.async.computeServer.save(savedServer).blockingGet()
                 rtn.success = true
             }
         } catch (e) {
