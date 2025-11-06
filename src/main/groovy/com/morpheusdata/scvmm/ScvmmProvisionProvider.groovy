@@ -29,7 +29,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         WorkloadProvisionProvider.ResizeFacet, ProvisionProvider.BlockDeviceNameFacet {
     public static final String PROVIDER_CODE = 'scvmm.provision'
     public static final String PROVISION_TYPE_CODE = 'scvmm'
-    public static final String[] DISK_NAMES = ['sda', 'sdb', 'sdc', 'sdd', 'sde', 'sdf', 'sdg', 'sdh',
+    protected static final String[] DISK_NAMES = ['sda', 'sdb', 'sdc', 'sdd', 'sde', 'sdf', 'sdg', 'sdh',
                                      'sdi', 'sdj', 'sdk', 'sdl']
     // Add these new constants
     private static final String DEFAULT_CAPABILITY_PROFILE = '-1'
@@ -84,7 +84,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 
     private static final Integer FOUR_INT = 4
     private static final Long BYTES_IN_KB = 1024L
-    private static final Long BYTES_IN_GB = BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB
     private static final Long TEN_LONG = 10L
     private static final Long TWENTY_LONG = 20L
     private static final Long FORTY_LONG = 40L
@@ -116,9 +115,9 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     private static final Long ONE_LONG = 1
     private static final Long TWO_LONG = 2
     private static final Long FOUR_LONG = 4
-    private static final long EIGHT_LONG = 8
-    private static final long SIXTEEN_LONG = 16
-    private static final long THIRTY_TWO_LONG = 32
+    private static final Long EIGHT_LONG = 8
+    private static final Long SIXTEEN_LONG = 16
+    private static final Long THIRTY_TWO_LONG = 32
     private static final Integer ZERO_INT = 0
     private static final String VIRTUAL_IMAGE_ID_FIELD = 'virtualImage.id'
     private static final String CLOUD_ID_FIELD = 'cloud.id'
@@ -139,11 +138,15 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     private static final String SCVMM_GENERATION1_VALUE = 'generation1'
     private static final String GENERATION_FIELD = 'generation'
 
+    //private static final String STANDARD_VALUE = 'standard'
+    private static final String NEWLINE = '\n'
+    private static final String EMPTY_STRING = ''
+    private static final String DATASTORE_REF_ID_FIELD = 'datastore.refId'
+
 // Numeric constants
     private static final Integer SORT_ORDER_1 = 1
     private static final Integer INTEGER_FIVE = 5
     private static final Integer MINUS_ONE = -1
-
 
 // Sort order and numeric constants
     private static final Integer SORT_ORDER_2 = 2
@@ -156,11 +159,10 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     private static final Integer CORES_TWO = 2
     private static final Integer CORES_FOUR = 4
 
-
     protected MorpheusContext context
     protected ScvmmPlugin plugin
     ScvmmApiService apiService
-    private LogInterface log = LogWrapper.instance
+    private final LogInterface log = LogWrapper.instance
 
     ScvmmProvisionProvider(ScvmmPlugin plugin, MorpheusContext context) {
         super()
@@ -212,9 +214,9 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 rtn.data.maxCores = maxCores
                 rtn.data.maxStorage = maxStorage
                 rtn.success = true
-                if (server.agentInstalled != true) {
-                    def prepareResults = apiService.prepareNode(opts)
-                }
+//                if (server.agentInstalled != true) {
+//                    def prepareResults = apiService.prepareNode(opts)
+//                }
             }
         } catch (e) {
             log.error("initialize hypervisor error:${e}", e)
@@ -240,7 +242,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         PrepareWorkloadResponse prepareResponse = new PrepareWorkloadResponse(workload: workload)
         ServiceResponse<PrepareWorkloadResponse> resp = ServiceResponse.prepare(prepareResponse)
         resp.success = true
-        resp.msg = ''
+        resp.msg = EMPTY_STRING
         resp.errors = null
         return resp
     }
@@ -553,7 +555,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
      */
     @Override
     Collection<StorageVolumeType> getRootVolumeStorageTypes() {
-        context.async.storageVolume.storageVolumeType.list(
+        return context.async.storageVolume.storageVolumeType.list(
                 new DataQuery().withFilter(CODE_FILTER, STANDARD_VALUE)).toList().blockingGet()
     }
 
@@ -563,7 +565,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
      */
     @Override
     Collection<StorageVolumeType> getDataVolumeStorageTypes() {
-        context.async.storageVolume.storageVolumeType.list(
+        return context.async.storageVolume.storageVolumeType.list(
                 new DataQuery().withFilter(CODE_FILTER, STANDARD_VALUE)).toList().blockingGet()
     }
 
@@ -583,7 +585,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                                          maxMemory       : ONE_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB,
                                          maxCpu: ZERO_LONG,
                                          maxCores: ONE_LONG,
-                                         customMaxStorage: true, customMaxDataStorage: true, addVolumes: true])
+                                         customMaxStorage: true, customMaxDataStorage: true, addVolumes: true,])
 
         servicePlans << new ServicePlan([code            : 'scvmm-2048', editable: true, name: ONE_CORE_2GB_DESC,
                                          description     : ONE_CORE_2GB_DESC, sortOrder: SORT_ORDER_2,
@@ -591,7 +593,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                                          maxMemory       : TWO_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB,
                                          maxCpu: ZERO_LONG,
                                          maxCores: ONE_LONG,
-                                         customMaxStorage: true, customMaxDataStorage: true, addVolumes: true])
+                                         customMaxStorage: true, customMaxDataStorage: true, addVolumes: true,])
 
         servicePlans << new ServicePlan([code            : 'scvmm-4096', editable: true, name: ONE_CORE_4GB_DESC,
                                          description     : ONE_CORE_4GB_DESC, sortOrder: SORT_ORDER_3,
@@ -599,7 +601,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                                          maxMemory       : FOUR_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB,
                                          maxCpu: ZERO_LONG,
                                          maxCores: ONE_LONG,
-                                         customMaxStorage: true, customMaxDataStorage: true, addVolumes: true])
+                                         customMaxStorage: true, customMaxDataStorage: true, addVolumes: true,])
 
         servicePlans << new ServicePlan([code            : 'scvmm-8192', editable: true, name: TWO_CORE_8GB_DESC,
                                          description     : TWO_CORE_8GB_DESC, sortOrder: SORT_ORDER_4,
@@ -607,7 +609,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                                          maxMemory       : EIGHT_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB,
                                          maxCpu: ZERO_LONG,
                                          maxCores: CORES_TWO,
-                                         customMaxStorage: true, customMaxDataStorage: true, addVolumes: true])
+                                         customMaxStorage: true, customMaxDataStorage: true, addVolumes: true,])
 
         servicePlans << new ServicePlan([code            : 'scvmm-16384', editable: true, name: TWO_CORE_16GB_DESC,
                                          description     : TWO_CORE_16GB_DESC, sortOrder: SORT_ORDER_5,
@@ -615,7 +617,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                                          maxMemory       : SIXTEEN_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB,
                                          maxCpu: ZERO_LONG,
                                          maxCores: CORES_TWO,
-                                         customMaxStorage: true, customMaxDataStorage: true, addVolumes: true])
+                                         customMaxStorage: true, customMaxDataStorage: true, addVolumes: true,])
 
         servicePlans << new ServicePlan([code            : 'scvmm-24576', editable: true, name: FOUR_CORE_24GB_DESC,
                                          description     : FOUR_CORE_24GB_DESC, sortOrder: SORT_ORDER_6,
@@ -623,14 +625,14 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                                          maxMemory       : THIRTY_TWO_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB,
                                          maxCpu: ZERO_LONG,
                                          maxCores: FOUR_LONG,
-                                         customMaxStorage: true, customMaxDataStorage: true, addVolumes: true])
+                                         customMaxStorage: true, customMaxDataStorage: true, addVolumes: true,])
 
         servicePlans << new ServicePlan([code            : 'scvmm-32768', editable: true, name: FOUR_CORE_32GB_DESC,
                                          description     : FOUR_CORE_32GB_DESC, sortOrder: SORT_ORDER_7,
                                          maxStorage      : THREE_TWENTY_GB_STORAGE,
                                          maxMemory       : THIRTY_TWO_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB,
                                          maxCpu: ZERO_LONG, maxCores: CORES_FOUR,
-                                         customMaxStorage: true, customMaxDataStorage: true, addVolumes: true])
+                                         customMaxStorage: true, customMaxDataStorage: true, addVolumes: true,])
 
         servicePlans << new ServicePlan([code           : 'scvmm-hypervisor', editable: false,
                                          name: 'SCVMM hypervisor',
@@ -641,7 +643,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                                          maxMemory      : (long) (ONE_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB),
                                          active: true,
                                          customCores    : true, customMaxStorage: true, customMaxDataStorage: true,
-                                         customMaxMemory: true])
+                                         customMaxMemory: true,])
 
         servicePlans << new ServicePlan([code            : 'internal-custom-scvmm', editable: false,
                                          name            : CUSTOM_SCVMM_DESC, description: CUSTOM_SCVMM_DESC,
@@ -650,7 +652,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                                          customCpu       : true, customCores: true, customMaxMemory: true,
                                          deletable: false,
                                          provisionable   : false, maxStorage: ZERO_LONG, maxMemory: ZERO_LONG,
-                                         maxCpu: ZERO_LONG])
+                                         maxCpu: ZERO_LONG,])
 
         servicePlans
     }
@@ -720,7 +722,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             Datastore datastore
             def volumePath, nodeId, highlyAvailable
             def storageVolumes = server.volumes
-            def rootVolume = storageVolumes.find { it.rootVolume == true }
+            def rootVolume = storageVolumes.find {vol -> vol.rootVolume == true }
             def maxStorage = getContainerRootSize(workload)
             def maxMemory = workload.maxMemory ?: workload.instance.plan.maxMemory
             setDynamicMemory(scvmmOpts, workload.instance.plan)
@@ -787,12 +789,12 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 scvmmOpts.templateId = virtualImage?.externalId
                 if (scvmmOpts.isSyncdImage) {
                     scvmmOpts.diskExternalIdMappings = getDiskExternalIds(virtualImage, cloud)
-                    imageId = scvmmOpts.diskExternalIdMappings.find { it.rootVolume == true }.externalId
+                    imageId = scvmmOpts.diskExternalIdMappings.find { vol -> vol.rootVolume == true }.externalId
                 } else {
                     imageId = virtualImage.externalId
                 }
                 log.debug("imageId: ${imageId}")
-                if (!imageId) { //If its userUploaded and still needs uploaded
+                if (!imageId) { // If its userUploaded and still needs uploaded
                     def cloudFiles =
                             context.async.virtualImage.getVirtualImageFiles(virtualImage).blockingGet()
                     log.debug("cloudFiles?.size(): ${cloudFiles?.size()}")
@@ -809,7 +811,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                             tags          : MORPHEUS_UBUNTU_TAGS,
                             imageType     : virtualImage.imageType,
                             containerType : VHD_CONTAINER_TYPE,
-                            cloudFiles    : cloudFiles
+                            cloudFiles    : cloudFiles,
                     ]
                     scvmmOpts.image = containerImage
                     scvmmOpts.userId = workload.instance.createdBy?.id
@@ -823,7 +825,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                                 code        : "scvmm.image.${cloud.id}.${virtualImage.externalId}",
                                 internalId  : virtualImage.externalId,
                                 externalId  : virtualImage.externalId,
-                                imageName   : virtualImage.name
+                                imageName   : virtualImage.name,
                         ]
                         VirtualImageLocation location = new VirtualImageLocation(locationConfig)
                         context.services.virtualImage.location.create(location)
@@ -849,7 +851,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 // If the image is an ISO or VMTools not installed, we need to skip network wait
                 opts.skipNetworkWait = virtualImage?.imageType == 'iso' ||
                         !virtualImage?.vmToolsInstalled ? true : false
-                //user config
+                // user config
                 def userGroups = workload.instance.userGroups?.toList() ?: []
                 if (workload.instance.userGroup && userGroups.contains(workload.instance.userGroup) == false) {
                     userGroups << workload.instance.userGroup
@@ -889,7 +891,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                     scvmmOpts.license = [fullName  : license.fullName,
                                          productKey: license.licenseKey, orgName: license.orgName]
                 }
-
 
                 if (virtualImage?.isCloudInit || scvmmOpts.isSysprep) {
                     def initOptions = constructCloudInitOptions(workload, workloadRequest,
@@ -969,7 +970,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                         def serverDisks = createResults.server.disks
                         if (serverDisks && server.volumes) {
                             storageVolumes = server.volumes
-                            rootVolume = storageVolumes.find { it.rootVolume == true }
+                            rootVolume = storageVolumes.find {vol -> vol.rootVolume == true }
                             rootVolume.externalId = serverDisks.diskMetaData[serverDisks.osDisk?.externalId]?.VhdID
                             context.services.storageVolume.save(rootVolume)
                             // Fix up the externalId.. initially set to the VirtualDiskDrive ID..
@@ -982,7 +983,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                                             rootVolume.datastore
                             context.services.storageVolume.save(rootVolume)
                             storageVolumes.each { storageVolume ->
-                                def dataDisk = serverDisks.dataDisks.find { it.id == storageVolume.id }
+                                def dataDisk = serverDisks.dataDisks.find { vol -> vol.id == storageVolume.id }
                                 if (dataDisk) {
                                     def newExternalId = serverDisks.diskMetaData[dataDisk.externalId]?.VhdID
                                     if (newExternalId) {
@@ -1031,7 +1032,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                             context.async.computeServer.save(server).blockingGet()
                             provisionResponse.success = false
                         }
-
                     } else {
                         if (createResults.server?.externalId) {
                             // we did create a vm though so we need to bind it to the server
@@ -1041,7 +1041,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                         context.async.computeServer.save(server).blockingGet()
                         provisionResponse.success = false
                     }
-
                 }
             } else {
                 server.statusMessage = 'Failed to upload image'
@@ -1071,8 +1070,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return rtn
     }
 
-
-    public MorpheusContext getContext() {
+    MorpheusContext getContext() {
         return this.context
     }
 
@@ -1883,8 +1881,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         // If clusterId (resourcePool) is not specified AND host not specified AND datastore is 'auto',
         // then we are just deploying to the cloud (so... can not select the datastore, nor host)
         clusterId = clusterId && clusterId != 'null' ? clusterId : null
-        hostId = hostId && hostId.toString().trim() != '' ? hostId : null
-        def zoneHasCloud = cloud.regionCode != null && cloud.regionCode != ''
+        hostId = hostId && hostId.toString().trim() != EMPTY_STRING ? hostId : null
+        def zoneHasCloud = cloud.regionCode != null && cloud.regionCode != EMPTY_STRING
         if (zoneHasCloud && !clusterId && !hostId && !datastore && (datastoreOption == 'auto' || !datastoreOption)) {
             return [node, datastore, volumePath, highlyAvailable]
         }
@@ -1993,7 +1991,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                     new DataQuery()
                             .withFilter('internalId', hostVolumeId)
                             .withFilter('datastore.refType', COMPUTE_ZONE_REF_TYPE)
-                            .withFilter('datastore.refId', cloud.id)
+                            .withFilter(DATASTORE_REF_ID_FIELD, cloud.id)
             )
             def ds = storageVolume?.datastore
             if (!ds && partitionUniqueId) {
@@ -2002,7 +2000,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                         new DataQuery()
                                 .withFilter(EXTERNAL_ID_FIELD, partitionUniqueId)
                                 .withFilter('datastore.refType', COMPUTE_ZONE_REF_TYPE)
-                                .withFilter('datastore.refId', cloud.id)
+                                .withFilter(DATASTORE_REF_ID_FIELD, cloud.id)
                 )
                 ds = storageVolume?.datastore
             }
@@ -2255,8 +2253,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         log.debug("applyComputeServerNetworkIp: ${privateIp}")
         ComputeServerInterface netInterface
         if (privateIp) {
-            privateIp = privateIp?.toString()?.contains("\n") ?
-                    privateIp.toString().replace("\n", "") :
+            privateIp = privateIp?.toString()?.contains(NEWLINE) ?
+                    privateIp.toString().replace(NEWLINE, "") :
                     privateIp.toString()
             def newInterface = false
             server.internalIp = privateIp
@@ -2287,8 +2285,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 netInterface.ipAddress = privateIp
             }
             if (publicIp) {
-                publicIp = publicIp?.toString().contains("\n")
-                        ? publicIp.toString().replace("\n", "")
+                publicIp = publicIp?.toString().contains(NEWLINE)
+                        ? publicIp.toString().replace(NEWLINE, "")
                         : publicIp.toString()
                 netInterface.publicIpAddress = publicIp
                 server.externalIp = publicIp
@@ -2551,9 +2549,9 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return rtn
     }
 
-    private getResizeConfig(Workload workload = null, ComputeServer server = null, ServicePlan plan,
+    protected getResizeConfig(Workload workload = null, ComputeServer server = null, ServicePlan plan,
                             Map opts = [:], ResizeRequest resizeRequest) {
-        log.debug "getResizeConfig: ${resizeRequest}"
+        log.debug("getResizeConfig: ${resizeRequest}")
         def rtn = [
                 success         : true, allowed: true, hotResize: true, volumeSyncLists: null, requestedMemory: null,
                 requestedCores  : null, neededMemory: null, neededCores: null, minDynamicMemory: null,
@@ -2579,7 +2577,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 resizeRequest.volumesUpdate?.each { volumeUpdate ->
                     if (volumeUpdate.existingModel) {
                         //existing disk - resize it
-                        def volumeCode = volumeUpdate.existingModel.type?.code ?: "standard"
+                        def volumeCode = volumeUpdate.existingModel.type?.code ?: STANDARD_VALUE
                         if (volumeUpdate.updateProps.maxStorage > volumeUpdate.existingModel.maxStorage) {
                             if (volumeCode.contains("differencing")) {
                                 log.warn("getResizeConfig - Resize is not supported on Differencing" +
@@ -2608,7 +2606,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return rtn
     }
 
-    def buildStorageVolume(computeServer, volumeAdd, newCounter) {
+    StorageVolume buildStorageVolume(computeServer, volumeAdd, newCounter) {
         def newVolume = new StorageVolume(
                 refType: COMPUTE_ZONE_REF_TYPE,
                 refId: computeServer.cloud.id,
