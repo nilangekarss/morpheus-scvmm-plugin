@@ -214,9 +214,9 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 rtn.data.maxCores = maxCores
                 rtn.data.maxStorage = maxStorage
                 rtn.success = true
-//                if (server.agentInstalled != true) {
-//                    def prepareResults = apiService.prepareNode(opts)
-//                }
+                if (server.agentInstalled != true) {
+                    apiService.prepareNode(opts)
+                }
             }
         } catch (e) {
             log.error("initialize hypervisor error:${e}", e)
