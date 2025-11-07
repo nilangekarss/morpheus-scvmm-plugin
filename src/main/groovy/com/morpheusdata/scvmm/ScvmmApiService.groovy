@@ -5,11 +5,9 @@ import com.morpheusdata.core.data.DataQuery
 import com.morpheusdata.core.util.ComputeUtility
 import com.morpheusdata.model.Cloud
 import com.morpheusdata.model.ComputeServer
-import com.morpheusdata.model.KeyPair
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
 import groovy.json.JsonOutput
-import groovy.util.logging.Slf4j
 import com.bertramlabs.plugins.karman.CloudFile
 
 class ScvmmApiService {
@@ -24,7 +22,8 @@ class ScvmmApiService {
 
     def executeCommand(command, opts) {
         def winrmPort = opts.sshPort && opts.sshPort != 22 ? opts.sshPort : 5985
-        def output = morpheusContext.executeWindowsCommand(opts.sshHost, winrmPort?.toInteger(), opts.sshUsername, opts.sshPassword, command, null, false).blockingGet()
+        def output = morpheusContext.executeWindowsCommand(opts.sshHost, winrmPort?.toInteger(),
+                opts.sshUsername, opts.sshPassword, command, null, false).blockingGet()
         return output
     }
 
@@ -56,7 +55,8 @@ class ScvmmApiService {
         def rootSharePath = opts.rootSharePath ?: getRootSharePath(opts)
         def tgtFolder = "${rootSharePath}\\images\\$imageFolderName"
         def tgtFullPath = "${tgtFolder}\\$imageName.$imageType"
-        def cmdString = generateCommandString("Get-SCVirtualHardDisk -VMMServer localhost | where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID")
+        def cmdString = generateCommandString("Get-SCVirtualHardDisk -VMMServer localhost |" +
+                " where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID")
         def out = wrapExecuteCommand(cmdString, opts)
 
         if (!out.success) {
@@ -85,18 +85,22 @@ class ScvmmApiService {
                 def sourcePath = findImage(opts, imageName)?.imageName
 
                 def commands = []
-                commands << "\$ignore = Import-SCLibraryPhysicalResource -SourcePath \"$sourcePath\" -SharePath \"$tgtFolder\" -OverwriteExistingFiles -VMMServer localhost"
+                commands << "\$ignore = Import-SCLibraryPhysicalResource -SourcePath \"$sourcePath\"" +
+                        " -SharePath \"$tgtFolder\" -OverwriteExistingFiles -VMMServer localhost"
                 commands << "Get-SCVirtualHardDisk | where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID"
                 def importRes = wrapExecuteCommand(generateCommandString(commands.join(";")), opts)
                 rtn.imageId = importRes.data?.getAt(0)?.ID
 
                 if (importRes.error != null) {
-                    log.info("Import-SCLibraryPhysicalResource failed for error: ${importRes?.error}. Trying with Copy-Item")
+                    log.info("Import-SCLibraryPhysicalResource failed for error: ${importRes?.error}. " +
+                            "Trying with Copy-Item")
                     def copyCommands = []
                     copyCommands << "\$ignore = Copy-Item \"$sourcePath\" \"$tgtFolder\""
                     copyCommands << "\$ignore = Get-SCLibraryShare -VMMServer localhost | Read-SCLibraryShare"
-                    copyCommands << "Get-SCVirtualHardDisk | where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID"
-                    def copyResult = wrapExecuteCommand(generateCommandString(copyCommands.join(";")), opts)
+                    copyCommands << "Get-SCVirtualHardDisk | where {\$_.SharePath -like \"${tgtFolder}\\*\"} |" +
+                            " Select ID"
+                    def copyResult =
+                            wrapExecuteCommand(generateCommandString(copyCommands.join(";")), opts)
                     if (copyResult.error != null) {
                         log.error("Error in Copy-Item: ${copyResult.error}")
                         out.success = false
@@ -122,7 +126,6 @@ class ScvmmApiService {
 
     def createServer(opts) {
         log.debug("createServer: ${opts}")
-
         def rtn = [success: false]
         try {
             def createCommands
@@ -131,7 +134,8 @@ class ScvmmApiService {
             def cloudInitIsoPath
             def removeTemplateCommands = []
 
-            //these classes are not supposed to know our domain model or touch gorm - this needs to be out in the calling service
+            // these classes are not supposed to know our domain model or touch gorm -
+            // this needs to be out in the calling service
             ComputeServer server
             opts.network = morpheusContext.services.network.get(opts.networkId)
             opts.zone = morpheusContext.services.cloud.get(opts.zoneId)
@@ -142,16 +146,21 @@ class ScvmmApiService {
             def diskFolder = "${diskRoot}\\${imageFolderName}"
             if (opts.isSysprep) {
                 //loadControllerServer(opts)
-                opts.unattendPath = importScript(opts.cloudConfigUser, diskFolder, imageFolderName, [fileName: 'Unattend.xml'] + opts)
+                opts.unattendPath = importScript(opts.cloudConfigUser, diskFolder,
+                        imageFolderName, [fileName: 'Unattend.xml'] + opts)
             }
 
             createCommands = buildCreateServerCommands(opts)
 
             if (createCommands.hardwareProfileName) {
-                removeTemplateCommands << "\$HWProfile = Get-SCHardwareProfile -VMMServer localhost | where { \$_.Name -eq \"${createCommands.hardwareProfileName}\"} ; \$ignore = Remove-SCHardwareProfile -HardwareProfile \$HWProfile;"
+                removeTemplateCommands << "\$HWProfile = Get-SCHardwareProfile -VMMServer localhost |" +
+                        " where { \$_.Name -eq \"${createCommands.hardwareProfileName}\"} ;" +
+                        " \$ignore = Remove-SCHardwareProfile -HardwareProfile \$HWProfile;"
             }
             if (createCommands.templateName) {
-                removeTemplateCommands << "\$template = Get-SCVMTemplate -VMMServer localhost -Name \"${createCommands.templateName}\";  \$ignore = Remove-SCVMTemplate -VMTemplate \$template -RunAsynchronously;"
+                removeTemplateCommands << "\$template = Get-SCVMTemplate -VMMServer localhost" +
+                        " -Name \"${createCommands.templateName}\";" +
+                        "  \$ignore = Remove-SCVMTemplate -VMTemplate \$template -RunAsynchronously;"
             }
 
             launchCommand = createCommands.launchCommand
@@ -168,9 +177,11 @@ class ScvmmApiService {
 
             if (createData.success != true) {
                 if (createData.error?.contains('which includes generation 2')) {
-                    rtn.errorMsg = 'The virtual hard disk selected is not compatible with the template which include generation 2 virtual machine functionality.'
+                    rtn.errorMsg = 'The virtual hard disk selected is not compatible with the template which ' +
+                            'include generation 2 virtual machine functionality.'
                 } else if (createData.error?.contains('which includes generation 1')) {
-                    rtn.errorMsg = 'The virtual hard disk selected is not compatible with the template which include generation 1 virtual machine functionality.'
+                    rtn.errorMsg = 'The virtual hard disk selected is not compatible with the template which' +
+                            ' include generation 1 virtual machine functionality.'
                 }
                 throw new Exception("Error in launching VM: ${createData}")
             }
@@ -178,7 +189,8 @@ class ScvmmApiService {
             server = morpheusContext.services.computeServer.get(opts.serverId)//ComputeServer.get(opts.serverId)
             log.info "Create results: ${createData}"
 
-            def newServerExternalId = createData.data && createData.data.size() == 1 && createData.data[0].ObjectType?.toString() == '1' ? createData.data[0].ID : null
+            def newServerExternalId = createData.data && createData.data.size() ==
+                    1 && createData.data[0].ObjectType?.toString() == '1' ? createData.data[0].ID : null
             if (!newServerExternalId) {
                 throw new Exception("Failed to create VM with command: ${launchCommand}: ${createData.error}")
             }
@@ -207,8 +219,10 @@ class ScvmmApiService {
                 def vmDisk = listVirtualDiskDrives(opts,opts.externalId)
                 if (vmDisk.success) {
                     log.info("createServer - received current Disk configuration for VM ${opts.externalId}")
-                    log.info("createServer - additional volumes - opts.additionalTemplateDisks: ${opts.additionalTemplateDisks}")
-                    // TODO We could use diskSpec to provide more meaningful choices for additional disks like the type and format
+                    log.info("createServer - additional volumes - " +
+                            "opts.additionalTemplateDisks: ${opts.additionalTemplateDisks}")
+                    // TODO We could use diskSpec to provide more meaningful choices for
+                    //  additional disks like the type and format
                     opts.additionalTemplateDisks?.each { diskConfig ->
                         def diskSpec = [
                                 //TODO should vhdName come from the UI?
@@ -232,21 +246,36 @@ class ScvmmApiService {
                     changeVolumeTypeForClonedBootDisk(opts, opts.cloneVMId, opts.externalId)
                     // Need to re-create the ISO for the original cloned box and mount the ISO
                     if (opts.cloneBaseOpts && opts.cloneBaseOpts.cloudInitIsoNeeded) {
-                        rtn.cloneBaseResults = [cloudInitIsoPath: importAndMountIso(opts.cloneBaseOpts.cloudConfigBytes, opts.cloneBaseOpts.diskFolder, opts.cloneBaseOpts.imageFolderName, opts.cloneBaseOpts.clonedScvmmOpts)]
+                        rtn.cloneBaseResults = [
+                                cloudInitIsoPath: importAndMountIso(
+                                        opts.cloneBaseOpts.cloudConfigBytes,
+                                        opts.cloneBaseOpts.diskFolder,
+                                        opts.cloneBaseOpts.imageFolderName,
+                                        opts.cloneBaseOpts.clonedScvmmOpts
+                                )
+                        ]
                     }
                 }
                 // Fetch the disks to create a mapping
-                def disks = [osDisk: [externalId: ''], dataDisks: opts.dataDisks?.collect { [id: it.id] }, diskMetaData: [:]]
+                def disks = [osDisk: [externalId: ''],
+                             dataDisks: opts.dataDisks?.collect { [id: it.id] }, diskMetaData: [:]]
                 def diskDrives = listVirtualDiskDrives(opts, opts.externalId)
                 def bookDiskIndex = findBootDiskIndex(diskDrives)
-                //add property VhdLocation to diskMetaData property Location - this will set the StorageVolume.internalId
+                // add property VhdLocation to diskMetaData property Location -
+                // this will set the StorageVolume.internalId
                 diskDrives.disks?.eachWithIndex { disk, diskIndex ->
                     if (diskIndex == bookDiskIndex) {
                         disks.osDisk.externalId = disk.ID
-                        disks.diskMetaData[disk.ID] = [HostVolumeId: disk.HostVolumeId, FileShareId: disk.FileShareId, VhdID: disk.VhdID, Location: disk.VhdLocation, PartitionUniqueId: disk.PartitionUniqueId]
+                        disks.diskMetaData[disk.ID] = [HostVolumeId: disk.HostVolumeId,
+                                                       FileShareId: disk.FileShareId,
+                                                       VhdID: disk.VhdID, Location: disk.VhdLocation,
+                                                       PartitionUniqueId: disk.PartitionUniqueId]
                     } else {
                         disks.dataDisks[diskIndex - 1].externalId = disk.ID
-                        disks.diskMetaData[disk.ID] = [HostVolumeId: disk.HostVolumeId, FileShareId: disk.FileShareId, dataDisk: true, VhdID: disk.VhdID, Location: disk.VhdLocation, PartitionUniqueId: disk.PartitionUniqueId]
+                        disks.diskMetaData[disk.ID] = [HostVolumeId: disk.HostVolumeId,
+                                                       FileShareId: disk.FileShareId, dataDisk: true,
+                                                       VhdID: disk.VhdID, Location: disk.VhdLocation,
+                                                       PartitionUniqueId: disk.PartitionUniqueId]
                     }
 
                     log.debug("createServer - instance volume metadata (disks) : ${disks}")
@@ -289,10 +318,12 @@ class ScvmmApiService {
                 log.info("SCVMM Check for Server Ready ${opts.name}")
                 def serverDetail = checkServerReady(opts, opts.externalId)
                 if (serverDetail.success == true) {
-                    rtn.server = [name: opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId, ipAddress: serverDetail.server?.ipAddress, disks: disks]
+                    rtn.server = [name: opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId,
+                                  ipAddress: serverDetail.server?.ipAddress, disks: disks]
                     rtn.success = true
                 } else {
-                    rtn.server = [name: opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId, ipAddress: serverDetail.server?.ipAddress, disks: disks]
+                    rtn.server = [name: opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId,
+                                  ipAddress: serverDetail.server?.ipAddress, disks: disks]
                 }
             }
 
@@ -320,38 +351,39 @@ class ScvmmApiService {
         log.debug "getServerDetails: ${externalId}"
         def rtn = [success: false, server: null, networkAdapters: [], error: null]
         try {
-            def out = wrapExecuteCommand(generateCommandString("""\$vm = Get-SCVirtualMachine -VMMServer localhost -ID \"${externalId}\";
+            def out = wrapExecuteCommand(generateCommandString(
+                    """\$vm = Get-SCVirtualMachine -VMMServer localhost -ID \"${externalId}\";
 \$report = @()
-if(\$vm) { 
-	\$networkAdapters = Get-SCVirtualNetworkAdapter -VMMServer localhost -VM \$vm | where { \$_.Enabled -eq \$true }; 
-	
-	\$data = New-Object PSObject -property @{
-		ID=\$vm.ID
-		VMId=\$vm.VMId
-		Name=\$vm.Name
-		Status=([Microsoft.VirtualManager.Utils.VMComputerSystemState]\$vm.Status).toString()
-		VirtualMachineState=([Microsoft.VirtualManager.Utils.VMComputerSystemState]\$vm.VirtualMachineState).toString()
-		VirtualHardDiskDrives=@(\$vm.VirtualDiskDrives.VirtualHardDisk.ID)
-		VirtualDiskDrives=@(\$vm.VirtualDiskDrives.ID)
-		ipAddress=''
-		internalIp=''
-	}
-	foreach (\$na in \$networkAdapters) {
-		foreach (\$ip in \$na.IPv4Addresses) {
-			if([string]::IsNullOrEmpty(\$data.ipAddress)) {
-				\$data.ipAddress = \$ip
-				\$data.internalIp = \$ip
-			}
-		}
-	}
-	\$report += \$data
+if(\$vm) {
+    \$networkAdapters = Get-SCVirtualNetworkAdapter -VMMServer localhost -VM \$vm | where { \$_.Enabled -eq \$true };
+    \$data = New-Object PSObject -property @{
+        ID=\$vm.ID
+        VMId=\$vm.VMId
+        Name=\$vm.Name
+        Status=([Microsoft.VirtualManager.Utils.VMComputerSystemState]\$vm.Status).toString()
+        VirtualMachineState=([Microsoft.VirtualManager.Utils.VMComputerSystemState]\$vm.VirtualMachineState).toString()
+        VirtualHardDiskDrives=@(\$vm.VirtualDiskDrives.VirtualHardDisk.ID)
+        VirtualDiskDrives=@(\$vm.VirtualDiskDrives.ID)
+        ipAddress=''
+        internalIp=''
+    }
+    foreach (\$na in \$networkAdapters) {
+        foreach (\$ip in \$na.IPv4Addresses) {
+            if([string]::IsNullOrEmpty(\$data.ipAddress)) {
+                \$data.ipAddress = \$ip
+                \$data.internalIp = \$ip
+            }
+        }
+    }
+    \$report += \$data
 } else {
-	\$data = New-Object PSObject -property @{
-		Error='VM_NOT_FOUND'
-	}
-	\$report += \$data
+    \$data = New-Object PSObject -property @{
+        Error='VM_NOT_FOUND'
+    }
+    \$report += \$data
 }
-\$report """), opts)
+\$report """
+            ), opts)
             if (out.success) {
                 def serverData = out.data?.size() > 0 ? out.data.first() : null
                 if (!serverData?.Error) {
@@ -370,8 +402,9 @@ if(\$vm) {
     def refreshVM(opts, externalId) {
         def rtn = [success: false]
         try {
-            def out = wrapExecuteCommand(generateCommandString("""\$vm = Get-SCVirtualMachine -VMMServer localhost -ID \"${externalId}\"; 
-\$ignore = Read-SCVirtualMachine -VM \$vm """), opts)
+            def out = wrapExecuteCommand(generateCommandString(
+                    """\$vm = Get-SCVirtualMachine -VMMServer localhost -ID \"${externalId}\";
+\$ignore = Read-SCVirtualMachine -VM \$vm"""), opts)
             rtn.success = out.success
         } catch (e) {
             log.error("refreshVM error: ${e}", e)
@@ -383,7 +416,8 @@ if(\$vm) {
         log.debug "discardSavedState: ${opts}, ${externalId}"
         def rtn = [success: false, server: null, networkAdapters: []]
         try {
-            executeCommand("\$vm = Get-SCVirtualMachine -VMMServer localhost -ID \"${externalId}\"; Use-SCDiscardSavedStateVM -VM \$vm;", opts)
+            executeCommand("\$vm = Get-SCVirtualMachine -VMMServer localhost -ID \"${externalId}\";" +
+                    " Use-SCDiscardSavedStateVM -VM \$vm;", opts)
         } catch (e) {
             log.error("discardSavedState error: ${e}", e)
         }
@@ -466,7 +500,8 @@ if(\$cloud) {
 
     def getCapabilityProfiles(opts) {
         def rtn = [success: false, capabilityProfiles: null]
-        def command = generateCommandString("Get-SCCapabilityProfile -VMMServer localhost | Select ID,Name")
+        def command = generateCommandString(
+                "Get-SCCapabilityProfile -VMMServer localhost | Select ID,Name")
         def out = wrapExecuteCommand(command, opts)
         log.debug("out: ${out.data}")
         if (out.success) {
@@ -1005,7 +1040,8 @@ foreach (\$FileShare in \$FileShares){
     def listAllNetworks(opts) {
         def rtn = [success: true, networks: []]
         try {
-            def command = generateCommandString("Get-SCLogicalNetwork -VMMServer localhost | Select ID,Name")
+            def command = generateCommandString(
+                    "Get-SCLogicalNetwork -VMMServer localhost | Select ID,Name")
             def out = wrapExecuteCommand(command, opts)
             log.debug("listNetworks: ${out}")
             if (out.success && out.exitCode == '0' && out.data?.size() > 0) {
@@ -1315,7 +1351,9 @@ foreach (\$network in \$networks) {
     def releaseIPAddress(opts, poolId, ipId) {
         def rtn = [success: true]
         try {
-            def command = generateCommandString("\$ippool = Get-SCStaticIPAddressPool -VMMServer localhost -ID \"$poolId\"; \$ipaddress = Get-SCIPAddress -ID \"$ipId\"; \$ignore = Revoke-SCIPAddress \$ipaddress")
+            def command = generateCommandString(
+                    "\$ippool = Get-SCStaticIPAddressPool -VMMServer localhost -ID \"$poolId\";" +
+                            " \$ipaddress = Get-SCIPAddress -ID \"$ipId\"; \$ignore = Revoke-SCIPAddress \$ipaddress")
             def out = wrapExecuteCommand(command, opts)
             log.info("releaseIPAddress: ${out}")
             if (out.success && out.exitCode == '0') {
@@ -1590,7 +1628,8 @@ foreach (\$network in \$networks) {
         def commands = []
         def diskJobGuid = UUID.randomUUID().toString()
         commands << "\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${opts.externalId}\""
-        commands << "\$VirtualDiskDrive = Get-SCVirtualDiskDrive -VM \$VM | where { \$_.VirtualHardDiskId -eq \"${diskId}\" }"
+        commands << "\$VirtualDiskDrive = Get-SCVirtualDiskDrive -VM \$VM |" +
+                " where { \$_.VirtualHardDiskId -eq \"${diskId}\" }"
         commands << "\$ignore = Remove-SCVirtualDiskDrive -VirtualDiskDrive \$VirtualDiskDrive -JobGroup ${diskJobGuid}"
         commands << "\$ignore = Set-SCVirtualMachine -VM \$VM -JobGroup ${diskJobGuid}"
         def cmd = commands.join(';')
@@ -1610,14 +1649,19 @@ foreach (\$network in \$networks) {
                 if (serverDetail.success == true) {
                     // There isn't a state on the VM to tell us it is created.. but, if the disk size matches
                     // the expected count.. we are good
-                    log.debug "serverStatus: ${serverDetail.server?.Status}, opts.dataDisks: ${opts.dataDisks?.size()}, additionalTemplateDisks: ${opts.additionalTemplateDisks?.size()}"
+                    log.debug "serverStatus: ${serverDetail.server?.Status}," +
+                            " opts.dataDisks: ${opts.dataDisks?.size()}," +
+                            " additionalTemplateDisks: ${opts.additionalTemplateDisks?.size()}"
 
                      if (serverDetail.server?.Status != 'UnderCreation' &&
-                             serverDetail.server?.VirtualDiskDrives?.size() == 1 + ((opts.dataDisks?.size() ?: 0) - (opts.additionalTemplateDisks?.size() ?: 0))) {
+                             serverDetail.server?.VirtualDiskDrives?.size() == 1 +
+                             ((opts.dataDisks?.size() ?: 0) - (opts.additionalTemplateDisks?.size() ?: 0))) {
                         // additionalTemplateDisks are created after VM creation
                         // data disks are created and attached after vm creation
 
-                    // if(serverDetail.server?.Status != 'UnderCreation' && serverDetail.server?.VirtualDiskDrives?.size() == 1 - (opts.additionalTemplateDisks?.size() ?: 0)) {
+                    // if(serverDetail.server?.Status != 'UnderCreation' &&
+                         // serverDetail.server?.VirtualDiskDrives?.size() ==
+                         // 1 - (opts.additionalTemplateDisks?.size() ?: 0)) {
                         // additionalTemplateDisks are created after VM creation
                         rtn.success = true
                         rtn.server = serverDetail.server
@@ -1726,7 +1770,8 @@ Status=\$job.Status.toString()
                     if (waitForIp && !ipAddress) {
                         // Keep waiting
                     } else {
-                        // Most likely, server gets its IP from cloud-init calling back to cloudconfigcontroller/ipaddress... wait for that to happen
+                        // Most likely, server gets its IP from cloud-init calling back to
+                        // cloudconfigcontroller/ipaddress... wait for that to happen
                         // Or... if the desire is to NOT install the agent, then we are not expecting an IP address
                         if (serverDetail.server?.VirtualMachineState == 'Running') {
                             rtn.success = true
@@ -1832,10 +1877,12 @@ if(\$VM) {
         def rootSharePath = opts.rootSharePath ?: getRootSharePath(opts)
 
         def sharePath = "${rootSharePath}\\$imageFolderName"
-        def command = "New-Item -ItemType directory -Path \"${sharePath}\";Copy-Item -Path \"$sourcePath\" -Destination \"${sharePath}\\${resourceName}\""
+        def command = "New-Item -ItemType directory -Path \"${sharePath}\";Copy-Item" +
+                " -Path \"$sourcePath\" -Destination \"${sharePath}\\${resourceName}\""
 
         def attempts = 0
-        def importOpts = [baseBoxProvisionService: opts.scvmmProvisionService, controllerServer: opts.controllerNode] + opts
+        def importOpts = [baseBoxProvisionService: opts.scvmmProvisionService,
+                          controllerServer: opts.controllerNode] + opts
         while (!rtn.success && attempts < 5) {
             def out = executeCommand(command, importOpts)
             rtn.success = out.success
@@ -1848,7 +1895,9 @@ if(\$VM) {
         if (!rtn.success) {
             throw new Exception("Error in importing physical resource: ${rtn}")
         } else {
-            executeCommand("\$libraryshare = Get-SCLibraryShare -VMMServer localhost | where { \$_.Path -eq \"${rootSharePath}\" }; Read-SCLibraryShare -Path \"${sharePath}\" -LibraryShare \$libraryshare", importOpts)
+            executeCommand("\$libraryshare = Get-SCLibraryShare -VMMServer localhost" +
+                    " | where { \$_.Path -eq \"${rootSharePath}\" };" +
+                    " Read-SCLibraryShare -Path \"${sharePath}\" -LibraryShare \$libraryshare", importOpts)
         }
         rtn.success = true
         rtn.sharePath = "${sharePath}\\${resourceName}"
@@ -1902,7 +1951,8 @@ foreach(\$share in \$shares) {
         if (cdPath) {
             commands << "\$iso = Get-SCISO -VMMServer localhost | where {\$_.SharePath -eq \"$cdPath\"}"
             commands << "\$ignore = Set-SCVirtualDVDDrive -VirtualDVDDrive \$dvd -Bus \$dvd.Bus -LUN \$dvd.Lun -NoMedia"
-            commands << "\$ignore = Set-SCVirtualDVDDrive -VirtualDVDDrive \$dvd -Bus \$dvd.Bus -LUN \$dvd.Lun -ISO \$iso"
+            commands << "\$ignore = Set-SCVirtualDVDDrive -VirtualDVDDrive" +
+                    " \$dvd -Bus \$dvd.Bus -LUN \$dvd.Lun -ISO \$iso"
         } else {
             commands << "\$ignore = Set-SCVirtualDVDDrive -VirtualDVDDrive \$dvd -Bus \$dvd.Bus -LUN \$dvd.Lun -NoMedia"
         }
@@ -1915,12 +1965,16 @@ foreach(\$share in \$shares) {
         InputStream inputStream = new ByteArrayInputStream(content.getBytes())
         def command = "\$ignore = mkdir \"${diskFolder}\""
         def dirResults = wrapExecuteCommand(generateCommandString(command), opts)
-        def fileResults = morpheusContext.services.fileCopy.copyToServer(opts.hypervisor, "${opts.fileName}", "${diskFolder}\\${opts.fileName}", inputStream, opts.cloudConfigBytes?.size(), null, true)
+        def fileResults = morpheusContext.services.fileCopy.copyToServer(
+                opts.hypervisor, "${opts.fileName}", "${diskFolder}\\${opts.fileName}",
+                inputStream, opts.cloudConfigBytes?.size(), null, true)
         log.debug ("importScript: fileResults.success: ${fileResults.success}")
         if (!fileResults.success) {
-            throw new Exception("Script Upload to SCVMM Host Failed. Perhaps an agent communication issue...${opts.hypervisor.name}")
+            throw new Exception("Script Upload to SCVMM Host Failed. " +
+                    "Perhaps an agent communication issue...${opts.hypervisor.name}")
         }
-        def importResults = importPhysicalResource(opts, "${diskFolder}\\${opts.fileName}".toString(), imageFolderName, opts.fileName)
+        def importResults = importPhysicalResource(
+                opts, "${diskFolder}\\${opts.fileName}".toString(), imageFolderName, opts.fileName)
         scriptPath = importResults.sharePath
         return scriptPath
     }
@@ -1968,17 +2022,22 @@ For (\$i=0; \$i -le 10; \$i++) {
     def importAndMountIso(cloudConfigBytes, diskFolder, imageFolderName, opts) {
         log.debug "importAndMountIso: ${diskFolder}, ${imageFolderName}, ${opts}"
         def cloudInitIsoPath
-        def isoAction = [inline: true, action: 'rawfile', content: cloudConfigBytes.encodeAsBase64(), targetPath: "${diskFolder}\\config.iso".toString(), opts: [:]]
+        def isoAction = [inline: true, action: 'rawfile', content: cloudConfigBytes.encodeAsBase64(),
+                         targetPath: "${diskFolder}\\config.iso".toString(), opts: [:]]
 
         InputStream inputStream = new ByteArrayInputStream(cloudConfigBytes)
         def command = "\$ignore = mkdir \"${diskFolder}\""
         def dirResults = wrapExecuteCommand(generateCommandString(command), opts)
-        def fileResults = morpheusContext.services.fileCopy.copyToServer(opts.hypervisor, "config.iso", "${diskFolder}\\config.iso", inputStream, cloudConfigBytes?.size())
+        def fileResults = morpheusContext.services.fileCopy.copyToServer(
+                opts.hypervisor, "config.iso", "${diskFolder}\\config.iso",
+                inputStream, cloudConfigBytes?.size())
         log.debug ("importAndMountIso: fileResults?.success: ${fileResults?.success}")
         if (!fileResults.success) {
-            throw new Exception("ISO Upload to SCVMM Host Failed. Perhaps an agent communication issue...${opts.hypervisor.name}")
+            throw new Exception("ISO Upload to SCVMM Host Failed." +
+                    " Perhaps an agent communication issue...${opts.hypervisor.name}")
         }
-        def importResults = importPhysicalResource(opts, isoAction.targetPath, imageFolderName, 'config.iso')
+        def importResults = importPhysicalResource(opts, isoAction.targetPath,
+                imageFolderName, 'config.iso')
         cloudInitIsoPath = importResults.sharePath
         setCdrom(opts, cloudInitIsoPath)
         return cloudInitIsoPath
@@ -2043,8 +2102,13 @@ For (\$i=0; \$i -le 10; \$i++) {
         log.debug("updateServer: vmId: ${vmId}, updates: ${updates}")
         def rtn = [success: false]
         try {
-            def minDynamicMemory = updates.minDynamicMemory ? (int) updates.minDynamicMemory.div(ComputeUtility.ONE_MEGABYTE) : null
-            def maxDynamicMemory = updates.maxDynamicMemory ? (int) updates.maxDynamicMemory.div(ComputeUtility.ONE_MEGABYTE) : null
+            def minDynamicMemory = updates.minDynamicMemory
+                    ? (int) updates.minDynamicMemory.div(ComputeUtility.ONE_MEGABYTE)
+                    : null
+            def maxDynamicMemory = updates.maxDynamicMemory
+                    ? (int) updates.maxDynamicMemory.div(ComputeUtility.ONE_MEGABYTE)
+                    : null
+
 
             if (updates.maxMemory || updates.maxCores || minDynamicMemory || maxDynamicMemory) {
                 def command = "\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${vmId}\";"
@@ -2058,13 +2122,20 @@ For (\$i=0; \$i -le 10; \$i++) {
                     command += "\$minDynamicMemory = ${minDynamicMemory ?: '$null'};"
                     command += "\$maxDynamicMemory = ${maxDynamicMemory ?: '$null'};"
                     command += "\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${vmId}\";"
-                    command += "if(\$minDynamicMemory -and \$maxDynamicMemory -eq \$null) { \$maxDynamicMemory = [int32]::MaxValue };"
+                    command += "if(\$minDynamicMemory -and \$maxDynamicMemory -eq \$null)" +
+                            " { \$maxDynamicMemory = [int32]::MaxValue };"
                     command += "if(\$maxDynamicMemory -and \$minDynamicMemory -eq \$null) { \$minDynamicMemory = 32 };"
                     command += "\$dynamicMemoryEnabled = (\$minDynamicMemory -ne \$null);"
-                    command += "if(\$dynamicMemoryEnabled -eq \$true -and \$minDynamicMemory -gt \$maxMemory) { \$maxMemory = \$minDynamicMemory };"
-                    command += "if(\$dynamicMemoryEnabled) { \$ignore = Set-SCVirtualMachine -VM \$VM -DynamicMemoryEnabled \$true -MemoryMB \$maxMemory -DynamicMemoryMinimumMB \$minDynamicMemory -DynamicMemoryMaximumMB \$maxDynamicMemory } else { \$ignore = Set-SCVirtualMachine -VM \$VM -DynamicMemoryEnabled \$false -MemoryMB \$maxMemory };"
+                    command += "if(\$dynamicMemoryEnabled -eq \$true -and \$minDynamicMemory -gt \$maxMemory) " +
+                            "{ \$maxMemory = \$minDynamicMemory };"
+                    command += "if(\$dynamicMemoryEnabled) { \$ignore = Set-SCVirtualMachine " +
+                            "-VM \$VM -DynamicMemoryEnabled \$true -MemoryMB \$maxMemory -DynamicMemoryMinimumMB" +
+                            " \$minDynamicMemory -DynamicMemoryMaximumMB \$maxDynamicMemory }" +
+                            " else { \$ignore = Set-SCVirtualMachine -VM \$VM -DynamicMemoryEnabled \$false" +
+                            " -MemoryMB \$maxMemory };"
                     command += "\$true"
-                    // Add logic to handle dynamic memory... if the startup memory is lower than dynamic max memory, it won't start.  So, set them equal
+                    // Add logic to handle dynamic memory... if the startup memory is lower than dynamic max memory,
+                    // it won't start.  So, set them equal
                 }
 
                 log.debug "updateServer: ${command}"
@@ -2249,7 +2320,11 @@ For (\$i=0; \$i -le 10; \$i++) {
     def transferImage(opts, cloudFiles, imageName) {
         def rtn = [success: false, results: []]
         CloudFile metadataFile = (CloudFile) cloudFiles?.find { cloudFile -> cloudFile.name == 'metadata.json' }
-        List<CloudFile> vhdFiles = cloudFiles?.findAll { cloudFile -> cloudFile.name.indexOf(".morpkg") == -1 && (cloudFile.name.indexOf('.vhd') > -1 || cloudFile.name.indexOf('.vhdx')) && cloudFile.name.endsWith("/") == false }
+        List<CloudFile> vhdFiles = cloudFiles?.findAll { cloudFile ->
+            cloudFile.name.indexOf(".morpkg") == -1 &&
+                    (cloudFile.name.indexOf('.vhd') > -1 || cloudFile.name.indexOf('.vhdx')) &&
+                    cloudFile.name.endsWith("/") == false
+        }
         log.debug("vhdFiles: ${vhdFiles}")
         def zoneRoot = opts.zoneRoot ?: defaultRoot
         def imageFolderName = formatImageFolder(imageName)
@@ -2262,16 +2337,20 @@ For (\$i=0; \$i -le 10; \$i++) {
         def dirResults = wrapExecuteCommand(generateCommandString(command), opts)
 
         if (metadataFile) {
-            fileList << [inputStream: metadataFile.inputStream, contentLength: metadataFile.contentLength, targetPath: "${tgtFolder}\\metadata.json".toString(), copyRequestFileName: "metadata.json"]
+            fileList << [inputStream: metadataFile.inputStream, contentLength: metadataFile.contentLength,
+                         targetPath: "${tgtFolder}\\metadata.json".toString(), copyRequestFileName: "metadata.json"]
         }
         vhdFiles.each { CloudFile vhdFile ->
             def imageFileName = extractImageFileName(vhdFile.name)
             def filename = extractFileName(vhdFile.name)
-            fileList << [inputStream: vhdFile.inputStream, contentLength: vhdFile.getContentLength(), targetPath: "${tgtFolder}\\${imageFileName}".toString(), copyRequestFileName: filename]
+            fileList << [inputStream: vhdFile.inputStream, contentLength: vhdFile.getContentLength(),
+                         targetPath: "${tgtFolder}\\${imageFileName}".toString(), copyRequestFileName: filename]
         }
         fileList.each { Map fileItem ->
             Long contentLength = (Long) fileItem.contentLength
-            def fileResults = morpheusContext.services.fileCopy.copyToServer(opts.hypervisor, fileItem.copyRequestFileName, fileItem.targetPath, fileItem.inputStream, contentLength, null, true)
+            def fileResults = morpheusContext.services.fileCopy.copyToServer(
+                    opts.hypervisor, fileItem.copyRequestFileName, fileItem.targetPath,
+                    fileItem.inputStream, contentLength, null, true)
             rtn.success = fileResults.success
         }
 
@@ -2282,7 +2361,8 @@ For (\$i=0; \$i -le 10; \$i++) {
         def rtn = [success: false]
         try {
             def snapshotId = opts.snapshotId ?: "${vmId}.${System.currentTimeMillis()}"
-            def command = "\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${vmId}\"; \$ignore = New-SCVMCheckpoint -VM \$VM -Name \"${snapshotId}\""
+            def command = "\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${vmId}\";" +
+                    " \$ignore = New-SCVMCheckpoint -VM \$VM -Name \"${snapshotId}\""
             def out = wrapExecuteCommand(generateCommandString(command), opts)
             rtn.success = out.success && out.exitCode == '0'
             rtn.snapshotId = snapshotId
@@ -2334,9 +2414,12 @@ For (\$i=0; \$i -le 10; \$i++) {
         try {
             def commands = []
             commands << "\$ClonedVM = Get-SCVirtualMachine -VMMServer localhost -ID \"$originalVMId\""
-            commands << "\$OriginalBootDisk = Get-SCVirtualDiskDrive -VMMServer localhost -VM \$ClonedVM | where {\$_.VolumeType -eq \"BootAndSystem\"}"
+            commands << "\$OriginalBootDisk = Get-SCVirtualDiskDrive -VMMServer localhost -VM \$ClonedVM |" +
+                    " where {\$_.VolumeType -eq \"BootAndSystem\"}"
             commands << "\$NewVM = Get-SCVirtualMachine -VMMServer localhost -ID \"$newVMId\""
-            commands << "\$ClonedBootDisk = Get-SCVirtualDiskDrive -VMMServer localhost -VM \$NewVM | where {\$_.VirtualHardDisk -like [io.path]::GetFileNameWithoutExtension(\$OriginalBootDisk.VirtualHardDisk)}"
+            commands << "\$ClonedBootDisk = Get-SCVirtualDiskDrive -VMMServer localhost -VM \$NewVM |" +
+                    " where {\$_.VirtualHardDisk" +
+                    " -like [io.path]::GetFileNameWithoutExtension(\$OriginalBootDisk.VirtualHardDisk)}"
             commands << "Set-SCVirtualDiskDrive -VirtualDiskDrive \$ClonedBootDisk -VolumeType BootAndSystem"
 
             def out = wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
@@ -2362,8 +2445,13 @@ For (\$i=0; \$i -le 10; \$i++) {
         def hardwareProfileName = "Profile${UUID.randomUUID().toString()}"
         def maxCores = opts.maxCores
         def memoryMB = (int) opts.memory.div(ComputeUtility.ONE_MEGABYTE)
-        def minDynamicMemoryMB = opts.minDynamicMemory ? (int) opts.minDynamicMemory.div(ComputeUtility.ONE_MEGABYTE) : null
-        def maxDynamicMemoryMB = opts.maxDynamicMemory ? (int) opts.maxDynamicMemory.div(ComputeUtility.ONE_MEGABYTE) : null
+        def minDynamicMemoryMB = opts.minDynamicMemory
+                ? (int) opts.minDynamicMemory.div(ComputeUtility.ONE_MEGABYTE)
+                : null
+        def maxDynamicMemoryMB = opts.maxDynamicMemory
+                ? (int) opts.maxDynamicMemory.div(ComputeUtility.ONE_MEGABYTE)
+                : null
+
         def zone = opts.zone
         def cloneVMId = opts.cloneVMId
         def vmId = opts.vmId
@@ -2381,7 +2469,11 @@ For (\$i=0; \$i -le 10; \$i++) {
         def isTemplate = opts.isTemplate
         def templateId = opts.templateId
         def deployingToCloud = opts.zone.regionCode ? true : false
-        def volumePaths = (opts.volumePaths && opts.volumePaths?.size() == 1 + dataDisks?.size()) ? opts.volumePaths : null
+        def volumePaths = (
+                opts.volumePaths &&
+                        opts.volumePaths?.size() == 1 + dataDisks?.size()
+        ) ? opts.volumePaths : null
+
 
         // Static v DHCP
         def doStatic = networkConfig?.doStatic
@@ -2405,101 +2497,223 @@ For (\$i=0; \$i -le 10; \$i++) {
             commands << "\$MACAddressType = \"Static\""
         } else if (isTemplate && templateId) {
             // Fetch the MAC settings from the template
-            commands << "\$MACAddressTypeSetting = If (-not ([string]::IsNullOrEmpty(\$template.VirtualNetworkAdapters.MACAddressType))) { \$template.VirtualNetworkAdapters.MACAddressType} Else { \"Dynamic\" }"
+            commands << "\$MACAddressTypeSetting = If (-not ([string]::IsNullOrEmpty(\$template." +
+                    "VirtualNetworkAdapters.MACAddressType))) { \$template.VirtualNetworkAdapters.MACAddressType}" +
+                    " Else { \"Dynamic\" }"
 
-            commands << "if( \$MACAddressTypeSetting -eq \"Static\") { \$MACAddress = \"00:00:00:00:00:00\"; \$MACAddressType = \"Static\"; }"
+            commands << "if( \$MACAddressTypeSetting -eq \"Static\")" +
+                    " { \$MACAddress = \"00:00:00:00:00:00\"; \$MACAddressType = \"Static\"; }"
 
-            commands << "if( \$MACAddressTypeSetting -eq \"Dynamic\") { \$MACAddress = \"\"; \$MACAddressType = \"Dynamic\"; }"
+            commands << "if( \$MACAddressTypeSetting -eq \"Dynamic\")" +
+                    " { \$MACAddress = \"\"; \$MACAddressType = \"Dynamic\"; }"
         } else {
             commands << "\$MACAddress = \"\""
             commands << "\$MACAddressType = \"Dynamic\""
         }
 
-        commands << "\$ignore = New-SCVirtualScsiAdapter -VMMServer localhost -JobGroup $hardwareGuid -AdapterID 7 -ShareVirtualScsiAdapter \$false -ScsiControllerType DefaultTypeNoType"
+        commands << "\$ignore = New-SCVirtualScsiAdapter -VMMServer localhost " +
+                "-JobGroup $hardwareGuid -AdapterID 7 -ShareVirtualScsiAdapter \$false -ScsiControllerType" +
+                " DefaultTypeNoType"
         commands << "\$VMNetwork = Get-SCVMNetwork -VMMServer localhost -ID \"${networkExternalId}\""
         if (subnetExternalId) {
             commands << "\$VMSubnet = Get-SCVMSubnet -VMMServer localhost -ID \"${subnetExternalId}\""
         }
         commands << "If (-not ([string]::IsNullOrEmpty(\$MACAddress))) {"
-        commands << "\$ignore = New-SCVirtualNetworkAdapter -VMMServer localhost -JobGroup $hardwareGuid -MACAddress \$MACAddress -MACAddressType \$MACAddressType -VLanEnabled ${vlanEnabled ? "\$true" : "\$false"} ${vlanEnabled ? "-VLanID ${vlanId}" : ''} -Synthetic -EnableVMNetworkOptimization \$false -EnableMACAddressSpoofing \$false -EnableGuestIPNetworkVirtualizationUpdates \$false -IPv4AddressType ${doStatic && doPool ? 'Static' : 'Dynamic'} -IPv6AddressType Dynamic ${subnetExternalId ? '-VMSubnet \$VMSubnet' : ''} -VMNetwork \$VMNetwork"
+        commands << "\$ignore = New-SCVirtualNetworkAdapter -VMMServer localhost -JobGroup $hardwareGuid" +
+                " -MACAddress \$MACAddress -MACAddressType \$MACAddressType" +
+                " -VLanEnabled ${vlanEnabled ? "\$true" : "\$false"} ${vlanEnabled ? "-VLanID ${vlanId}" : ''}" +
+                " -Synthetic -EnableVMNetworkOptimization \$false " +
+                "-EnableMACAddressSpoofing \$false -EnableGuestIPNetworkVirtualizationUpdates \$false " +
+                "-IPv4AddressType ${doStatic && doPool ? 'Static' : 'Dynamic'} " +
+                "-IPv6AddressType Dynamic ${subnetExternalId ? '-VMSubnet \$VMSubnet' : ''} -VMNetwork \$VMNetwork"
         commands << "} else {"
-        commands << "\$ignore = New-SCVirtualNetworkAdapter -VMMServer localhost -JobGroup $hardwareGuid -MACAddressType \$MACAddressType -VLanEnabled ${vlanEnabled ? "\$true" : "\$false"} ${vlanEnabled ? "-VLanID ${vlanId}" : ''} -Synthetic -EnableVMNetworkOptimization \$false -EnableMACAddressSpoofing \$false -EnableGuestIPNetworkVirtualizationUpdates \$false -IPv4AddressType ${doStatic && doPool ? 'Static' : 'Dynamic'} -IPv6AddressType Dynamic ${subnetExternalId ? '-VMSubnet \$VMSubnet' : ''} -VMNetwork \$VMNetwork"
+        commands << "\$ignore = New-SCVirtualNetworkAdapter -VMMServer localhost -JobGroup $hardwareGuid " +
+                "-MACAddressType \$MACAddressType " +
+                "-VLanEnabled ${vlanEnabled ? "\$true" : "\$false"} ${vlanEnabled ? "-VLanID ${vlanId}" : ''} " +
+                "-Synthetic -EnableVMNetworkOptimization \$false -EnableMACAddressSpoofing \$false " +
+                "-EnableGuestIPNetworkVirtualizationUpdates \$false" +
+                " -IPv4AddressType ${doStatic && doPool ? 'Static' : 'Dynamic'}" +
+                " -IPv6AddressType Dynamic ${subnetExternalId ? '-VMSubnet \$VMSubnet' : ''} -VMNetwork \$VMNetwork"
         commands << "}"
 
         if (scvmmCapabilityProfile) {
-            commands << "\$CapabilityProfile = Get-SCCapabilityProfile -VMMServer localhost | where {\$_.Name -eq \"${scvmmCapabilityProfile?.trim()}\"}"
+            commands << "\$CapabilityProfile = Get-SCCapabilityProfile -VMMServer localhost |" +
+                    " where {\$_.Name -eq \"${scvmmCapabilityProfile?.trim()}\"}"
         }
 
         // Generation
         def generationNumber = !scvmmGeneration || scvmmGeneration == 'generation1' ? '1' : '2'
         if (isTemplate && templateId) {
             // Copying all of the hardware profiles from the existing template over
-            commands << "\$CPUExpectedUtilizationPercent = If (-not ([string]::IsNullOrEmpty(\$template.CPUExpectedUtilizationPercent))) {\$template.CPUExpectedUtilizationPercent} Else { 20 }"
-            commands << "\$DiskIops = If (-not ([string]::IsNullOrEmpty(\$template.DiskIops))) {\$template.DiskIops} Else { 0 }"
-            commands << "\$CPUMaximumPercent = If (-not ([string]::IsNullOrEmpty(\$template.CPUMaximumPercent))) {\$template.CPUMaximumPercent} Else { 100 }"
-            commands << "\$NetworkUtilizationMbps = If (-not ([string]::IsNullOrEmpty(\$template.NetworkUtilizationMbps))) {\$template.NetworkUtilizationMbps} Else { 0 }"
-            commands << "\$CPURelativeWeight = If (-not ([string]::IsNullOrEmpty(\$template.CPURelativeWeight))) {\$template.CPURelativeWeight} Else { 100 }"
-            commands << "\$DynamicMemoryEnabled = If (-not ([string]::IsNullOrEmpty(\$template.DynamicMemoryEnabled))) {\$template.DynamicMemoryEnabled} Else { \$false }"
-            commands << "\$MemoryWeight = If (-not ([string]::IsNullOrEmpty(\$template.MemoryWeight))) {\$template.MemoryWeight} Else { 5000 }"
-            commands << "\$VirtualVideoAdapterEnabled = If (-not ([string]::IsNullOrEmpty(\$template.VirtualVideoAdapterEnabled))) {\$template.VirtualVideoAdapterEnabled} Else { \$false }"
-            commands << "\$CPUReserve = If (-not ([string]::IsNullOrEmpty(\$template.CPUReserve))) {\$template.CPUReserve} Else { 0 }"
-            commands << "\$NumaIsolationRequired = If (-not ([string]::IsNullOrEmpty(\$template.NumaIsolationRequired))) {\$template.NumaIsolationRequired} Else { \$false }"
-            commands << "\$DRProtectionRequired = If (-not ([string]::IsNullOrEmpty(\$template.DRProtectionRequired))) {\$template.DRProtectionRequired} Else { \$false }"
-            commands << "\$CPULimitForMigration = If (-not ([string]::IsNullOrEmpty(\$template.LimitCPUForMigration))) {\$template.LimitCPUForMigration} Else { \$false }"
-            commands << "\$CPULimitFunctionality = If (-not ([string]::IsNullOrEmpty(\$template.CPULimitFunctionality))) {\$template.CPULimitFunctionality} Else { \$false }"
+            commands << "\$CPUExpectedUtilizationPercent = If (-not " +
+                    "([string]::IsNullOrEmpty(\$template.CPUExpectedUtilizationPercent))) " +
+                    "{\$template.CPUExpectedUtilizationPercent} Else { 20 }"
+            commands << "\$DiskIops = If (-not ([string]::IsNullOrEmpty(\$template.DiskIops))) " +
+                    "{\$template.DiskIops} Else { 0 }"
+            commands << "\$CPUMaximumPercent = If (-not ([string]::IsNullOrEmpty(\$template.CPUMaximumPercent))) " +
+                    "{\$template.CPUMaximumPercent} Else { 100 }"
+            commands << "\$NetworkUtilizationMbps = If (-not " +
+                    "([string]::IsNullOrEmpty(\$template.NetworkUtilizationMbps))) " +
+                    "{\$template.NetworkUtilizationMbps} Else { 0 }"
+            commands << "\$CPURelativeWeight = If (-not " +
+                    "([string]::IsNullOrEmpty(\$template.CPURelativeWeight))) " +
+                    "{\$template.CPURelativeWeight} Else { 100 }"
+            commands << "\$DynamicMemoryEnabled = If (-not " +
+                    "([string]::IsNullOrEmpty(\$template.DynamicMemoryEnabled))) " +
+                    "{\$template.DynamicMemoryEnabled} Else { \$false }"
+            commands << "\$MemoryWeight = If (-not " +
+                    "([string]::IsNullOrEmpty(\$template.MemoryWeight))) {\$template.MemoryWeight} Else { 5000 }"
+            commands << "\$VirtualVideoAdapterEnabled = If (-not " +
+                    "([string]::IsNullOrEmpty(\$template.VirtualVideoAdapterEnabled))) " +
+                    "{\$template.VirtualVideoAdapterEnabled} Else { \$false }"
+            commands << "\$CPUReserve = If (-not " +
+                    "([string]::IsNullOrEmpty(\$template.CPUReserve))) {\$template.CPUReserve} Else { 0 }"
+            commands << "\$NumaIsolationRequired = If (-not " +
+                    "([string]::IsNullOrEmpty(\$template.NumaIsolationRequired))) " +
+                    "{\$template.NumaIsolationRequired} Else { \$false }"
+            commands << "\$DRProtectionRequired = If (-not " +
+                    "([string]::IsNullOrEmpty(\$template.DRProtectionRequired))) " +
+                    "{\$template.DRProtectionRequired} Else { \$false }"
+            commands << "\$CPULimitForMigration = If (-not " +
+                    "([string]::IsNullOrEmpty(\$template.LimitCPUForMigration))) " +
+                    "{\$template.LimitCPUForMigration} Else { \$false }"
+            commands << "\$CPULimitFunctionality = If (-not " +
+                    "([string]::IsNullOrEmpty(\$template.CPULimitFunctionality))) " +
+                    "{\$template.CPULimitFunctionality} Else { \$false }"
 
-            commands << "\$ignore = New-SCHardwareProfile -VMMServer localhost -Name \"$hardwareProfileName\" -Description \"Morpheus created profile\" -CPUCount ${maxCores} -MemoryMB ${memoryMB} -DynamicMemoryEnabled \$DynamicMemoryEnabled -MemoryWeight \$MemoryWeight -VirtualVideoAdapterEnabled \$VirtualVideoAdapterEnabled -CPUExpectedUtilizationPercent \$CPUExpectedUtilizationPercent -DiskIops \$DiskIops -CPUMaximumPercent \$CPUMaximumPercent -CPUReserve \$CPUReserve -NumaIsolationRequired \$NumaIsolationRequired -NetworkUtilizationMbps \$NetworkUtilizationMbps -CPURelativeWeight \$CPURelativeWeight -HighlyAvailable ${highlyAvailable ? '\$true' : '\$false'} -DRProtectionRequired \$DRProtectionRequired -CPULimitFunctionality \$CPULimitFunctionality -CPULimitForMigration \$CPULimitForMigration -CheckpointType Production ${scvmmCapabilityProfile ? '-CapabilityProfile \$CapabilityProfile' : ''} -Generation $generationNumber -JobGroup $hardwareGuid"
-            commands << "\$HardwareProfile = Get-SCHardwareProfile -VMMServer localhost | where {\$_.Name -eq \"$hardwareProfileName\"}"
+            commands << "\$ignore = New-SCHardwareProfile -VMMServer localhost " +
+                    "-Name \"$hardwareProfileName\" -Description \"Morpheus created profile\" -CPUCount ${maxCores}" +
+                    " -MemoryMB ${memoryMB} -DynamicMemoryEnabled \$DynamicMemoryEnabled " +
+                    "-MemoryWeight \$MemoryWeight -VirtualVideoAdapterEnabled \$VirtualVideoAdapterEnabled " +
+                    "-CPUExpectedUtilizationPercent \$CPUExpectedUtilizationPercent -DiskIops \$DiskIops" +
+                    " -CPUMaximumPercent \$CPUMaximumPercent -CPUReserve \$CPUReserve" +
+                    " -NumaIsolationRequired \$NumaIsolationRequired -NetworkUtilizationMbps \$NetworkUtilizationMbps" +
+                    " -CPURelativeWeight \$CPURelativeWeight " +
+                    "-HighlyAvailable ${highlyAvailable ? '\$true' : '\$false'} " +
+                    "-DRProtectionRequired \$DRProtectionRequired -CPULimitFunctionality \$CPULimitFunctionality" +
+                    " -CPULimitForMigration \$CPULimitForMigration" +
+                    " -CheckpointType Production" +
+                    " ${scvmmCapabilityProfile ? '-CapabilityProfile \$CapabilityProfile' : ''}" +
+                    " -Generation $generationNumber -JobGroup $hardwareGuid"
+            commands << "\$HardwareProfile = Get-SCHardwareProfile -VMMServer localhost |" +
+                    " where {\$_.Name -eq \"$hardwareProfileName\"}"
 
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.HAVMPriority))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -HAVMPriority \$template.HAVMPriority}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.HAVMPriority)))" +
+                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile" +
+                    " -HAVMPriority \$template.HAVMPriority}"
 
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.ReplicationGroup))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -ReplicationGroup \$template.ReplicationGroup}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.SecureBootEnabled))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -SecureBootEnabled \$template.SecureBootEnabled}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.NumLock))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -NumLock \$template.NumLock}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.Owner))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -Owner \$template.Owner}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.UserRole))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -UserRole \$template.UserRole}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.ReplicationGroup)))" +
+                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile" +
+                    " -ReplicationGroup \$template.ReplicationGroup}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.SecureBootEnabled)))" +
+                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-SecureBootEnabled \$template.SecureBootEnabled}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.NumLock)))" +
+                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -NumLock \$template.NumLock}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.Owner)))" +
+                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -Owner \$template.Owner}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.UserRole)))" +
+                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -UserRole \$template.UserRole}"
             commands << "if( \$DynamicMemoryEnabled -eq \$True) {"
             // We have 3 memories to deal with... startup, min, and max
-            // SCVMMM blows up if we are adjusting values and the startup memory is less than the min memory, or the max memory is less than the startup memory, etc.. ugh
-            commands << "\$startupMemory = ${memoryMB}; If (\$template.Memory -gt ${memoryMB}) { \$startupMemory = \$template.Memory };"
+            // SCVMMM blows up if we are adjusting values and the startup memory is less than
+            // the min memory, or the max memory is less than the startup memory, etc.. ugh
+            commands << "\$startupMemory = ${memoryMB}; If (\$template.Memory -gt ${memoryMB}) " +
+                    "{ \$startupMemory = \$template.Memory };"
             if (minDynamicMemoryMB) {
-                commands << "\$minimumDynamicMemory = ${minDynamicMemoryMB}; If (\$startupMemory -gt \$minimumDynamicMemory) { \$minimumDynamicMemory = \$startupMemory };"
+                commands << "\$minimumDynamicMemory = ${minDynamicMemoryMB}; " +
+                        "If (\$startupMemory -gt \$minimumDynamicMemory) { \$minimumDynamicMemory = \$startupMemory };"
             } else {
-                commands << "\$minimumDynamicMemory = \$template.DynamicMemoryMinimumMB; If (\$startupMemory -gt \$minimumDynamicMemory) { \$minimumDynamicMemory = \$startupMemory };"
+                commands << "\$minimumDynamicMemory = \$template.DynamicMemoryMinimumMB; " +
+                        "If (\$startupMemory -gt \$minimumDynamicMemory) { \$minimumDynamicMemory = \$startupMemory };"
             }
             if (maxDynamicMemoryMB) {
-                commands << "\$maximumDynamicMemory = ${maxDynamicMemoryMB}; If (\$startupMemory -gt \$maximumDynamicMemory) { \$maximumDynamicMemory = \$startupMemory };"
+                commands << "\$maximumDynamicMemory = ${maxDynamicMemoryMB}; " +
+                        "If (\$startupMemory -gt \$maximumDynamicMemory) { \$maximumDynamicMemory = \$startupMemory };"
             } else {
-                commands << "\$maximumDynamicMemory = \$template.DynamicMemoryMaximumMB; If (\$startupMemory -gt \$maximumDynamicMemory) { \$maximumDynamicMemory = \$startupMemory };"
+                commands << "\$maximumDynamicMemory = \$template.DynamicMemoryMaximumMB; " +
+                        "If (\$startupMemory -gt \$maximumDynamicMemory) { \$maximumDynamicMemory = \$startupMemory };"
             }
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.Memory))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -DynamicMemoryEnabled \$True -MemoryMB \$startupMemory}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.DynamicMemoryMaximumMB))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -DynamicMemoryEnabled \$True -DynamicMemoryMinimumMB \$minimumDynamicMemory}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.DynamicMemoryMaximumMB))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -DynamicMemoryEnabled \$True -DynamicMemoryMaximumMB \$maximumDynamicMemory}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.DynamicMemoryBufferPercentage))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -DynamicMemoryEnabled \$True -DynamicMemoryBufferPercentage \$template.DynamicMemoryBufferPercentage}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.Memory))) " +
+                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-DynamicMemoryEnabled \$True -MemoryMB \$startupMemory}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.DynamicMemoryMaximumMB)))" +
+                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-DynamicMemoryEnabled \$True -DynamicMemoryMinimumMB \$minimumDynamicMemory}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.DynamicMemoryMaximumMB))) " +
+                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-DynamicMemoryEnabled \$True -DynamicMemoryMaximumMB \$maximumDynamicMemory}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.DynamicMemoryBufferPercentage)))" +
+                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-DynamicMemoryEnabled \$True -DynamicMemoryBufferPercentage" +
+                    " \$template.DynamicMemoryBufferPercentage}"
             commands << "}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.MonitorMaximumCount))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -MonitorMaximumCount \$template.MonitorMaximumCount}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.MonitorMaximumResolution))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -MonitorMaximumResolution \$template.MonitorMaximumResolution}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.RecoveryPointObjective))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -RecoveryPointObjective \$template.RecoveryPointObjective}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.ProtectionProvider))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -ProtectionProvider \$template.ProtectionProvider}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.BootOrder))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -BootOrder \$template.BootOrder}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.FirstBootDevice)) -and @('CD','PXE','SCSI') -contains \$template.FirstBootDevice) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -FirstBootDevice \$template.FirstBootDevice; Write-Output \"FirstBootDevice set successfully to: \$(\$template.FirstBootDevice)\" }"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.SecureBootTemplate))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -SecureBootTemplate \$template.SecureBootTemplate}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.CPUType))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -CPUType \$template.CPUType}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.MonitorMaximumCount)))" +
+                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-MonitorMaximumCount \$template.MonitorMaximumCount}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.MonitorMaximumResolution))) " +
+                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-MonitorMaximumResolution \$template.MonitorMaximumResolution}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.RecoveryPointObjective))) " +
+                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-RecoveryPointObjective \$template.RecoveryPointObjective}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.ProtectionProvider))) " +
+                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-ProtectionProvider \$template.ProtectionProvider}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.BootOrder))) " +
+                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -BootOrder \$template.BootOrder}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.FirstBootDevice)) " +
+                    "-and @('CD','PXE','SCSI') -contains \$template.FirstBootDevice) " +
+                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-FirstBootDevice \$template.FirstBootDevice; Write-Output \"FirstBootDevice set " +
+                    "successfully to: \$(\$template.FirstBootDevice)\" }"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.SecureBootTemplate))) " +
+                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-SecureBootTemplate \$template.SecureBootTemplate}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.CPUType))) " +
+                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -CPUType \$template.CPUType}"
             commands << "if( \$NumaIsolationRequired -eq \$True) {"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.CPUPerVirtualNumaNodeMaximum))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -CPUPerVirtualNumaNodeMaximum \$template.CPUPerVirtualNumaNodeMaximum}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.MemoryPerVirtualNumaNodeMaximumMB))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -MemoryPerVirtualNumaNodeMaximumMB \$template.MemoryPerVirtualNumaNodeMaximumMB}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.VirtualNumaNodesPerSocketMaximum))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -VirtualNumaNodesPerSocketMaximum \$template.VirtualNumaNodesPerSocketMaximum}"
+            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.CPUPerVirtualNumaNodeMaximum))) " +
+                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-CPUPerVirtualNumaNodeMaximum \$template.CPUPerVirtualNumaNodeMaximum}"
+            commands << "\$ignore = If (-not " +
+                    "([string]::IsNullOrEmpty(\$template.MemoryPerVirtualNumaNodeMaximumMB)))" +
+                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-MemoryPerVirtualNumaNodeMaximumMB \$template.MemoryPerVirtualNumaNodeMaximumMB}"
+            commands << "\$ignore = If (-not " +
+                    "([string]::IsNullOrEmpty(\$template.VirtualNumaNodesPerSocketMaximum))) " +
+                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-VirtualNumaNodesPerSocketMaximum \$template.VirtualNumaNodesPerSocketMaximum}"
             commands << "}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.AutomaticCriticalErrorAction))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -AutomaticCriticalErrorAction \$template.AutomaticCriticalErrorAction}"
-            commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.AutomaticCriticalErrorActionTimeout))) { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -AutomaticCriticalErrorActionTimeout \$template.AutomaticCriticalErrorActionTimeout}"
+            commands << "\$ignore = If (-not " +
+                    "([string]::IsNullOrEmpty(\$template.AutomaticCriticalErrorAction))) " +
+                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-AutomaticCriticalErrorAction \$template.AutomaticCriticalErrorAction}"
+            commands << "\$ignore = If (-not " +
+                    "([string]::IsNullOrEmpty(\$template.AutomaticCriticalErrorActionTimeout))) " +
+                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile" +
+                    " -AutomaticCriticalErrorActionTimeout \$template.AutomaticCriticalErrorActionTimeout}"
         } else {
-            commands << "\$ignore = New-SCHardwareProfile -VMMServer localhost -Name \"$hardwareProfileName\" -Description \"Morpheus created profile\" -CPUCount ${maxCores} -MemoryMB ${memoryMB} -DynamicMemoryEnabled \$false -MemoryWeight 5000 -VirtualVideoAdapterEnabled \$false -CPUExpectedUtilizationPercent 20 -DiskIops 0 -CPUMaximumPercent 100 -CPUReserve 0 -NumaIsolationRequired \$false -NetworkUtilizationMbps 0 -CPURelativeWeight 100 -HighlyAvailable ${highlyAvailable ? '\$true' : '\$false'} -DRProtectionRequired \$false -CPULimitFunctionality \$false -CPULimitForMigration \$false -CheckpointType Production ${scvmmCapabilityProfile ? '-CapabilityProfile \$CapabilityProfile' : ''} -Generation $generationNumber -JobGroup $hardwareGuid"
-            commands << "\$HardwareProfile = Get-SCHardwareProfile -VMMServer localhost | where {\$_.Name -eq \"$hardwareProfileName\"}"
+            commands << "\$ignore = New-SCHardwareProfile -VMMServer localhost " +
+                    "-Name \"$hardwareProfileName\" -Description \"Morpheus created profile\" -CPUCount ${maxCores}" +
+                    " -MemoryMB ${memoryMB} -DynamicMemoryEnabled \$false -MemoryWeight 5000 " +
+                    "-VirtualVideoAdapterEnabled \$false -CPUExpectedUtilizationPercent 20 -DiskIops 0 " +
+                    "-CPUMaximumPercent 100 -CPUReserve 0 -NumaIsolationRequired \$false " +
+                    "-NetworkUtilizationMbps 0 -CPURelativeWeight 100 " +
+                    "-HighlyAvailable ${highlyAvailable ? '\$true' : '\$false'} " +
+                    "-DRProtectionRequired \$false -CPULimitFunctionality \$false " +
+                    "-CPULimitForMigration \$false -CheckpointType " +
+                    "Production ${scvmmCapabilityProfile ? '-CapabilityProfile \$CapabilityProfile' : ''} " +
+                    "-Generation $generationNumber -JobGroup $hardwareGuid"
+            commands << "\$HardwareProfile = Get-SCHardwareProfile -VMMServer localhost |" +
+                    " where {\$_.Name -eq \"$hardwareProfileName\"}"
         }
 
         if (minDynamicMemoryMB && maxDynamicMemoryMB) {
-            commands << "\$ignore = Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -DynamicMemoryEnabled \$True -DynamicMemoryMinimumMB ${minDynamicMemoryMB}"
-            commands << "\$ignore = Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -DynamicMemoryEnabled \$True -DynamicMemoryMaximumMB ${maxDynamicMemoryMB}"
+            commands << "\$ignore = Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-DynamicMemoryEnabled \$True -DynamicMemoryMinimumMB ${minDynamicMemoryMB}"
+            commands << "\$ignore = Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    "-DynamicMemoryEnabled \$True -DynamicMemoryMaximumMB ${maxDynamicMemoryMB}"
         }
 
         if (deployingToCloud) {
@@ -2520,9 +2734,15 @@ For (\$i=0; \$i -le 10; \$i++) {
                 // virtualImage is an SCVMM VHD - locate this and use to form a Temporary Template
                 commands << "\$VirtualHardDisk = Get-SCVirtualHardDisk -VMMServer localhost -ID \"${imageId}\""
                 if (volumePath && !deployingToCloud) {
-                    commands << "\$ignore = New-SCVirtualDiskDrive -VMMServer localhost ${generationNumber == '1' ? '-IDE' : '-SCSI'} -Bus 0 -LUN 0 -JobGroup $diskJobGuid -CreateDiffDisk \$false -VirtualHardDisk \$VirtualHardDisk -Path \"$volumePath\" -VolumeType BootAndSystem"
+                    commands << "\$ignore = New-SCVirtualDiskDrive -VMMServer " +
+                            "localhost ${generationNumber == '1' ? '-IDE' : '-SCSI'} -Bus 0 -LUN 0 " +
+                            "-JobGroup $diskJobGuid -CreateDiffDisk \$false -VirtualHardDisk \$VirtualHardDisk " +
+                            "-Path \"$volumePath\" -VolumeType BootAndSystem"
                 } else {
-                    commands << "\$ignore = New-SCVirtualDiskDrive -VMMServer localhost ${generationNumber == '1' ? '-IDE' : '-SCSI'} -Bus 0 -LUN 0 -JobGroup $diskJobGuid -CreateDiffDisk \$false -VirtualHardDisk \$VirtualHardDisk -VolumeType BootAndSystem"
+                    commands << "\$ignore = New-SCVirtualDiskDrive -VMMServer " +
+                            "localhost ${generationNumber == '1' ? '-IDE' : '-SCSI'} -Bus 0 -LUN 0 " +
+                            "-JobGroup $diskJobGuid -CreateDiffDisk \$false -VirtualHardDisk \$VirtualHardDisk " +
+                            "-VolumeType BootAndSystem"
                 }
 
                 dataDisks?.eachWithIndex { dataDisk, index ->
@@ -2531,17 +2751,22 @@ For (\$i=0; \$i -le 10; \$i++) {
                         fromDisk = "\$VirtualHardDisk${index}"
                         def diskExternalId = diskExternalIdMappings[1 + index]?.externalId
                         if(diskExternalId) {
-                            commands << "${fromDisk} = Get-SCVirtualHardDisk -VMMServer localhost -ID \"${diskExternalId}\""
+                            commands << "${fromDisk} = Get-SCVirtualHardDisk -VMMServer " +
+                                    "localhost -ID \"${diskExternalId}\""
                         }
                     }
                     def busNumber = '0'
-                    def generateResults = generateDataDiskCommand(busNumber, index, diskJobGuid, (int) dataDisk.maxStorage.div(ComputeUtility.ONE_MEGABYTE), dataDisk.volumePath, fromDisk, deployingToCloud)
+                    def generateResults = generateDataDiskCommand(busNumber, index, diskJobGuid,
+                            (int) dataDisk.maxStorage.div(ComputeUtility.ONE_MEGABYTE), dataDisk.volumePath,
+                            fromDisk, deployingToCloud)
                     commands << generateResults.command
                 }
 
                 // Create the Temporary Template
 
-                commands << "\$ignore = New-SCVMTemplate -Name \"$templateName\" -Generation $generationNumber -HardwareProfile \$HardwareProfile -JobGroup $diskJobGuid ${isSysprep ? '-OperatingSystem $OS' : '-NoCustomization'}"
+                commands << "\$ignore = New-SCVMTemplate -Name \"$templateName\" " +
+                        "-Generation $generationNumber -HardwareProfile \$HardwareProfile " +
+                        "-JobGroup $diskJobGuid ${isSysprep ? '-OperatingSystem $OS' : '-NoCustomization'}"
                 commands << "if( -not \$? ) { Exit 23 }"
                 commands << "\$template = Get-SCVMTemplate -All | where { \$_.Name -eq \"$templateName\" }"
             }
@@ -2551,7 +2776,8 @@ For (\$i=0; \$i -le 10; \$i++) {
             commands << "\$virtualMachineConfiguration = New-SCVMConfiguration -VMTemplate \$template -Name \"$vmId\""
 
             if (doStatic && doPool) {
-                commands << "\$VNAConfig = Get-SCVirtualNetworkAdapterConfiguration -VMConfiguration \$virtualMachineConfiguration"
+                commands << "\$VNAConfig = Get-SCVirtualNetworkAdapterConfiguration " +
+                        "-VMConfiguration \$virtualMachineConfiguration"
                 if (doPool) {
                     commands << "\$ippool = Get-SCStaticIPAddressPool -ID \"$poolId\""
                     commands << "\$ipaddress = Get-SCIPAddress -IPAddress \"$ipAddress\""
@@ -2566,26 +2792,37 @@ For (\$i=0; \$i -le 10; \$i++) {
 
             if (isSysprep && unattendPath) {
                 // Need to fetch the answerFile
-                commands << "\$AnswerFile = Get-SCScript | where {\$_.IsXMLAnswerFile -eq \$True} | where {\$_.SharePath -eq \"$unattendPath\"}"
+                commands << "\$AnswerFile = Get-SCScript | where {\$_.IsXMLAnswerFile -eq \$True} |" +
+                        " where {\$_.SharePath -eq \"$unattendPath\"}"
             }
 
             // OS Disk configured in Template: Prepare to deploy VM
             if (deployingToCloud) {
                 // deployingToCloud - then assign cloud Only - no need to pin Storage paths
                 // Deploying to a Cloud $cloud should be available
-                commands << "\$ignore = Set-SCVMConfiguration -VMConfiguration \$virtualMachineConfiguration -CapabilityProfile \$CapabilityProfile -cloud \$cloud"
+                commands << "\$ignore = Set-SCVMConfiguration -VMConfiguration \$virtualMachineConfiguration" +
+                        " -CapabilityProfile \$CapabilityProfile -cloud \$cloud"
                 commands << "\$ignore = Update-SCVMConfiguration -VMConfiguration \$virtualMachineConfiguration"
-                def newVMString = "\$createdVm = New-SCVirtualMachine -Name \"$vmId\" -VMConfiguration \$virtualMachineConfiguration ${isSysprep ? "-AnswerFile \$AnswerFile" : ""} -HardwareProfile \$HardwareProfile -JobGroup \"$diskJobGuid\" -StartAction \"TurnOnVMIfRunningWhenVSStopped\" -RunAsynchronously -StopAction \"SaveVM\""
+                def newVMString = "\$createdVm = New-SCVirtualMachine" +
+                        " -Name \"$vmId\" -VMConfiguration \$virtualMachineConfiguration" +
+                        " ${isSysprep ? "-AnswerFile \$AnswerFile" : ""} -HardwareProfile \$HardwareProfile" +
+                        " -JobGroup \"$diskJobGuid\" -StartAction \"TurnOnVMIfRunningWhenVSStopped\" " +
+                        "-RunAsynchronously -StopAction \"SaveVM\""
                 newVMString = appendOSCustomization(newVMString, opts)
                 commands << newVMString
             } else {
                 //HostGroup deployment NOT TO CLOUD
                 if(hostExternalId) {
                     commands << "\$vmHost = Get-SCVMHost -ID \"$hostExternalId\""
-                    commands << "\$ignore = Set-SCVMConfiguration -VMConfiguration \$virtualMachineConfiguration -VMHost \$vmHost"
+                    commands << "\$ignore = Set-SCVMConfiguration -VMConfiguration \$virtualMachineConfiguration" +
+                            " -VMHost \$vmHost"
                     commands << "\$ignore = Update-SCVMConfiguration -VMConfiguration \$virtualMachineConfiguration"
                     //Do Not map Additional volumes here - done later
-                    def newVMString = "\$createdVm = New-SCVirtualMachine -Name \"$vmId\" -VMConfiguration \$virtualMachineConfiguration ${isSysprep ? "-AnswerFile \$AnswerFile" : ""} ${isTemplate ? "-HardwareProfile \$HardwareProfile" : ""} -JobGroup \"$diskJobGuid\" -StartAction \"TurnOnVMIfRunningWhenVSStopped\" -RunAsynchronously -StopAction \"SaveVM\""
+                    def newVMString = "\$createdVm = New-SCVirtualMachine -Name \"$vmId\" -VMConfiguration" +
+                            " \$virtualMachineConfiguration ${isSysprep ? "-AnswerFile \$AnswerFile" : ""} " +
+                            "${isTemplate ? "-HardwareProfile \$HardwareProfile" : ""} " +
+                            "-JobGroup \"$diskJobGuid\" -StartAction \"TurnOnVMIfRunningWhenVSStopped\" " +
+                            "-RunAsynchronously -StopAction \"SaveVM\""
                     newVMString = appendOSCustomization(newVMString, opts)
                     commands << newVMString
                 } else {
@@ -2596,9 +2833,13 @@ For (\$i=0; \$i -le 10; \$i++) {
             //Clone request
             def virtualNetworkGuid = UUID.randomUUID().toString()
             commands << "\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${cloneVMId}\""
-            commands << "if (\$VMNetwork.VMSubnet) { if (\$VMNetwork.VMSubnet -is [Array] -or \$VMNetwork.VMSubnet -is [System.Collections.Generic.List[Microsoft.SystemCenter.VirtualMachineManager.VMSubnet]]) { \$VMSubnet = \$VMNetwork.VMSubnet[0]; } else { \$VMSubnet = \$VMNetwork.VMSubnet } }"
+            commands << "if (\$VMNetwork.VMSubnet) { if (\$VMNetwork.VMSubnet -is [Array] " +
+                    "-or \$VMNetwork.VMSubnet -is [System.Collections.Generic.List[Microsoft.SystemCenter." +
+                    "VirtualMachineManager.VMSubnet]]) { \$VMSubnet = \$VMNetwork.VMSubnet[0]; } " +
+                    "else { \$VMSubnet = \$VMNetwork.VMSubnet } }"
             commands << "\$VirtualNetworkAdapter = Get-SCVirtualNetworkAdapter -VMMServer localhost -VM \$VM"
-            commands << "\$VirtualNetwork = Get-SCVirtualNetwork -VMMServer localhost -Name \$VirtualNetworkAdapter.VirtualNetwork | Select-Object -first 1"
+            commands << "\$VirtualNetwork = Get-SCVirtualNetwork -VMMServer localhost " +
+                    "-Name \$VirtualNetworkAdapter.VirtualNetwork | Select-Object -first 1"
             def ipConfig = ""
             if (doStatic) {
                 ipConfig = "-IPv4AddressType Static -IPv4Address \"${ipAddress}\""
@@ -2606,24 +2847,45 @@ For (\$i=0; \$i -le 10; \$i++) {
                 ipConfig = "-IPv4AddressType Dynamic"
             }
             commands << "if (\$VMSubnet) {"
-            commands << "Set-SCVirtualNetworkAdapter -VirtualNetworkAdapter \$VirtualNetworkAdapter -VMNetwork \$VMNetwork -VMSubnet \$VMSubnet ${vlanEnabled ? "-VLanEnabled \$true" : ""} ${vlanEnabled ? "-VLanID ${vlanId}" : ''} -VirtualNetwork \$VirtualNetwork -MACAddressType Dynamic ${ipConfig} -IPv6AddressType Dynamic -NoPortClassification -EnableVMNetworkOptimization \$false -EnableMACAddressSpoofing \$false -JobGroup $virtualNetworkGuid"
+            commands << "Set-SCVirtualNetworkAdapter -VirtualNetworkAdapter \$VirtualNetworkAdapter " +
+                    "-VMNetwork \$VMNetwork -VMSubnet " +
+                    "\$VMSubnet ${vlanEnabled ? "-VLanEnabled \$true" : ""} " +
+                    "${vlanEnabled ? "-VLanID ${vlanId}" : ''} -VirtualNetwork \$VirtualNetwork -" +
+                    "MACAddressType Dynamic ${ipConfig} -IPv6AddressType Dynamic " +
+                    "-NoPortClassification -EnableVMNetworkOptimization \$false -EnableMACAddressSpoofing \$false" +
+                    " -JobGroup $virtualNetworkGuid"
             commands << "} else {"
-            commands << "Set-SCVirtualNetworkAdapter -VirtualNetworkAdapter \$VirtualNetworkAdapter -VMNetwork \$VMNetwork ${vlanEnabled ? "-VLanEnabled \$true" : ""} ${vlanEnabled ? "-VLanID ${vlanId}" : ''} -VirtualNetwork \$VirtualNetwork -MACAddressType Dynamic ${ipConfig} -IPv6AddressType Dynamic -NoPortClassification -EnableVMNetworkOptimization \$false -EnableMACAddressSpoofing \$false -JobGroup $virtualNetworkGuid"
+            commands << "Set-SCVirtualNetworkAdapter -VirtualNetworkAdapter \$VirtualNetworkAdapter " +
+                    "-VMNetwork \$VMNetwork ${vlanEnabled ? "-VLanEnabled \$true" : ""}" +
+                    " ${vlanEnabled ? "-VLanID ${vlanId}" : ''} -VirtualNetwork \$VirtualNetwork -MACAddressType" +
+                    " Dynamic ${ipConfig} -IPv6AddressType Dynamic -NoPortClassification " +
+                    "-EnableVMNetworkOptimization \$false -EnableMACAddressSpoofing \$false " +
+                    "-JobGroup $virtualNetworkGuid"
             commands << "}"
             if (hostExternalId) {
                 commands << "\$vmHost = Get-SCVMHost -ID \"$hostExternalId\""
                 def newVMString
                 if (deployingToCloud) {
-                    newVMString = "\$createdVm = New-SCVirtualMachine -VM \$VM -Name \"$vmId\" -JobGroup $virtualNetworkGuid -UseDiffDiskOptimization -RunAsynchronously -Cloud \$cloud -HardwareProfile \$HardwareProfile -StartAction TurnOnVMIfRunningWhenVSStopped -StopAction SaveVM"
+                    newVMString = "\$createdVm = New-SCVirtualMachine -VM \$VM -Name \"$vmId\" " +
+                            "-JobGroup $virtualNetworkGuid -UseDiffDiskOptimization -RunAsynchronously " +
+                            "-Cloud \$cloud -HardwareProfile \$HardwareProfile -StartAction " +
+                            "TurnOnVMIfRunningWhenVSStopped -StopAction SaveVM"
                 } else {
-                    newVMString = "\$createdVm = New-SCVirtualMachine -VM \$VM -Name \"$vmId\" -JobGroup $virtualNetworkGuid -UseDiffDiskOptimization -RunAsynchronously -VMHost \$vmHost -Path \"$volumePath\" -HardwareProfile \$HardwareProfile -StartAction TurnOnVMIfRunningWhenVSStopped -StopAction SaveVM"
+                    newVMString = "\$createdVm = New-SCVirtualMachine -VM \$VM -Name \"$vmId\" " +
+                            "-JobGroup $virtualNetworkGuid -UseDiffDiskOptimization -RunAsynchronously " +
+                            "-VMHost \$vmHost -Path \"$volumePath\" -HardwareProfile \$HardwareProfile " +
+                            "-StartAction TurnOnVMIfRunningWhenVSStopped -StopAction SaveVM"
                 }
 
                 newVMString = appendOSCustomization(newVMString, opts)
                 commands << newVMString
 
             } else {
-                def newVMString = "\$createdVm = New-SCVirtualMachine -VM \$VM -Name \"$vmId\" ${deployingToCloud ? "-Cloud \$cloud" : ""} -JobGroup $virtualNetworkGuid -UseDiffDiskOptimization -RunAsynchronously -Cloud \$cloud -HardwareProfile \$HardwareProfile -StartAction TurnOnVMIfRunningWhenVSStopped -StopAction SaveVM"
+                def newVMString = "\$createdVm = New-SCVirtualMachine -VM \$VM " +
+                        "-Name \"$vmId\" ${deployingToCloud ? "-Cloud \$cloud" : ""} " +
+                        "-JobGroup $virtualNetworkGuid -UseDiffDiskOptimization -RunAsynchronously " +
+                        "-Cloud \$cloud -HardwareProfile \$HardwareProfile -StartAction " +
+                        "TurnOnVMIfRunningWhenVSStopped -StopAction SaveVM"
                 newVMString = appendOSCustomization(newVMString, opts)
                 commands << newVMString
             }
@@ -2666,7 +2928,9 @@ For (\$i=0; \$i -le 10; \$i++) {
         retString
     }
 
-    def generateDataDiskCommand(busNumber = '0', dataDiskNumber, diskJobGuid, sizeMB, path = null, fromDisk = null, discoverAvailableLUN = false, deployingToCloud = false) {
+    def generateDataDiskCommand(busNumber = '0', dataDiskNumber, diskJobGuid, sizeMB,
+                                path = null, fromDisk = null, discoverAvailableLUN = false,
+                                deployingToCloud = false) {
         def rtn = [command: null, fileName: '']
 
         // def diskParamMap = [
@@ -2687,17 +2951,29 @@ For (\$i=0; \$i -le 10; \$i++) {
 
         if (fromDisk && !deployingToCloud) {
             if (path) {
-                rtn.command = "\$ignore = New-SCVirtualDiskDrive -VMMServer localhost -${diskParams.type} -Bus ${diskParams.bus} -LUN ${diskParams.lun} -JobGroup ${diskJobGuid} -CreateDiffDisk \$false -VirtualHardDisk $fromDisk -FileName \"$fileName\" -Path \"$path\" -VolumeType None"
+                rtn.command = "\$ignore = New-SCVirtualDiskDrive -VMMServer localhost -${diskParams.type} " +
+                        "-Bus ${diskParams.bus} -LUN ${diskParams.lun} -JobGroup ${diskJobGuid} " +
+                        "-CreateDiffDisk \$false -VirtualHardDisk $fromDisk -FileName \"$fileName\" " +
+                        "-Path \"$path\" -VolumeType None"
                 // Can't set size when creating from another existing disk
             } else {
-                rtn.command = "\$ignore = New-SCVirtualDiskDrive -VMMServer localhost -${diskParams.type} -Bus ${diskParams.bus} -LUN ${diskParams.lun} -JobGroup ${diskJobGuid} -CreateDiffDisk \$false -VirtualHardDisk $fromDisk -FileName \"$fileName\" -VolumeType None"
+                rtn.command = "\$ignore = New-SCVirtualDiskDrive -VMMServer localhost -${diskParams.type} " +
+                        "-Bus ${diskParams.bus} -LUN ${diskParams.lun} " +
+                        "-JobGroup ${diskJobGuid} -CreateDiffDisk \$false -VirtualHardDisk $fromDisk " +
+                        "-FileName \"$fileName\" -VolumeType None"
                 // Can't set size when creating from another existing disk
             }
         } else {
             if (path && !deployingToCloud) {
-                rtn.command = "\$ignore = New-SCVirtualDiskDrive -VMMServer localhost -${diskParams.type} -Bus ${diskParams.bus} -LUN ${diskParams.lun} -JobGroup ${diskJobGuid} -VirtualHardDiskSizeMB ${sizeMB} -CreateDiffDisk \$false -Dynamic -FileName \"$fileName\" -Path \"$path\" -VolumeType None"
+                rtn.command = "\$ignore = New-SCVirtualDiskDrive -VMMServer localhost -${diskParams.type} " +
+                        "-Bus ${diskParams.bus} -LUN ${diskParams.lun} -JobGroup ${diskJobGuid} " +
+                        "-VirtualHardDiskSizeMB ${sizeMB} -CreateDiffDisk \$false -Dynamic " +
+                        "-FileName \"$fileName\" -Path \"$path\" -VolumeType None"
             } else {
-                rtn.command = "\$ignore = New-SCVirtualDiskDrive -VMMServer localhost -${diskParams.type} -Bus ${diskParams.bus} -LUN ${diskParams.lun} -JobGroup ${diskJobGuid} -VirtualHardDiskSizeMB ${sizeMB} -CreateDiffDisk \$false -Dynamic -FileName \"$fileName\" -VolumeType None"
+                rtn.command = "\$ignore = New-SCVirtualDiskDrive -VMMServer localhost -${diskParams.type} " +
+                        "-Bus ${diskParams.bus} -LUN ${diskParams.lun} -JobGroup ${diskJobGuid} " +
+                        "-VirtualHardDiskSizeMB ${sizeMB} -CreateDiffDisk \$false -Dynamic " +
+                        "-FileName \"$fileName\" -VolumeType None"
             }
 
         }
@@ -2707,7 +2983,8 @@ For (\$i=0; \$i -le 10; \$i++) {
 
     def getScvmmZoneOpts(MorpheusContext context, Cloud cloud) {
         def cloudConfig = cloud.getConfigMap()
-        def keyPair = context.services.keyPair.find(new DataQuery().withFilter("accountId", cloud?.account?.id))
+        def keyPair = context.services.keyPair.find(
+                new DataQuery().withFilter("accountId", cloud?.account?.id))
         return [
                 account      : cloud.account,
                 zoneConfig   : cloudConfig,
@@ -2724,7 +3001,8 @@ For (\$i=0; \$i -le 10; \$i++) {
 
     def getScvmmCloudOpts(MorpheusContext context, Cloud cloud, controllerServer) {
         def cloudConfig = cloud.getConfigMap()
-        def keyPair = context.services.keyPair.find(new DataQuery().withFilter("accountId", cloud?.account?.id))
+        def keyPair = context.services.keyPair.find(new DataQuery().withFilter(
+                "accountId", cloud?.account?.id))
         return [
                 account         : cloud.account,
                 zoneConfig      : cloudConfig,
@@ -2742,11 +3020,20 @@ For (\$i=0; \$i -le 10; \$i++) {
         def serverConfig = hypervisor.getConfigMap()
         def zoneConfig = cloud.getConfigMap()
         log.debug("scvmm hypervisor config:${serverConfig}")
-        def configuredDiskPath = zoneConfig.diskPath?.length() > 0 ? zoneConfig.diskPath : serverConfig.diskPath?.length() > 0 ? serverConfig.diskPath : null
+        def configuredDiskPath = zoneConfig.diskPath?.length() > 0
+                ? zoneConfig.diskPath
+                : serverConfig.diskPath?.length() > 0
+                ? serverConfig.diskPath
+                : null
         def diskRoot = configuredDiskPath ? configuredDiskPath : defaultRoot + '\\Disks'
-        def configuredWorkingPath = zoneConfig.workingPath?.length() > 0 ? zoneConfig.workingPath : serverConfig.workingPath?.length() > 0 ? serverConfig.workingPath : null
+        def configuredWorkingPath = zoneConfig.workingPath?.length() > 0
+                ? zoneConfig.workingPath
+                : serverConfig.workingPath?.length() > 0
+                ? serverConfig.workingPath
+                : null
         def zoneRoot = configuredWorkingPath ? configuredWorkingPath : defaultRoot
-        return [hypervisorConfig: serverConfig, hypervisor: hypervisor, sshHost: hypervisor.sshHost, sshUsername: hypervisor.sshUsername,
+        return [hypervisorConfig: serverConfig, hypervisor: hypervisor, sshHost: hypervisor.sshHost,
+                sshUsername: hypervisor.sshUsername,
                 sshPassword     : hypervisor.sshPassword, zoneRoot: zoneRoot, diskRoot: diskRoot]
     }
 
@@ -2813,15 +3100,24 @@ For (\$i=0; \$i -le 10; \$i++) {
         def cloudConfig = cloud.getConfigMap()
         def diskRoot = cloudConfig.diskPath?.length() > 0 ? cloudConfig.diskPath : defaultRoot + '\\Disks'
         def cloudRoot = cloudConfig.workingPath?.length() > 0 ? cloudConfig.workingPath : defaultRoot
-        return [sshHost : cloudConfig.host, sshUsername: getUsername(cloud), sshPassword: getPassword(cloud), zoneRoot: cloudRoot,
+        return [sshHost : cloudConfig.host, sshUsername: getUsername(cloud),
+                sshPassword: getPassword(cloud), zoneRoot: cloudRoot,
                 diskRoot: diskRoot]
     }
 
     protected getUsername(Cloud cloud) {
-		((cloud.accountCredentialLoaded && cloud.accountCredentialData) ? cloud.accountCredentialData?.username : cloud.getConfigProperty('username')) ?: 'dunno'
+        (
+                (cloud.accountCredentialLoaded && cloud.accountCredentialData)
+                        ? cloud.accountCredentialData?.username
+                        : cloud.getConfigProperty('username')
+        ) ?: 'dunno'
     }
 
     protected getPassword(Cloud cloud) {
-		(cloud.accountCredentialLoaded && cloud.accountCredentialData) ? cloud.accountCredentialData?.password : cloud.getConfigProperty('password')
+        (
+                cloud.accountCredentialLoaded && cloud.accountCredentialData
+        )
+                ? cloud.accountCredentialData?.password
+                : cloud.getConfigProperty('password')
     }
 }

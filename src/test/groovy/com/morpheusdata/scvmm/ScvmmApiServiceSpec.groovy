@@ -761,6 +761,7 @@ class ScvmmApiServiceSpec extends Specification {
                 diskPath: diskPath,
                 workingPath: workingPath
         ]
+        def configJson = groovy.json.JsonOutput.toJson(configMap)
         cloud.setAccountCredentialLoaded(true)
         def actCredDataMap =  [username:"dunno", password: "testpass"]
         cloud.setAccountCredentialData(actCredDataMap)
@@ -768,7 +769,7 @@ class ScvmmApiServiceSpec extends Specification {
         cloud.serviceUsername = "dunno"
 
         // Mock getConfigMap to return our test config
-        cloud.setConfig(configMap.toString())
+        cloud.setConfig(configJson.toString())
 
         // Set the defaultRoot field to test fallbacks
         apiService.defaultRoot = "C:\\MorpheusData"
