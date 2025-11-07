@@ -11,6 +11,96 @@ import groovy.json.JsonOutput
 import com.bertramlabs.plugins.karman.CloudFile
 
 class ScvmmApiService {
+// At the top of ScvmmApiService.groovy
+
+    static final CMD_SEPARATOR = ";"
+    static final OBJECT_TYPE_1 = '1'
+    static final ARRAY_INIT = "@()"
+    static final WIN2022_STD_CORE = '2022.std.core'
+    static final WIN2022_DC_CORE = '2022.dc.core'
+    static final DEFAULT_PAGE_SIZE = 50
+    static final EXIT_CODE_SUCCESS = '0'
+    static final VMID_PLACEHOLDER = "<%vmid%>"
+    static final EXCEPTION_MSG = 'An Exception Has Occurred'
+    static final TAR_GZ_EXTENSION = '.tar.gz'
+    static final Integer MAX_IMPORT_ATTEMPTS = 5
+    static final String JOB_STATUS_COMPLETED = 'completed'
+    static final String JOB_STATUS_SUCCEED_WITH_INFO = 'succeedwithinfo'
+
+    static final GET_SC_LOGICAL_NETWORK_CMD = "Get-SCLogicalNetwork -VMMServer localhost | Select ID,Name"
+    static final VHDNAME_PLACEHOLDER = "<%vhdname%>"
+    static final SET_VIRTUAL_DVD_NO_MEDIA_CMD = "\$ignore = Set-SCVirtualDVDDrive -VirtualDVDDrive \$dvd " +
+            "-Bus \$dvd.Bus -LUN \$dvd.Lun -NoMedia"
+    static final SET_HARDWARE_PROFILE_CMD = " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile "
+    static final IGNORE_IF_NOT = "\$ignore = If (-not "
+    static final CLOSE_BRACE = "}"
+    static final IGNORE_NEW_HARDWARE_PROFILE = "\$ignore = New-SCHardwareProfile -VMMServer localhost "
+    static final HARDWARE_PROFILE_GET_CMD = "\$HardwareProfile = Get-SCHardwareProfile -VMMServer localhost |"
+    static final IGNORE_SET_HARDWARE_PROFILE = "\$ignore = Set-SCHardwareProfile -HardwareProfile \$HardwareProfile "
+
+// Groovy
+    static final IGNORE_NEW_VIRTUAL_DISK_DRIVE = "\$ignore = New-SCVirtualDiskDrive -VMMServer "
+    static final VM_CONFIGURATION_PARAM = "-VMConfiguration \$virtualMachineConfiguration"
+
+    static final IGNORE_SET_VM_CONFIGURATION = "\$ignore = Set-SCVMConfiguration " + VM_CONFIGURATION_PARAM
+    static final IGNORE_UPDATE_VM_CONFIGURATION = "\$ignore = Update-SCVMConfiguration " + VM_CONFIGURATION_PARAM
+    static final RUN_ASYNCHRONOUSLY_STOP_ACTION = "-RunAsynchronously -StopAction \"SaveVM\""
+    static final ELSE_CLOSE = "} else {"
+    static final SET_VIRTUAL_NETWORK_ADAPTER = "Set-SCVirtualNetworkAdapter " +
+            "-VirtualNetworkAdapter \$VirtualNetworkAdapter "
+    static final CLOUD_HARDWARE_PROFILE_START_ACTION = "-Cloud \$cloud -HardwareProfile \$HardwareProfile -StartAction "
+    static final TURN_ON_VM_IF_RUNNING_WHEN_VS_STOPPED = "TurnOnVMIfRunningWhenVSStopped -StopAction SaveVM"
+    static final IF_STARTUP_GT_MIN_DYNAMIC_MEMORY = "If (\$startupMemory -gt \$minimumDynamicMemory) " +
+            "{ \$minimumDynamicMemory = \$startupMemory };"
+    static final IF_STARTUP_GT_MAX_DYNAMIC_MEMORY = "If (\$startupMemory -gt \$maximumDynamicMemory) " +
+            "{ \$maximumDynamicMemory = \$startupMemory };"
+
+    static final NEWLINE_CHAR = '\n'
+    static final ACCOUNT_ID = "accountId"
+    static final LIBRARY_SHARE = 'libraryShare'
+    static final FORWARD_SLASH = '/'
+    static final UNDERSCORE = '_'
+    static final DOT_GZ = '.gz'
+    static final DISKS_FOLDER = '\\Disks'
+
+    static final METADATA_JSON = 'metadata.json'
+    static final GENERATION1 = 'generation1'
+    static final Integer TAKE_36 = 36
+    static final SLEEP_MILLISECONDS = 1000L
+    static final SLEEP_SECONDS = 5L
+    static final CREATION_FAILED = 'CreationFailed'
+    static final MAX_NOT_FOUND_ATTEMPTS = 10
+    static final VM_STATE_RUNNING = 'Running'
+    static final CONFIG_ISO = 'config.iso'
+    static final FIELD_NETWORK_INTERFACE = 'networkInterface'
+    static final MSG_NETWORK_REQUIRED = 'Network is required'
+    static final IP_MODE_STATIC = 'static'
+    static final MSG_ENTER_IP = 'You must enter an ip address'
+    static final FIELD_NETWORK_ID = 'networkId'
+    static final FIELD_NODE_COUNT = 'nodeCount'
+    static final POWERSHELL_NULL = '$null'
+
+    static final WINDOWS_8_64 = 'windows.8.64'
+    static final WINDOWS_SERVER_2008 = 'windows.server.2008'
+    static final WINDOWS_SERVER_2008_R2 = 'windows.server.2008.r2'
+    static final WINDOWS_SERVER_2012 = 'windows.server.2012'
+    static final WINDOWS = 'windows'
+    static final CENT = 'cent'
+    static final OTHER = 'other'
+    static final ORACLE_32 = 'oracle.32'
+    static final ORACLE_LINUX_64 = 'oracle.linux.64'
+    static final REDHAT = 'redhat'
+    static final LINUX_32 = 'linux.32'
+    static final LINUX_64 = 'linux.64'
+    static final SUSE = 'suse'
+    static final UBUNTU = 'ubuntu'
+    static final UBUNTU_64 = 'ubuntu.64'
+    static final WINDOWS_8 = 'windows.8'
+    static final WINDOWS_SERVER_2016 = 'windows.server.2016'
+    static final WINDOWS_SERVER_2019 = 'windows.server.2019'
+    static final WINDOWS_SERVER_2025 = 'windows.server.2025'
+    static final INDEX_NOT_FOUND = -1
+
     MorpheusContext morpheusContext
     private LogInterface log = LogWrapper.instance
 
@@ -88,7 +178,7 @@ class ScvmmApiService {
                 commands << "\$ignore = Import-SCLibraryPhysicalResource -SourcePath \"$sourcePath\"" +
                         " -SharePath \"$tgtFolder\" -OverwriteExistingFiles -VMMServer localhost"
                 commands << "Get-SCVirtualHardDisk | where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID"
-                def importRes = wrapExecuteCommand(generateCommandString(commands.join(";")), opts)
+                def importRes = wrapExecuteCommand(generateCommandString(commands.join(CMD_SEPARATOR)), opts)
                 rtn.imageId = importRes.data?.getAt(0)?.ID
 
                 if (importRes.error != null) {
@@ -100,7 +190,7 @@ class ScvmmApiService {
                     copyCommands << "Get-SCVirtualHardDisk | where {\$_.SharePath -like \"${tgtFolder}\\*\"} |" +
                             " Select ID"
                     def copyResult =
-                            wrapExecuteCommand(generateCommandString(copyCommands.join(";")), opts)
+                            wrapExecuteCommand(generateCommandString(copyCommands.join(CMD_SEPARATOR)), opts)
                     if (copyResult.error != null) {
                         log.error("Error in Copy-Item: ${copyResult.error}")
                         out.success = false
@@ -190,7 +280,7 @@ class ScvmmApiService {
             log.info "Create results: ${createData}"
 
             def newServerExternalId = createData.data && createData.data.size() ==
-                    1 && createData.data[0].ObjectType?.toString() == '1' ? createData.data[0].ID : null
+                    1 && createData.data[0].ObjectType?.toString() == OBJECT_TYPE_1 ? createData.data[0].ID : null
             if (!newServerExternalId) {
                 throw new Exception("Failed to create VM with command: ${launchCommand}: ${createData.error}")
             }
@@ -204,10 +294,10 @@ class ScvmmApiService {
             log.debug "Servercreated: ${serverCreated}"
 
             // Server Created - Remove Temporary templates and profiles
-            if(removeTemplateCommands) {
+            if (removeTemplateCommands) {
                 log.info("createServer - removing Temporary Templates and Hardware Profiles")
-                def command = removeTemplateCommands.join(';')
-                command += "@()"
+                def command = removeTemplateCommands.join(CMD_SEPARATOR)
+                command += ARRAY_INIT
                 wrapExecuteCommand(generateCommandString(command), opts)
             }
 
@@ -216,7 +306,7 @@ class ScvmmApiService {
                 loadControllerServer(opts)
                 //Get the created VM Disk configuration for new server with id opts.externalId
                 //expect Map [success:true/false, disks: []]
-                def vmDisk = listVirtualDiskDrives(opts,opts.externalId)
+                def vmDisk = listVirtualDiskDrives(opts, opts.externalId)
                 if (vmDisk.success) {
                     log.info("createServer - received current Disk configuration for VM ${opts.externalId}")
                     log.info("createServer - additional volumes - " +
@@ -257,7 +347,7 @@ class ScvmmApiService {
                     }
                 }
                 // Fetch the disks to create a mapping
-                def disks = [osDisk: [externalId: ''],
+                def disks = [osDisk   : [externalId: ''],
                              dataDisks: opts.dataDisks?.collect { [id: it.id] }, diskMetaData: [:]]
                 def diskDrives = listVirtualDiskDrives(opts, opts.externalId)
                 def bookDiskIndex = findBootDiskIndex(diskDrives)
@@ -266,15 +356,15 @@ class ScvmmApiService {
                 diskDrives.disks?.eachWithIndex { disk, diskIndex ->
                     if (diskIndex == bookDiskIndex) {
                         disks.osDisk.externalId = disk.ID
-                        disks.diskMetaData[disk.ID] = [HostVolumeId: disk.HostVolumeId,
-                                                       FileShareId: disk.FileShareId,
-                                                       VhdID: disk.VhdID, Location: disk.VhdLocation,
+                        disks.diskMetaData[disk.ID] = [HostVolumeId     : disk.HostVolumeId,
+                                                       FileShareId      : disk.FileShareId,
+                                                       VhdID            : disk.VhdID, Location: disk.VhdLocation,
                                                        PartitionUniqueId: disk.PartitionUniqueId]
                     } else {
                         disks.dataDisks[diskIndex - 1].externalId = disk.ID
-                        disks.diskMetaData[disk.ID] = [HostVolumeId: disk.HostVolumeId,
-                                                       FileShareId: disk.FileShareId, dataDisk: true,
-                                                       VhdID: disk.VhdID, Location: disk.VhdLocation,
+                        disks.diskMetaData[disk.ID] = [HostVolumeId     : disk.HostVolumeId,
+                                                       FileShareId      : disk.FileShareId, dataDisk: true,
+                                                       VhdID            : disk.VhdID, Location: disk.VhdLocation,
                                                        PartitionUniqueId: disk.PartitionUniqueId]
                     }
 
@@ -318,11 +408,11 @@ class ScvmmApiService {
                 log.info("SCVMM Check for Server Ready ${opts.name}")
                 def serverDetail = checkServerReady(opts, opts.externalId)
                 if (serverDetail.success == true) {
-                    rtn.server = [name: opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId,
+                    rtn.server = [name     : opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId,
                                   ipAddress: serverDetail.server?.ipAddress, disks: disks]
                     rtn.success = true
                 } else {
-                    rtn.server = [name: opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId,
+                    rtn.server = [name     : opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId,
                                   ipAddress: serverDetail.server?.ipAddress, disks: disks]
                 }
             }
@@ -337,8 +427,8 @@ class ScvmmApiService {
 
             // Perform the remove again... in case they were locked above
             if (removeTemplateCommands) {
-                def command = removeTemplateCommands.join(';')
-                command += "@()"
+                def command = removeTemplateCommands.join(CMD_SEPARATOR)
+                command += ARRAY_INIT
                 wrapExecuteCommand(generateCommandString(command), opts)
             }
         } catch (e) {
@@ -427,12 +517,12 @@ if(\$vm) {
     def extractWindowsServerVersion(String osName) {
         // Static map for Windows Server 2022 variants
         def server2022Map = [
-                'standard core'     : '2022.std.core',
+                'standard core'     : WIN2022_STD_CORE,
                 'standard desktop'  : '2022.std.desktop',
-                'datacenter core'   : '2022.dc.core',
+                'datacenter core'   : WIN2022_DC_CORE,
                 'datacenter desktop': '2022.dc.desktop',
-                'standard'          : '2022.std.core',
-                'datacenter'        : '2022.dc.core',
+                'standard'          : WIN2022_STD_CORE,
+                'datacenter'        : WIN2022_DC_CORE,
         ]
         // Normalize input
         def lowerName = osName.toLowerCase()
@@ -531,7 +621,7 @@ if(\$cloud) {
         def hostGroup = opts.zoneConfig?.hostGroup
 
         def hasMore = true
-        def pageSize = 50
+        def pageSize = DEFAULT_PAGE_SIZE
         def fetch = { offset ->
 
             def commandStr = """\$report = @()"""
@@ -845,7 +935,7 @@ foreach (\$cloud in \$clouds) {
         def rtn = [success: false, hosts: []]
 
         def hasMore = true
-        def pageSize = 10
+        def pageSize = MAX_NOT_FOUND_ATTEMPTS
         def fetch = { offset ->
             def commandStr = """\$report = @()
 			\$HostNodes = Get-SCVMHost -VMMServer localhost | Sort-Object -Property ID | Select-Object -Skip $offset -First $pageSize
@@ -920,7 +1010,7 @@ foreach (\$cloud in \$clouds) {
         def rtn = [success: false, datastores: []]
 
         def hasMore = true
-        def pageSize = 50
+        def pageSize = DEFAULT_PAGE_SIZE
         def fetchStorageVolumes = { offset ->
             def commandStr = """\$report = @()
 				\$cloud = Get-SCCloud -VMMServer localhost | where { \$_.ID -eq \'${opts.zone.regionCode ?: ''}\' } 
@@ -976,7 +1066,7 @@ foreach (\$cloud in \$clouds) {
         def rtn = [success: false, datastores: []]
 
         def hasMore = true
-        def pageSize = 50
+        def pageSize = DEFAULT_PAGE_SIZE
         def fetchFileShares = { offset ->
             def commandStr = """\$report = @()
 \$FileShares = Get-SCStorageFileShare -VMMServer localhost | Sort-Object -Property ID | Select-Object -Skip $offset -First $pageSize
@@ -1040,11 +1130,10 @@ foreach (\$FileShare in \$FileShares){
     def listAllNetworks(opts) {
         def rtn = [success: true, networks: []]
         try {
-            def command = generateCommandString(
-                    "Get-SCLogicalNetwork -VMMServer localhost | Select ID,Name")
+            def command = generateCommandString(GET_SC_LOGICAL_NETWORK_CMD)
             def out = wrapExecuteCommand(command, opts)
             log.debug("listNetworks: ${out}")
-            if (out.success && out.exitCode == '0' && out.data?.size() > 0) {
+            if (out.success && out.exitCode == EXIT_CODE_SUCCESS && out.data?.size() > 0) {
                 def logicalNetworks = out.data
                 command = generateCommandString("""\$report = @()
 \$networks = Get-SCVMNetwork -VMMServer localhost | Select ID,Name,LogicalNetwork | Sort-Object -Property ID | Select-Object -First 1
@@ -1059,7 +1148,7 @@ foreach (\$network in \$networks) {
 \$report """)
                 out = wrapExecuteCommand(command, opts)
                 log.debug("get of networks: ${out}")
-                if (out.success && out.exitCode == '0') {
+                if (out.success && out.exitCode == EXIT_CODE_SUCCESS) {
                     if (out.data) {
                         log.debug("list logical networks: ${out}")
                         def networks = out.data
@@ -1068,7 +1157,7 @@ foreach (\$network in \$networks) {
                         }
                     }
                 } else {
-                    if (out.exitCode != '0') {
+                    if (out.exitCode != EXIT_CODE_SUCCESS) {
                         log.info "Fetch of networks resulted in non-zero exit value: ${out}"
                     }
                 }
@@ -1103,7 +1192,7 @@ foreach (\$network in \$networks) {
         def rtn = [success: true, networks: []]
         try {
             def hasMore = true
-            def pageSize = 50
+            def pageSize = DEFAULT_PAGE_SIZE
             def fetch = { offset ->
                 // Must grab the logical networks for the cloud.. then fetch the VMNetworks for each logical network
                 def command
@@ -1113,12 +1202,12 @@ foreach (\$network in \$networks) {
 Get-SCLogicalNetwork -VMMServer localhost -Cloud \$cloud | Select ID,Name"""
                     command = generateCommandString(commandStr)
                 } else {
-                    command = generateCommandString("Get-SCLogicalNetwork -VMMServer localhost | Select ID,Name")
+                    command = generateCommandString(GET_SC_LOGICAL_NETWORK_CMD)
                 }
 
                 def out = wrapExecuteCommand(command, opts)
                 log.debug("listNetworks: ${out}")
-                if (out.success && out.exitCode == '0' && out.data?.size() > 0) {
+                if (out.success && out.exitCode == EXIT_CODE_SUCCESS && out.data?.size() > 0) {
                     def logicalNetworks = out.data
                     command = generateCommandString("""\$report = @()
 \$networks = Get-SCVMNetwork -VMMServer localhost | where {\$_.IsolationType -ne "NoIsolation"} | Select ID,Name,LogicalNetwork,VMSubnet | Sort-Object -Property ID | Select-Object -Skip $offset -First $pageSize
@@ -1147,7 +1236,7 @@ foreach (\$network in \$networks) {
 \$report""")
                     out = wrapExecuteCommand(command, opts)
                     log.debug("get of networks: ${out}")
-                    if (out.success && out.exitCode == '0') {
+                    if (out.success && out.exitCode == EXIT_CODE_SUCCESS) {
                         hasMore = (out.data != '' && out.data != null)
                         if (out.data) {
                             log.debug("list logical networks: ${out}")
@@ -1158,7 +1247,7 @@ foreach (\$network in \$networks) {
                             }
                         }
                     } else {
-                        if (out.exitCode != '0') {
+                        if (out.exitCode != EXIT_CODE_SUCCESS) {
                             log.info "Fetch of networks resulted in non-zero exit value: ${out}"
                         }
                         hasMore = false
@@ -1186,7 +1275,7 @@ foreach (\$network in \$networks) {
         def rtn = [success: true, networks: []]
         try {
             def hasMore = true
-            def pageSize = 50
+            def pageSize = DEFAULT_PAGE_SIZE
             def fetch = { offset ->
                 def command
                 if (opts.zone.regionCode) {
@@ -1195,11 +1284,11 @@ foreach (\$network in \$networks) {
 Get-SCLogicalNetwork -VMMServer localhost -Cloud \$cloud | Select ID,Name"""
                     command = generateCommandString(commandStr)
                 } else {
-                    command = generateCommandString("Get-SCLogicalNetwork -VMMServer localhost | Select ID,Name")
+                    command = generateCommandString(GET_SC_LOGICAL_NETWORK_CMD)
                 }
                 def out = wrapExecuteCommand(command, opts)
                 log.debug("listNetworks: ${out}")
-                if (out.success && out.exitCode == '0' && out.data?.size() > 0) {
+                if (out.success && out.exitCode == EXIT_CODE_SUCCESS && out.data?.size() > 0) {
                     def logicalNetworks = out.data
                     command = generateCommandString("""\$report = @()
 \$logicalNetworks = Get-SCLogicalNetworkDefinition -VMMServer localhost | where {\$_.IsolationType -eq "None"} | Sort-Object -Property ID | Select-Object -Skip $offset -First $pageSize
@@ -1226,7 +1315,7 @@ foreach (\$logicalNetwork in \$logicalNetworks) {
 \$report""")
                     out = wrapExecuteCommand(command, opts)
                     log.debug("get of networks: ${out}")
-                    if (out.success && out.exitCode == '0') {
+                    if (out.success && out.exitCode == EXIT_CODE_SUCCESS) {
                         hasMore = (out.data != '' && out.data != null)
                         if (out.data) {
                             log.debug("list logical networks: ${out}")
@@ -1237,7 +1326,7 @@ foreach (\$logicalNetwork in \$logicalNetworks) {
                             }
                         }
                     } else {
-                        if (out.exitCode != '0') {
+                        if (out.exitCode != EXIT_CODE_SUCCESS) {
                             log.info "Fetch of networks resulted in non-zero exit value: ${out}"
                         }
                         hasMore = false
@@ -1290,7 +1379,7 @@ foreach (\$staticPool in \$staticPools) {
 
             def out = wrapExecuteCommand(command, opts)
             log.debug("listNetworkIPPools: ${out}")
-            if (out.success && out.exitCode == '0') {
+            if (out.success && out.exitCode == EXIT_CODE_SUCCESS) {
                 rtn.ipPools += out.data ?: []
             } else {
                 rtn.success = false
@@ -1312,7 +1401,7 @@ foreach (\$network in \$networks) {
 \$report """)
                 out = wrapExecuteCommand(command, opts)
                 log.debug("fetch network mapping: ${out}")
-                if (out.success && out.exitCode == '0') {
+                if (out.success && out.exitCode == EXIT_CODE_SUCCESS) {
                     rtn.networkMapping += out.data ?: []
                 } else {
                     rtn.success = false
@@ -1332,7 +1421,7 @@ foreach (\$network in \$networks) {
             def command = generateCommandString("""\$ippool = Get-SCStaticIPAddressPool -VMMServer localhost -ID \"$poolId\"; Grant-SCIPAddress -GrantToObjectType \"VirtualMachine\" -StaticIPAddressPool \$ippool | Select-Object ID,Address""")
             def out = wrapExecuteCommand(command, opts)
             log.debug("reserveIPAddress: ${out}")
-            if (out.success && out.exitCode == '0') {
+            if (out.success && out.exitCode == EXIT_CODE_SUCCESS) {
                 def ipAddressBlock = out.data
                 if (ipAddressBlock) {
                     rtn.ipAddress = ipAddressBlock.first()
@@ -1356,7 +1445,7 @@ foreach (\$network in \$networks) {
                             " \$ipaddress = Get-SCIPAddress -ID \"$ipId\"; \$ignore = Revoke-SCIPAddress \$ipaddress")
             def out = wrapExecuteCommand(command, opts)
             log.info("releaseIPAddress: ${out}")
-            if (out.success && out.exitCode == '0') {
+            if (out.success && out.exitCode == EXIT_CODE_SUCCESS) {
                 // Do nothing
             } else {
                 if (out.errorData?.contains("Unable to find the specified allocated IP address")) {
@@ -1416,8 +1505,8 @@ foreach (\$network in \$networks) {
 		$report 
 		'''
         String cmd = templateCmd.stripIndent().trim()
-                .replace("<%vmid%>",externalId)
-                .replace("<%vhdname%>",name ?: "")
+                .replace(VMID_PLACEHOLDER, externalId)
+                .replace(VHDNAME_PLACEHOLDER, name ?: "")
         //Execute
         def out = wrapExecuteCommand(generateCommandString(cmd), opts)
         if (out.success) {
@@ -1466,9 +1555,9 @@ foreach (\$network in \$networks) {
 		\$report 
 		"""
         String resizeCmd = templateCmd.stripIndent().trim()
-                .replace("<%vmid%>",opts.externalId)
-                .replace("<%diskid%>",diskId ?: "")
-                .replace("<%sizegb%>","${(int)(diskSizeBytes.toLong()).div(ComputeUtility.ONE_GIGABYTE)}")
+                .replace(VMID_PLACEHOLDER, opts.externalId)
+                .replace("<%diskid%>", diskId ?: "")
+                .replace("<%sizegb%>", "${(int) (diskSizeBytes.toLong()).div(ComputeUtility.ONE_GIGABYTE)}")
 
         log.debug "resizeDisk: ${resizeCmd}"
         def resizeResults = wrapExecuteCommand(generateCommandString(resizeCmd), opts)
@@ -1485,11 +1574,11 @@ foreach (\$network in \$networks) {
             }
         } else {
             log.warn("resizeDisk - rpc disk not return a usable response - ${resizeResults}")
-            return [success:false,errOut: "resizeDisk - did not receive expected response from rpc"]
+            return [success: false, errOut: "resizeDisk - did not receive expected response from rpc"]
         }
     }
 
-    def createAndAttachDisk(Map opts, Map diskSpec, Boolean returnDiskDrives=true) {
+    def createAndAttachDisk(Map opts, Map diskSpec, Boolean returnDiskDrives = true) {
         LogWrapper.instance.info("createAndAttachDisk - Adding new Virtual SCSI Disk VHDType:${diskSpec}")
         String templateCmd = '''
         #Morpheus will replace items in <%   %>
@@ -1598,26 +1687,26 @@ foreach (\$network in \$networks) {
         $report
         '''
         def addDiskCmd = templateCmd.stripIndent().trim()
-                .replace("<%vmid%>",opts.externalId ?: "")
-                .replace("<%vhdname%>",diskSpec.vhdName ?: "data-${UUID.randomUUID().toString()}")
-                .replace("<%sizemb%>",diskSpec.sizeMb.toString())
-                .replace("<%vhdtype%>",diskSpec.vhdType ?: "")
-                .replace("<%vhdformat%>",diskSpec.vhdFormat ?: "")
-                .replace("<%vhdpath%>",diskSpec.vhdPath ?: "")
+                .replace(VMID_PLACEHOLDER, opts.externalId ?: "")
+                .replace(VHDNAME_PLACEHOLDER, diskSpec.vhdName ?: "data-${UUID.randomUUID().toString()}")
+                .replace("<%sizemb%>", diskSpec.sizeMb.toString())
+                .replace("<%vhdtype%>", diskSpec.vhdType ?: "")
+                .replace("<%vhdformat%>", diskSpec.vhdFormat ?: "")
+                .replace("<%vhdpath%>", diskSpec.vhdPath ?: "")
         //Execute
         def out = wrapExecuteCommand(generateCommandString(addDiskCmd), opts)
-        if(out.success && returnDiskDrives) {
+        if (out.success && returnDiskDrives) {
             def listResults = listVirtualDiskDrives(opts, opts.externalId, diskSpec.vhdName)
             return [success: listResults.success, disk: listResults.disks.first()]
         }
     }
 
     def getDiskName(index, platform = 'linux') {
-        if(platform == 'windows')
-            return "disk ${index+1}"
-        // return windowsDiskNames[index]
-        else
+        if (platform == WINDOWS) {
+            return "disk ${index + 1}"
+        } else {
             return getDiskNameList()[index]
+        }
     }
 
     def getDiskNameList() {
@@ -1632,7 +1721,7 @@ foreach (\$network in \$networks) {
                 " where { \$_.VirtualHardDiskId -eq \"${diskId}\" }"
         commands << "\$ignore = Remove-SCVirtualDiskDrive -VirtualDiskDrive \$VirtualDiskDrive -JobGroup ${diskJobGuid}"
         commands << "\$ignore = Set-SCVirtualMachine -VM \$VM -JobGroup ${diskJobGuid}"
-        def cmd = commands.join(';')
+        def cmd = commands.join(CMD_SEPARATOR)
         log.debug "removeDisk: ${cmd}"
         return wrapExecuteCommand(generateCommandString(cmd), opts)
     }
@@ -1644,7 +1733,7 @@ foreach (\$network in \$networks) {
             def pending = true
             def attempts = 0
             while (pending) {
-                sleep(1000l * 5l)
+                sleep(SLEEP_MILLISECONDS * SLEEP_SECONDS)
                 def serverDetail = getServerDetails(opts, vmId)
                 if (serverDetail.success == true) {
                     // There isn't a state on the VM to tell us it is created.. but, if the disk size matches
@@ -1653,15 +1742,15 @@ foreach (\$network in \$networks) {
                             " opts.dataDisks: ${opts.dataDisks?.size()}," +
                             " additionalTemplateDisks: ${opts.additionalTemplateDisks?.size()}"
 
-                     if (serverDetail.server?.Status != 'UnderCreation' &&
-                             serverDetail.server?.VirtualDiskDrives?.size() == 1 +
-                             ((opts.dataDisks?.size() ?: 0) - (opts.additionalTemplateDisks?.size() ?: 0))) {
+                    if (serverDetail.server?.Status != 'UnderCreation' &&
+                            serverDetail.server?.VirtualDiskDrives?.size() == 1 +
+                            ((opts.dataDisks?.size() ?: 0) - (opts.additionalTemplateDisks?.size() ?: 0))) {
                         // additionalTemplateDisks are created after VM creation
                         // data disks are created and attached after vm creation
 
-                    // if(serverDetail.server?.Status != 'UnderCreation' &&
-                         // serverDetail.server?.VirtualDiskDrives?.size() ==
-                         // 1 - (opts.additionalTemplateDisks?.size() ?: 0)) {
+                        // if(serverDetail.server?.Status != 'UnderCreation' &&
+                        // serverDetail.server?.VirtualDiskDrives?.size() ==
+                        // 1 - (opts.additionalTemplateDisks?.size() ?: 0)) {
                         // additionalTemplateDisks are created after VM creation
                         rtn.success = true
                         rtn.server = serverDetail.server
@@ -1671,17 +1760,18 @@ foreach (\$network in \$networks) {
                             // Discard saved state... can't modify it if so
                             discardSavedState(opts, vmId)
                         }
-                    } else if (serverDetail.server?.Status == 'CreationFailed') {
+                    } else if (serverDetail.server?.Status == CREATION_FAILED) {
                         rtn.success = false
                         pending = false
                     }
                 }
                 attempts++
-                if (attempts > 600)
+                if (attempts > 600) {
                     pending = false
+                }
             }
         } catch (e) {
-            log.error("An Exception Has Occurred", e)
+            log.error(EXCEPTION_MSG, e)
         }
         return rtn
     }
@@ -1693,15 +1783,15 @@ foreach (\$network in \$networks) {
             def pending = true
             def attempts = 0
             while (pending) {
-                sleep(1000l * 5l)
+                sleep(SLEEP_MILLISECONDS * SLEEP_SECONDS)
                 log.debug "waitForJobToComplete: ${jobId}"
                 def getJobResults = getJob(opts, jobId)
                 if (getJobResults.success == true && getJobResults.jobDetail) {
 
                     def status = getJobResults.jobDetail?.Status?.toLowerCase()
-                    if (['completed', 'failed', 'succeedwithinfo'].indexOf(status) > -1) {
+                    if ([JOB_STATUS_COMPLETED, 'failed', JOB_STATUS_SUCCEED_WITH_INFO].indexOf(status) > INDEX_NOT_FOUND) {
                         pending = false
-                        if (status == 'completed' || status == 'succeedwithinfo') {
+                        if (status == JOB_STATUS_COMPLETED || status == JOB_STATUS_SUCCEED_WITH_INFO) {
                             rtn.success = true
                         }
                     }
@@ -1711,7 +1801,7 @@ foreach (\$network in \$networks) {
                     pending = false
             }
         } catch (e) {
-            log.error("An Exception Has Occurred", e)
+            log.error(EXCEPTION_MSG, e)
         }
         return rtn
     }
@@ -1753,7 +1843,7 @@ Status=\$job.Status.toString()
             def serverId = opts.server.id
             def waitForIp = opts.waitForIp
             while (pending) {
-                sleep(1000l * 5l)
+                sleep(SLEEP_MILLISECONDS * SLEEP_SECONDS)
                 log.debug "checkServerReady: ${vmId}"
                 ComputeServer server = morpheusContext.services.computeServer.get(serverId)
                 opts.server = server
@@ -1773,12 +1863,12 @@ Status=\$job.Status.toString()
                         // Most likely, server gets its IP from cloud-init calling back to
                         // cloudconfigcontroller/ipaddress... wait for that to happen
                         // Or... if the desire is to NOT install the agent, then we are not expecting an IP address
-                        if (serverDetail.server?.VirtualMachineState == 'Running') {
+                        if (serverDetail.server?.VirtualMachineState == VM_STATE_RUNNING) {
                             rtn.success = true
                             rtn.server = serverDetail.server
                             rtn.server.ipAddress = ipAddress ?: server?.internalIp
                             pending = false
-                        } else if (serverDetail.server?.Status == 'CreationFailed') {
+                        } else if (serverDetail.server?.Status == CREATION_FAILED) {
                             rtn.success = false
                             rtn.server = serverDetail.server
                             rtn.server.ipAddress = ipAddress ?: server?.internalIp
@@ -1800,11 +1890,12 @@ Status=\$job.Status.toString()
                 }
 
                 attempts++
-                if (attempts > 300 || notFoundAttempts > 10)
+                if (attempts > 300 || notFoundAttempts > MAX_NOT_FOUND_ATTEMPTS) {
                     pending = false
+                }
             }
         } catch (e) {
-            log.error("An Exception Has Occurred", e)
+            log.error(EXCEPTION_MSG, e)
         }
         return rtn
     }
@@ -1815,7 +1906,7 @@ Status=\$job.Status.toString()
             // Only start if it isn't already running
             def serverDetail = getServerDetails(opts, vmId)
             if (serverDetail.success == true) {
-                if (serverDetail.server?.VirtualMachineState != 'Running') {
+                if (serverDetail.server?.VirtualMachineState != VM_STATE_RUNNING) {
                     def out = wrapExecuteCommand(generateCommandString("\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${vmId}\"; \$ignore = Start-SCVirtualMachine -VM \$VM ${opts.async ? '-RunAsynchronously' : ''}"), opts)
                     rtn.success = out.success
                 } else {
@@ -1882,8 +1973,8 @@ if(\$VM) {
 
         def attempts = 0
         def importOpts = [baseBoxProvisionService: opts.scvmmProvisionService,
-                          controllerServer: opts.controllerNode] + opts
-        while (!rtn.success && attempts < 5) {
+                          controllerServer       : opts.controllerNode] + opts
+        while (!rtn.success && attempts < MAX_IMPORT_ATTEMPTS) {
             def out = executeCommand(command, importOpts)
             rtn.success = out.success
             if (!rtn.success) {
@@ -1934,13 +2025,13 @@ foreach(\$share in \$shares) {
         def commands = []
         commands << "\$iso = Get-SCISO -VMMServer localhost | where {\$_.SharePath -eq \"$sharePath\"}"
         commands << "\$ignore = Remove-SCISO -ISO \$iso -Force"
-        return wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
+        return wrapExecuteCommand(generateCommandString(commands.join(CMD_SEPARATOR)), opts)
     }
 
     def deleteUnattend(opts, unattendPath) {
         def commands = []
         commands << "Remove-Item -Path \"${unattendPath}\" -Force"
-        return wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
+        return wrapExecuteCommand(generateCommandString(commands.join(CMD_SEPARATOR)), opts)
     }
 
     def setCdrom(opts, cdPath = null) {
@@ -1950,13 +2041,13 @@ foreach(\$share in \$shares) {
         commands << "\$dvd = Get-SCVirtualDVDDrive -VM \$vm"
         if (cdPath) {
             commands << "\$iso = Get-SCISO -VMMServer localhost | where {\$_.SharePath -eq \"$cdPath\"}"
-            commands << "\$ignore = Set-SCVirtualDVDDrive -VirtualDVDDrive \$dvd -Bus \$dvd.Bus -LUN \$dvd.Lun -NoMedia"
+            commands << SET_VIRTUAL_DVD_NO_MEDIA_CMD
             commands << "\$ignore = Set-SCVirtualDVDDrive -VirtualDVDDrive" +
                     " \$dvd -Bus \$dvd.Bus -LUN \$dvd.Lun -ISO \$iso"
         } else {
-            commands << "\$ignore = Set-SCVirtualDVDDrive -VirtualDVDDrive \$dvd -Bus \$dvd.Bus -LUN \$dvd.Lun -NoMedia"
+            commands << SET_VIRTUAL_DVD_NO_MEDIA_CMD
         }
-        return wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
+        return wrapExecuteCommand(generateCommandString(commands.join(CMD_SEPARATOR)), opts)
     }
 
     def importScript(content, diskFolder, imageFolderName, opts) {
@@ -1968,7 +2059,7 @@ foreach(\$share in \$shares) {
         def fileResults = morpheusContext.services.fileCopy.copyToServer(
                 opts.hypervisor, "${opts.fileName}", "${diskFolder}\\${opts.fileName}",
                 inputStream, opts.cloudConfigBytes?.size(), null, true)
-        log.debug ("importScript: fileResults.success: ${fileResults.success}")
+        log.debug("importScript: fileResults.success: ${fileResults.success}")
         if (!fileResults.success) {
             throw new Exception("Script Upload to SCVMM Host Failed. " +
                     "Perhaps an agent communication issue...${opts.hypervisor.name}")
@@ -1986,7 +2077,7 @@ foreach(\$share in \$shares) {
         // If gen1... ALWAYS -Bus 1
 
         def busNumber = 0
-        def lunNumber = opts.scvmmGeneration == 'generation1' ? 0 : 1
+        def lunNumber = opts.scvmmGeneration == GENERATION1 ? 0 : 1
 
         def command = """\$busNumber = ${busNumber}
 \$lunNumber = ${lunNumber}
@@ -2022,22 +2113,22 @@ For (\$i=0; \$i -le 10; \$i++) {
     def importAndMountIso(cloudConfigBytes, diskFolder, imageFolderName, opts) {
         log.debug "importAndMountIso: ${diskFolder}, ${imageFolderName}, ${opts}"
         def cloudInitIsoPath
-        def isoAction = [inline: true, action: 'rawfile', content: cloudConfigBytes.encodeAsBase64(),
+        def isoAction = [inline    : true, action: 'rawfile', content: cloudConfigBytes.encodeAsBase64(),
                          targetPath: "${diskFolder}\\config.iso".toString(), opts: [:]]
 
         InputStream inputStream = new ByteArrayInputStream(cloudConfigBytes)
         def command = "\$ignore = mkdir \"${diskFolder}\""
         def dirResults = wrapExecuteCommand(generateCommandString(command), opts)
         def fileResults = morpheusContext.services.fileCopy.copyToServer(
-                opts.hypervisor, "config.iso", "${diskFolder}\\config.iso",
+                opts.hypervisor, CONFIG_ISO, "${diskFolder}\\config.iso",
                 inputStream, cloudConfigBytes?.size())
-        log.debug ("importAndMountIso: fileResults?.success: ${fileResults?.success}")
+        log.debug("importAndMountIso: fileResults?.success: ${fileResults?.success}")
         if (!fileResults.success) {
             throw new Exception("ISO Upload to SCVMM Host Failed." +
                     " Perhaps an agent communication issue...${opts.hypervisor.name}")
         }
         def importResults = importPhysicalResource(opts, isoAction.targetPath,
-                imageFolderName, 'config.iso')
+                imageFolderName, CONFIG_ISO)
         cloudInitIsoPath = importResults.sharePath
         setCdrom(opts, cloudInitIsoPath)
         return cloudInitIsoPath
@@ -2066,10 +2157,10 @@ For (\$i=0; \$i -le 10; \$i++) {
                     def networkId = nic.network?.id ?: nic.network.group
                     log.debug("network.id: ${networkId}")
                     if (!networkId) {
-                        rtn.errors << [field: 'networkInterface', msg: 'Network is required']
+                        rtn.errors << [field: FIELD_NETWORK_INTERFACE, msg: MSG_NETWORK_REQUIRED]
                     }
-                    if (nic.ipMode == 'static' && !nic.ipAddress) {
-                        rtn.errors = [field: 'networkInterface', msg: 'You must enter an ip address']
+                    if (nic.ipMode == IP_MODE_STATIC && !nic.ipAddress) {
+                        rtn.errors = [field: FIELD_NETWORK_INTERFACE, msg: MSG_ENTER_IP]
                     }
                 }
             } else if (opts?.networkInterface) {
@@ -2078,17 +2169,17 @@ For (\$i=0; \$i -le 10; \$i++) {
                 toList(opts?.networkInterface?.network?.id)?.eachWithIndex { networkId, index ->
                     log.debug("network.id: ${networkId}")
                     if (networkId?.length() < 1) {
-                        rtn.errors << [field: 'networkInterface', msg: 'Network is required']
+                        rtn.errors << [field: FIELD_NETWORK_INTERFACE, msg: MSG_NETWORK_REQUIRED]
                     }
-                    if (networkInterface[index].ipMode == 'static' && !networkInterface[index].ipAddress) {
-                        rtn.errors = [field: 'networkInterface', msg: 'You must enter an ip address']
+                    if (networkInterface[index].ipMode == IP_MODE_STATIC && !networkInterface[index].ipAddress) {
+                        rtn.errors = [field: FIELD_NETWORK_INTERFACE, msg: MSG_ENTER_IP]
                     }
                 }
             } else {
-                rtn.errors << [field: 'networkId', msg: 'Network is required']
+                rtn.errors << [field: FIELD_NETWORK_ID, msg: MSG_NETWORK_REQUIRED]
             }
-            if (opts.containsKey('nodeCount') && opts.nodeCount == '') {
-                rtn.errors += [field: 'nodeCount', msg: 'You must indicate number of hosts']
+            if (opts.containsKey(FIELD_NODE_COUNT) && opts.nodeCount == '') {
+                rtn.errors += [field: FIELD_NODE_COUNT, msg: 'You must indicate number of hosts']
             }
             rtn.success = (rtn.errors.size() == 0)
             log.debug "validateServer results: ${rtn}"
@@ -2119,8 +2210,8 @@ For (\$i=0; \$i -le 10; \$i++) {
                 if (updates.maxMemory) {
                     def maxMemory = (int) updates.maxMemory.div(ComputeUtility.ONE_MEGABYTE)
                     command += "\$maxMemory = ${maxMemory};"
-                    command += "\$minDynamicMemory = ${minDynamicMemory ?: '$null'};"
-                    command += "\$maxDynamicMemory = ${maxDynamicMemory ?: '$null'};"
+                    command += "\$minDynamicMemory = ${minDynamicMemory ?: POWERSHELL_NULL};"
+                    command += "\$maxDynamicMemory = ${maxDynamicMemory ?: POWERSHELL_NULL};"
                     command += "\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${vmId}\";"
                     command += "if(\$minDynamicMemory -and \$maxDynamicMemory -eq \$null)" +
                             " { \$maxDynamicMemory = [int32]::MaxValue };"
@@ -2141,7 +2232,7 @@ For (\$i=0; \$i -le 10; \$i++) {
                 log.debug "updateServer: ${command}"
                 def out = wrapExecuteCommand(generateCommandString(command), opts)
                 log.debug "updateServer results: ${out}"
-                rtn.success = out.success && out.exitCode == '0'
+                rtn.success = out.success && out.exitCode == EXIT_CODE_SUCCESS
             } else {
                 log.debug("No updates for server: ${vmId}")
                 rtn.success = true
@@ -2154,14 +2245,15 @@ For (\$i=0; \$i -le 10; \$i++) {
 
     def cleanData(data, ignoreString = null) {
         def rtn = ''
-        if(data){
-            def lines = data.tokenize('\n')
+        if (data) {
+            def lines = data.tokenize(NEWLINE_CHAR)
             lines = lines?.findAll { it?.trim()?.length() > 1 }
             if (lines?.size() > 0) {
                 lines?.each { line ->
                     def trimLine = line.trim()
-                    if (rtn == null && ignoreString == null || trimLine != ignoreString)
+                    if (rtn == null && ignoreString == null || trimLine != ignoreString) {
                         rtn = trimLine
+                    }
                 }
             }
         }
@@ -2172,22 +2264,22 @@ For (\$i=0; \$i -le 10; \$i++) {
         def SCVMM_OS_TYPE_MAP = [
                 '64-bit edition of Windows 10'                       : 'windows.10.64',
                 '64-bit edition of Windows 7'                        : 'windows.7.64',
-                '64-bit edition of Windows 8'                        : 'windows.8.64',
-                '64-bit edition of Windows 8.1'                      : 'windows.8.64',
-                '64-bit edition of Windows Server 2008 Datacenter'   : 'windows.server.2008',
-                '64-bit edition of Windows Server 2008 Enterprise'   : 'windows.server.2008',
-                '64-bit edition of Windows Server 2008 R2 Datacenter': 'windows.server.2008.r2',
-                '64-bit edition of Windows Server 2008 R2 Enterprise': 'windows.server.2008.r2',
-                '64-bit edition of Windows Server 2008 R2 Standard'  : 'windows.server.2008.r2',
-                '64-bit edition of Windows Server 2008 Standard'     : 'windows.server.2008',
-                '64-bit edition of Windows Server 2012 Datacenter'   : 'windows.server.2012',
-                '64-bit edition of Windows Server 2012 Essentials'   : 'windows.server.2012',
-                '64-bit edition of Windows Server 2012 Standard'     : 'windows.server.2012',
-                '64-bit edition of Windows Vista'                    : 'windows',
-                '64-bit edition of Windows Web Server 2008'          : 'windows.server.2008',
-                '64-bit edition of Windows Web Server 2008 R2'       : 'windows.server.2008.r2',
-                'CentOS Linux 5 (32 bit)'                            : 'cent',
-                'CentOS Linux 5 (64 bit)'                            : 'cent',
+                '64-bit edition of Windows 8'                        : WINDOWS_8_64,
+                '64-bit edition of Windows 8.1'                      : WINDOWS_8_64,
+                '64-bit edition of Windows Server 2008 Datacenter'   : WINDOWS_SERVER_2008,
+                '64-bit edition of Windows Server 2008 Enterprise'   : WINDOWS_SERVER_2008,
+                '64-bit edition of Windows Server 2008 R2 Datacenter': WINDOWS_SERVER_2008_R2,
+                '64-bit edition of Windows Server 2008 R2 Enterprise': WINDOWS_SERVER_2008_R2,
+                '64-bit edition of Windows Server 2008 R2 Standard'  : WINDOWS_SERVER_2008_R2,
+                '64-bit edition of Windows Server 2008 Standard'     : WINDOWS_SERVER_2008,
+                '64-bit edition of Windows Server 2012 Datacenter'   : WINDOWS_SERVER_2012,
+                '64-bit edition of Windows Server 2012 Essentials'   : WINDOWS_SERVER_2012,
+                '64-bit edition of Windows Server 2012 Standard'     : WINDOWS_SERVER_2012,
+                '64-bit edition of Windows Vista'                    : WINDOWS,
+                '64-bit edition of Windows Web Server 2008'          : WINDOWS_SERVER_2008,
+                '64-bit edition of Windows Web Server 2008 R2'       : WINDOWS_SERVER_2008_R2,
+                'CentOS Linux 5 (32 bit)'                            : CENT,
+                'CentOS Linux 5 (64 bit)'                            : CENT,
                 'CentOS Linux 6 (32 bit)'                            : 'cent.6',
                 'CentOS Linux 6 (64 bit)'                            : 'cent.6.64',
                 'CentOS Linux 7 (64 bit)'                            : 'cent.7.64',
@@ -2195,91 +2287,91 @@ For (\$i=0; \$i -le 10; \$i++) {
                 'Debian GNU/Linux 7 (64 bit)'                        : 'debian.6.64',
                 'Debian GNU/Linux 8 (32 bit)'                        : 'debian.8',
                 'Debian GNU/Linux 8 (64 bit)'                        : 'debian.8.64',
-                'None'                                               : 'other',
-                'Novell NetWare 5.1'                                 : 'other',
-                'Novell NetWare 6.x'                                 : 'other',
-                'Open Enterprise Server'                             : 'other',
-                'Oracle Linux 5 (32 bit)'                            : 'oracle.32',
-                'Oracle Linux 5 (64 bit)'                            : 'oracle.linux.64',
-                'Oracle Linux 6 (32 bit)'                            : 'oracle.32',
-                'Oracle Linux 6 (64 bit)'                            : 'oracle.linux.64',
-                'Oracle Linux 7 (64 bit)'                            : 'oracle.linux.64',
+                'None'                                               : OTHER,
+                'Novell NetWare 5.1'                                 : OTHER,
+                'Novell NetWare 6.x'                                 : OTHER,
+                'Open Enterprise Server'                             : OTHER,
+                'Oracle Linux 5 (32 bit)'                            : ORACLE_32,
+                'Oracle Linux 5 (64 bit)'                            : ORACLE_LINUX_64,
+                'Oracle Linux 6 (32 bit)'                            : ORACLE_32,
+                'Oracle Linux 6 (64 bit)'                            : ORACLE_LINUX_64,
+                'Oracle Linux 7 (64 bit)'                            : ORACLE_LINUX_64,
                 'Other (32 bit)'                                     : 'other.32',
                 'Other (64 bit)'                                     : 'other.64',
-                'Other Linux (32 bit)'                               : 'linux.32',
-                'Other Linux (64 bit)'                               : 'linux.64',
-                'Red Hat Enterprise Linux 2'                         : 'redhat',
-                'Red Hat Enterprise Linux 3'                         : 'redhat',
-                'Red Hat Enterprise Linux 3 (64 bit)'                : 'redhat',
-                'Red Hat Enterprise Linux 4'                         : 'redhat',
-                'Red Hat Enterprise Linux 4 (64 bit)'                : 'redhat',
-                'Red Hat Enterprise Linux 5'                         : 'redhat',
-                'Red Hat Enterprise Linux 5 (64 bit)'                : 'redhat',
+                'Other Linux (32 bit)'                               : LINUX_32,
+                'Other Linux (64 bit)'                               : LINUX_64,
+                'Red Hat Enterprise Linux 2'                         : REDHAT,
+                'Red Hat Enterprise Linux 3'                         : REDHAT,
+                'Red Hat Enterprise Linux 3 (64 bit)'                : REDHAT,
+                'Red Hat Enterprise Linux 4'                         : REDHAT,
+                'Red Hat Enterprise Linux 4 (64 bit)'                : REDHAT,
+                'Red Hat Enterprise Linux 5'                         : REDHAT,
+                'Red Hat Enterprise Linux 5 (64 bit)'                : REDHAT,
                 'Red Hat Enterprise Linux 6'                         : 'redhat.6',
                 'Red Hat Enterprise Linux 6 (64 bit)'                : 'redhat.64',
                 'Red Hat Enterprise Linux 7 (64 bit)'                : 'redhat.7.64',
-                'Sun Solaris 10 (32 bit)'                            : 'linux.32',
-                'Sun Solaris 10 (64 bit)'                            : 'linux.64',
-                'Suse Linux Enterprise Server 10 (32 bit)'           : 'suse',
-                'Suse Linux Enterprise Server 10 (64 bit)'           : 'suse',
-                'Suse Linux Enterprise Server 11 (32 bit)'           : 'suse',
-                'Suse Linux Enterprise Server 11 (64 bit)'           : 'suse',
+                'Sun Solaris 10 (32 bit)'                            : LINUX_32,
+                'Sun Solaris 10 (64 bit)'                            : LINUX_64,
+                'Suse Linux Enterprise Server 10 (32 bit)'           : SUSE,
+                'Suse Linux Enterprise Server 10 (64 bit)'           : SUSE,
+                'Suse Linux Enterprise Server 11 (32 bit)'           : SUSE,
+                'Suse Linux Enterprise Server 11 (64 bit)'           : SUSE,
                 'Suse Linux Enterprise Server 12 (64 bit)'           : 'suse.12.64',
-                'Suse Linux Enterprise Server 9 (32 bit)'            : 'suse',
-                'Suse Linux Enterprise Server 9 (64 bit)'            : 'suse',
-                'Ubuntu Linux (32 bit)'                              : 'ubuntu',
-                'Ubuntu Linux (64 bit)'                              : 'ubuntu.64',
+                'Suse Linux Enterprise Server 9 (32 bit)'            : SUSE,
+                'Suse Linux Enterprise Server 9 (64 bit)'            : SUSE,
+                'Ubuntu Linux (32 bit)'                              : UBUNTU,
+                'Ubuntu Linux (64 bit)'                              : UBUNTU_64,
                 'Ubuntu Linux 12.04 (32 bit)'                        : 'ubuntu.12.04',
                 'Ubuntu Linux 12.04 (64 bit)'                        : 'ubuntu.12.04.64',
                 'Ubuntu Linux 14.04 (32 bit)'                        : 'ubuntu.14.04',
                 'Ubuntu Linux 14.04 (64 bit)'                        : 'ubuntu.14.04.64',
-                'Ubuntu Linux 16.04 (32 bit)'                        : 'ubuntu',
-                'Ubuntu Linux 16.04 (64 bit)'                        : 'ubuntu.64',
+                'Ubuntu Linux 16.04 (32 bit)'                        : UBUNTU,
+                'Ubuntu Linux 16.04 (64 bit)'                        : UBUNTU_64,
                 'Ubuntu Linux 20.04 (32 bit)'                        : 'ubuntu.20.04',
                 'Ubuntu Linux 20.04 (64 bit)'                        : 'ubuntu.20.04.64',
                 'Ubuntu Linux 24.04 (32 bit)'                        : 'ubuntu.24.04',
                 'Ubuntu Linux 24.04 (64 bit)'                        : 'ubuntu.24.04.64',
                 'Windows 10'                                         : 'windows.10',
-                'Windows 2000 Advanced Server'                       : 'windows',
-                'Windows 2000 Server'                                : 'windows',
+                'Windows 2000 Advanced Server'                       : WINDOWS,
+                'Windows 2000 Server'                                : WINDOWS,
                 'Windows 7'                                          : 'windows.7',
-                'Windows 8'                                          : 'windows.8',
-                'Windows 8.1'                                        : 'windows.8',
-                'Windows NT Server 4.0'                              : 'windows',
-                'Windows Server 2003 Datacenter Edition (32-bit x86)': 'windows',
-                'Windows Server 2003 Datacenter x64 Edition'         : 'windows',
-                'Windows Server 2003 Enterprise Edition (32-bit x86)': 'windows',
-                'Windows Server 2003 Enterprise x64 Edition'         : 'windows',
-                'Windows Server 2003 Standard Edition (32-bit x86)'  : 'windows',
-                'Windows Server 2003 Standard x64 Edition'           : 'windows',
-                'Windows Server 2003 Web Edition'                    : 'windows',
-                'Windows Server 2008 Datacenter 32-Bit'              : 'windows.server.2008',
-                'Windows Server 2008 Enterprise 32-Bit'              : 'windows.server.2008',
-                'Windows Server 2008 Standard 32-Bit'                : 'windows.server.2008',
-                'Windows Server 2012 R2 Datacenter'                  : 'windows.server.2012',
-                'Windows Server 2012 R2 Essentials'                  : 'windows.server.2012',
-                'Windows Server 2012 R2 Standard'                    : 'windows.server.2012',
-                'Windows Server 2016 Datacenter'                     : 'windows.server.2016',
-                'Windows Server 2016 Essentials'                     : 'windows.server.2016',
-                'Windows Server 2016 Standard'                       : 'windows.server.2016',
-                'Windows Server 2019 Datacenter'                     : 'windows.server.2019',
-                'Windows Server 2019 Essentials'                     : 'windows.server.2019',
-                'Windows Server 2019 Standard'                       : 'windows.server.2019',
+                'Windows 8'                                          : WINDOWS_8,
+                'Windows 8.1'                                        : WINDOWS_8,
+                'Windows NT Server 4.0'                              : WINDOWS,
+                'Windows Server 2003 Datacenter Edition (32-bit x86)': WINDOWS,
+                'Windows Server 2003 Datacenter x64 Edition'         : WINDOWS,
+                'Windows Server 2003 Enterprise Edition (32-bit x86)': WINDOWS,
+                'Windows Server 2003 Enterprise x64 Edition'         : WINDOWS,
+                'Windows Server 2003 Standard Edition (32-bit x86)'  : WINDOWS,
+                'Windows Server 2003 Standard x64 Edition'           : WINDOWS,
+                'Windows Server 2003 Web Edition'                    : WINDOWS,
+                'Windows Server 2008 Datacenter 32-Bit'              : WINDOWS_SERVER_2008,
+                'Windows Server 2008 Enterprise 32-Bit'              : WINDOWS_SERVER_2008,
+                'Windows Server 2008 Standard 32-Bit'                : WINDOWS_SERVER_2008,
+                'Windows Server 2012 R2 Datacenter'                  : WINDOWS_SERVER_2012,
+                'Windows Server 2012 R2 Essentials'                  : WINDOWS_SERVER_2012,
+                'Windows Server 2012 R2 Standard'                    : WINDOWS_SERVER_2012,
+                'Windows Server 2016 Datacenter'                     : WINDOWS_SERVER_2016,
+                'Windows Server 2016 Essentials'                     : WINDOWS_SERVER_2016,
+                'Windows Server 2016 Standard'                       : WINDOWS_SERVER_2016,
+                'Windows Server 2019 Datacenter'                     : WINDOWS_SERVER_2019,
+                'Windows Server 2019 Essentials'                     : WINDOWS_SERVER_2019,
+                'Windows Server 2019 Standard'                       : WINDOWS_SERVER_2019,
                 'Windows Server 2022 Datacenter'                     : 'windows.server.2022.dc.core',
                 'Windows Server 2022 Standard'                       : 'windows.server.2022.std.core',
-                'Windows Server 2025 Datacenter'                     : 'windows.server.2025',
-                'Windows Server 2025 Essentials'                     : 'windows.server.2025',
-                'Windows Server 2025 Standard'                       : 'windows.server.2025',
-                'Windows Small Business Server 2003'                 : 'windows',
-                'Windows Vista'                                      : 'windows',
-                'Windows Web Server 2008'                            : 'windows.8',
-                'Windows XP 64-Bit Edition'                          : 'windows',
-                'Windows XP Professional'                            : 'windows',
-                ''                                                   : 'other'
+                'Windows Server 2025 Datacenter'                     : WINDOWS_SERVER_2025,
+                'Windows Server 2025 Essentials'                     : WINDOWS_SERVER_2025,
+                'Windows Server 2025 Standard'                       : WINDOWS_SERVER_2025,
+                'Windows Small Business Server 2003'                 : WINDOWS,
+                'Windows Vista'                                      : WINDOWS,
+                'Windows Web Server 2008'                            : WINDOWS_8,
+                'Windows XP 64-Bit Edition'                          : WINDOWS,
+                'Windows XP Professional'                            : WINDOWS,
+                ''                                                   : OTHER
         ]
 
         if (findByKey) {
-            return SCVMM_OS_TYPE_MAP[searchFor] ?: SCVMM_OS_TYPE_MAP[defaultOsType] ?: 'other'
+            return SCVMM_OS_TYPE_MAP[searchFor] ?: SCVMM_OS_TYPE_MAP[defaultOsType] ?: OTHER
         } else {
             // Passed in the value... find the key
             def found = SCVMM_OS_TYPE_MAP.find { k, v -> v == searchFor }
@@ -2319,11 +2411,11 @@ For (\$i=0; \$i -le 10; \$i++) {
 
     def transferImage(opts, cloudFiles, imageName) {
         def rtn = [success: false, results: []]
-        CloudFile metadataFile = (CloudFile) cloudFiles?.find { cloudFile -> cloudFile.name == 'metadata.json' }
+        CloudFile metadataFile = (CloudFile) cloudFiles?.find { cloudFile -> cloudFile.name == METADATA_JSON }
         List<CloudFile> vhdFiles = cloudFiles?.findAll { cloudFile ->
-            cloudFile.name.indexOf(".morpkg") == -1 &&
-                    (cloudFile.name.indexOf('.vhd') > -1 || cloudFile.name.indexOf('.vhdx')) &&
-                    cloudFile.name.endsWith("/") == false
+            cloudFile.name.indexOf(".morpkg") == INDEX_NOT_FOUND &&
+                    (cloudFile.name.indexOf('.vhd') > INDEX_NOT_FOUND || cloudFile.name.indexOf('.vhdx')) &&
+                    cloudFile.name.endsWith(FORWARD_SLASH) == false
         }
         log.debug("vhdFiles: ${vhdFiles}")
         def zoneRoot = opts.zoneRoot ?: defaultRoot
@@ -2338,13 +2430,13 @@ For (\$i=0; \$i -le 10; \$i++) {
 
         if (metadataFile) {
             fileList << [inputStream: metadataFile.inputStream, contentLength: metadataFile.contentLength,
-                         targetPath: "${tgtFolder}\\metadata.json".toString(), copyRequestFileName: "metadata.json"]
+                         targetPath : "${tgtFolder}\\metadata.json".toString(), copyRequestFileName: METADATA_JSON]
         }
         vhdFiles.each { CloudFile vhdFile ->
             def imageFileName = extractImageFileName(vhdFile.name)
             def filename = extractFileName(vhdFile.name)
             fileList << [inputStream: vhdFile.inputStream, contentLength: vhdFile.getContentLength(),
-                         targetPath: "${tgtFolder}\\${imageFileName}".toString(), copyRequestFileName: filename]
+                         targetPath : "${tgtFolder}\\${imageFileName}".toString(), copyRequestFileName: filename]
         }
         fileList.each { Map fileItem ->
             Long contentLength = (Long) fileItem.contentLength
@@ -2364,7 +2456,7 @@ For (\$i=0; \$i -le 10; \$i++) {
             def command = "\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${vmId}\";" +
                     " \$ignore = New-SCVMCheckpoint -VM \$VM -Name \"${snapshotId}\""
             def out = wrapExecuteCommand(generateCommandString(command), opts)
-            rtn.success = out.success && out.exitCode == '0'
+            rtn.success = out.success && out.exitCode == EXIT_CODE_SUCCESS
             rtn.snapshotId = snapshotId
             log.debug("snapshot server: ${out}")
         } catch (e) {
@@ -2381,8 +2473,8 @@ For (\$i=0; \$i -le 10; \$i++) {
             commands << "\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${vmId}\""
             commands << "\$Checkpoint = Get-SCVMCheckpoint -VM \$VM | where {\$_.Name -like \"${snapshotId}\"}"
             commands << "\$ignore = Remove-SCVMCheckpoint -VMCheckpoint \$Checkpoint"
-            def out = wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
-            rtn.success = out.success && out.exitCode == '0'
+            def out = wrapExecuteCommand(generateCommandString(commands.join(CMD_SEPARATOR)), opts)
+            rtn.success = out.success && out.exitCode == EXIT_CODE_SUCCESS
             rtn.snapshotId = snapshotId
             log.debug("delete snapshot: ${out}")
         } catch (e) {
@@ -2399,8 +2491,8 @@ For (\$i=0; \$i -le 10; \$i++) {
             commands << "\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${vmId}\""
             commands << "\$Checkpoint = Get-SCVMCheckpoint -VM \$VM | where {\$_.Name -like \"${snapshotId}\"}"
             commands << "Restore-SCVMCheckpoint -VMCheckpoint \$Checkpoint"
-            def out = wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
-            rtn.success = out.success && out.exitCode == '0'
+            def out = wrapExecuteCommand(generateCommandString(commands.join(CMD_SEPARATOR)), opts)
+            rtn.success = out.success && out.exitCode == EXIT_CODE_SUCCESS
             log.debug("restore server: ${out}")
         } catch (e) {
             log.error("restoreServer error: ${e}")
@@ -2422,8 +2514,8 @@ For (\$i=0; \$i -le 10; \$i++) {
                     " -like [io.path]::GetFileNameWithoutExtension(\$OriginalBootDisk.VirtualHardDisk)}"
             commands << "Set-SCVirtualDiskDrive -VirtualDiskDrive \$ClonedBootDisk -VolumeType BootAndSystem"
 
-            def out = wrapExecuteCommand(generateCommandString(commands.join(';')), opts)
-            rtn.success = out.success && out.exitCode == '0'
+            def out = wrapExecuteCommand(generateCommandString(commands.join(CMD_SEPARATOR)), opts)
+            rtn.success = out.success && out.exitCode == EXIT_CODE_SUCCESS
             log.debug("changeVolumeTypeForClonedBootDisk: ${out}")
         } catch (e) {
             log.error("changeVolumeTypeForClonedBootDisk error: ${e}")
@@ -2441,7 +2533,7 @@ For (\$i=0; \$i -le 10; \$i++) {
         def hardwareGuid = UUID.randomUUID().toString()
         def networkConfig = opts.networkConfig
         def scvmmCapabilityProfile = opts.scvmmCapabilityProfile
-        def scvmmGeneration = opts.scvmmGeneration ?: 'generation1'
+        def scvmmGeneration = opts.scvmmGeneration ?: GENERATION1
         def hardwareProfileName = "Profile${UUID.randomUUID().toString()}"
         def maxCores = opts.maxCores
         def memoryMB = (int) opts.memory.div(ComputeUtility.ONE_MEGABYTE)
@@ -2483,8 +2575,8 @@ For (\$i=0; \$i -le 10; \$i++) {
         def vlanEnabled = networkConfig?.primaryInterface?.vlanId > 0
         def vlanId = networkConfig?.primaryInterface?.vlanId
         // network may be a vlan network... therefore, the externalId includes the VLAN id.. need to remove it
-        def networkExternalId = networkConfig?.primaryInterface?.network?.externalId?.take(36)
-        def subnetExternalId = networkConfig?.primaryInterface?.subnet?.externalId?.take(36)
+        def networkExternalId = networkConfig?.primaryInterface?.network?.externalId?.take(TAKE_36)
+        def subnetExternalId = networkConfig?.primaryInterface?.subnet?.externalId?.take(TAKE_36)
 
         if (isTemplate && templateId) {
             commands << "\$template = Get-SCVMTemplate -VMMServer localhost | where {\$_.ID -eq \"$templateId\"}"
@@ -2526,7 +2618,7 @@ For (\$i=0; \$i -le 10; \$i++) {
                 "-EnableMACAddressSpoofing \$false -EnableGuestIPNetworkVirtualizationUpdates \$false " +
                 "-IPv4AddressType ${doStatic && doPool ? 'Static' : 'Dynamic'} " +
                 "-IPv6AddressType Dynamic ${subnetExternalId ? '-VMSubnet \$VMSubnet' : ''} -VMNetwork \$VMNetwork"
-        commands << "} else {"
+        commands << ELSE_CLOSE
         commands << "\$ignore = New-SCVirtualNetworkAdapter -VMMServer localhost -JobGroup $hardwareGuid " +
                 "-MACAddressType \$MACAddressType " +
                 "-VLanEnabled ${vlanEnabled ? "\$true" : "\$false"} ${vlanEnabled ? "-VLanID ${vlanId}" : ''} " +
@@ -2534,7 +2626,7 @@ For (\$i=0; \$i -le 10; \$i++) {
                 "-EnableGuestIPNetworkVirtualizationUpdates \$false" +
                 " -IPv4AddressType ${doStatic && doPool ? 'Static' : 'Dynamic'}" +
                 " -IPv6AddressType Dynamic ${subnetExternalId ? '-VMSubnet \$VMSubnet' : ''} -VMNetwork \$VMNetwork"
-        commands << "}"
+        commands << CLOSE_BRACE
 
         if (scvmmCapabilityProfile) {
             commands << "\$CapabilityProfile = Get-SCCapabilityProfile -VMMServer localhost |" +
@@ -2542,7 +2634,7 @@ For (\$i=0; \$i -le 10; \$i++) {
         }
 
         // Generation
-        def generationNumber = !scvmmGeneration || scvmmGeneration == 'generation1' ? '1' : '2'
+        def generationNumber = !scvmmGeneration || scvmmGeneration == GENERATION1 ? OBJECT_TYPE_1 : '2'
         if (isTemplate && templateId) {
             // Copying all of the hardware profiles from the existing template over
             commands << "\$CPUExpectedUtilizationPercent = If (-not " +
@@ -2581,7 +2673,7 @@ For (\$i=0; \$i -le 10; \$i++) {
                     "([string]::IsNullOrEmpty(\$template.CPULimitFunctionality))) " +
                     "{\$template.CPULimitFunctionality} Else { \$false }"
 
-            commands << "\$ignore = New-SCHardwareProfile -VMMServer localhost " +
+            commands << IGNORE_NEW_HARDWARE_PROFILE +
                     "-Name \"$hardwareProfileName\" -Description \"Morpheus created profile\" -CPUCount ${maxCores}" +
                     " -MemoryMB ${memoryMB} -DynamicMemoryEnabled \$DynamicMemoryEnabled " +
                     "-MemoryWeight \$MemoryWeight -VirtualVideoAdapterEnabled \$VirtualVideoAdapterEnabled " +
@@ -2595,18 +2687,18 @@ For (\$i=0; \$i -le 10; \$i++) {
                     " -CheckpointType Production" +
                     " ${scvmmCapabilityProfile ? '-CapabilityProfile \$CapabilityProfile' : ''}" +
                     " -Generation $generationNumber -JobGroup $hardwareGuid"
-            commands << "\$HardwareProfile = Get-SCHardwareProfile -VMMServer localhost |" +
+            commands << HARDWARE_PROFILE_GET_CMD +
                     " where {\$_.Name -eq \"$hardwareProfileName\"}"
 
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.HAVMPriority)))" +
-                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile" +
-                    " -HAVMPriority \$template.HAVMPriority}"
+                    SET_HARDWARE_PROFILE_CMD +
+                    "-HAVMPriority \$template.HAVMPriority}"
 
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.ReplicationGroup)))" +
-                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile" +
-                    " -ReplicationGroup \$template.ReplicationGroup}"
+                    SET_HARDWARE_PROFILE_CMD +
+                    "-ReplicationGroup \$template.ReplicationGroup}"
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.SecureBootEnabled)))" +
-                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    SET_HARDWARE_PROFILE_CMD +
                     "-SecureBootEnabled \$template.SecureBootEnabled}"
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.NumLock)))" +
                     " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -NumLock \$template.NumLock}"
@@ -2622,79 +2714,79 @@ For (\$i=0; \$i -le 10; \$i++) {
                     "{ \$startupMemory = \$template.Memory };"
             if (minDynamicMemoryMB) {
                 commands << "\$minimumDynamicMemory = ${minDynamicMemoryMB}; " +
-                        "If (\$startupMemory -gt \$minimumDynamicMemory) { \$minimumDynamicMemory = \$startupMemory };"
+                        IF_STARTUP_GT_MIN_DYNAMIC_MEMORY
             } else {
                 commands << "\$minimumDynamicMemory = \$template.DynamicMemoryMinimumMB; " +
-                        "If (\$startupMemory -gt \$minimumDynamicMemory) { \$minimumDynamicMemory = \$startupMemory };"
+                        IF_STARTUP_GT_MIN_DYNAMIC_MEMORY
             }
             if (maxDynamicMemoryMB) {
                 commands << "\$maximumDynamicMemory = ${maxDynamicMemoryMB}; " +
-                        "If (\$startupMemory -gt \$maximumDynamicMemory) { \$maximumDynamicMemory = \$startupMemory };"
+                        IF_STARTUP_GT_MAX_DYNAMIC_MEMORY
             } else {
                 commands << "\$maximumDynamicMemory = \$template.DynamicMemoryMaximumMB; " +
-                        "If (\$startupMemory -gt \$maximumDynamicMemory) { \$maximumDynamicMemory = \$startupMemory };"
+                        IF_STARTUP_GT_MAX_DYNAMIC_MEMORY
             }
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.Memory))) " +
-                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    SET_HARDWARE_PROFILE_CMD +
                     "-DynamicMemoryEnabled \$True -MemoryMB \$startupMemory}"
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.DynamicMemoryMaximumMB)))" +
-                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    SET_HARDWARE_PROFILE_CMD +
                     "-DynamicMemoryEnabled \$True -DynamicMemoryMinimumMB \$minimumDynamicMemory}"
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.DynamicMemoryMaximumMB))) " +
-                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    SET_HARDWARE_PROFILE_CMD +
                     "-DynamicMemoryEnabled \$True -DynamicMemoryMaximumMB \$maximumDynamicMemory}"
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.DynamicMemoryBufferPercentage)))" +
-                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    SET_HARDWARE_PROFILE_CMD +
                     "-DynamicMemoryEnabled \$True -DynamicMemoryBufferPercentage" +
                     " \$template.DynamicMemoryBufferPercentage}"
-            commands << "}"
+            commands << CLOSE_BRACE
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.MonitorMaximumCount)))" +
-                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    SET_HARDWARE_PROFILE_CMD +
                     "-MonitorMaximumCount \$template.MonitorMaximumCount}"
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.MonitorMaximumResolution))) " +
-                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    SET_HARDWARE_PROFILE_CMD +
                     "-MonitorMaximumResolution \$template.MonitorMaximumResolution}"
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.RecoveryPointObjective))) " +
-                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    SET_HARDWARE_PROFILE_CMD +
                     "-RecoveryPointObjective \$template.RecoveryPointObjective}"
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.ProtectionProvider))) " +
-                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    SET_HARDWARE_PROFILE_CMD +
                     "-ProtectionProvider \$template.ProtectionProvider}"
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.BootOrder))) " +
                     "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -BootOrder \$template.BootOrder}"
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.FirstBootDevice)) " +
                     "-and @('CD','PXE','SCSI') -contains \$template.FirstBootDevice) " +
-                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    SET_HARDWARE_PROFILE_CMD +
                     "-FirstBootDevice \$template.FirstBootDevice; Write-Output \"FirstBootDevice set " +
                     "successfully to: \$(\$template.FirstBootDevice)\" }"
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.SecureBootTemplate))) " +
-                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    SET_HARDWARE_PROFILE_CMD +
                     "-SecureBootTemplate \$template.SecureBootTemplate}"
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.CPUType))) " +
                     "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile -CPUType \$template.CPUType}"
             commands << "if( \$NumaIsolationRequired -eq \$True) {"
             commands << "\$ignore = If (-not ([string]::IsNullOrEmpty(\$template.CPUPerVirtualNumaNodeMaximum))) " +
-                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    SET_HARDWARE_PROFILE_CMD +
                     "-CPUPerVirtualNumaNodeMaximum \$template.CPUPerVirtualNumaNodeMaximum}"
-            commands << "\$ignore = If (-not " +
+            commands << IGNORE_IF_NOT +
                     "([string]::IsNullOrEmpty(\$template.MemoryPerVirtualNumaNodeMaximumMB)))" +
-                    " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    SET_HARDWARE_PROFILE_CMD +
                     "-MemoryPerVirtualNumaNodeMaximumMB \$template.MemoryPerVirtualNumaNodeMaximumMB}"
-            commands << "\$ignore = If (-not " +
+            commands << IGNORE_IF_NOT +
                     "([string]::IsNullOrEmpty(\$template.VirtualNumaNodesPerSocketMaximum))) " +
-                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    SET_HARDWARE_PROFILE_CMD +
                     "-VirtualNumaNodesPerSocketMaximum \$template.VirtualNumaNodesPerSocketMaximum}"
-            commands << "}"
-            commands << "\$ignore = If (-not " +
+            commands << CLOSE_BRACE
+            commands << IGNORE_IF_NOT +
                     "([string]::IsNullOrEmpty(\$template.AutomaticCriticalErrorAction))) " +
-                    "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+                    SET_HARDWARE_PROFILE_CMD +
                     "-AutomaticCriticalErrorAction \$template.AutomaticCriticalErrorAction}"
-            commands << "\$ignore = If (-not " +
+            commands << IGNORE_IF_NOT +
                     "([string]::IsNullOrEmpty(\$template.AutomaticCriticalErrorActionTimeout))) " +
                     "{ Set-SCHardwareProfile -HardwareProfile \$HardwareProfile" +
                     " -AutomaticCriticalErrorActionTimeout \$template.AutomaticCriticalErrorActionTimeout}"
         } else {
-            commands << "\$ignore = New-SCHardwareProfile -VMMServer localhost " +
+            commands << IGNORE_NEW_HARDWARE_PROFILE +
                     "-Name \"$hardwareProfileName\" -Description \"Morpheus created profile\" -CPUCount ${maxCores}" +
                     " -MemoryMB ${memoryMB} -DynamicMemoryEnabled \$false -MemoryWeight 5000 " +
                     "-VirtualVideoAdapterEnabled \$false -CPUExpectedUtilizationPercent 20 -DiskIops 0 " +
@@ -2705,14 +2797,14 @@ For (\$i=0; \$i -le 10; \$i++) {
                     "-CPULimitForMigration \$false -CheckpointType " +
                     "Production ${scvmmCapabilityProfile ? '-CapabilityProfile \$CapabilityProfile' : ''} " +
                     "-Generation $generationNumber -JobGroup $hardwareGuid"
-            commands << "\$HardwareProfile = Get-SCHardwareProfile -VMMServer localhost |" +
+            commands << HARDWARE_PROFILE_GET_CMD +
                     " where {\$_.Name -eq \"$hardwareProfileName\"}"
         }
 
         if (minDynamicMemoryMB && maxDynamicMemoryMB) {
-            commands << "\$ignore = Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+            commands << IGNORE_SET_HARDWARE_PROFILE +
                     "-DynamicMemoryEnabled \$True -DynamicMemoryMinimumMB ${minDynamicMemoryMB}"
-            commands << "\$ignore = Set-SCHardwareProfile -HardwareProfile \$HardwareProfile " +
+            commands << IGNORE_SET_HARDWARE_PROFILE +
                     "-DynamicMemoryEnabled \$True -DynamicMemoryMaximumMB ${maxDynamicMemoryMB}"
         }
 
@@ -2734,13 +2826,13 @@ For (\$i=0; \$i -le 10; \$i++) {
                 // virtualImage is an SCVMM VHD - locate this and use to form a Temporary Template
                 commands << "\$VirtualHardDisk = Get-SCVirtualHardDisk -VMMServer localhost -ID \"${imageId}\""
                 if (volumePath && !deployingToCloud) {
-                    commands << "\$ignore = New-SCVirtualDiskDrive -VMMServer " +
-                            "localhost ${generationNumber == '1' ? '-IDE' : '-SCSI'} -Bus 0 -LUN 0 " +
+                    commands << IGNORE_NEW_VIRTUAL_DISK_DRIVE +
+                            "localhost ${generationNumber == OBJECT_TYPE_1 ? '-IDE' : '-SCSI'} -Bus 0 -LUN 0 " +
                             "-JobGroup $diskJobGuid -CreateDiffDisk \$false -VirtualHardDisk \$VirtualHardDisk " +
                             "-Path \"$volumePath\" -VolumeType BootAndSystem"
                 } else {
-                    commands << "\$ignore = New-SCVirtualDiskDrive -VMMServer " +
-                            "localhost ${generationNumber == '1' ? '-IDE' : '-SCSI'} -Bus 0 -LUN 0 " +
+                    commands << IGNORE_NEW_VIRTUAL_DISK_DRIVE +
+                            "localhost ${generationNumber == OBJECT_TYPE_1 ? '-IDE' : '-SCSI'} -Bus 0 -LUN 0 " +
                             "-JobGroup $diskJobGuid -CreateDiffDisk \$false -VirtualHardDisk \$VirtualHardDisk " +
                             "-VolumeType BootAndSystem"
                 }
@@ -2750,12 +2842,12 @@ For (\$i=0; \$i -le 10; \$i++) {
                     if (isSyncdImage) {
                         fromDisk = "\$VirtualHardDisk${index}"
                         def diskExternalId = diskExternalIdMappings[1 + index]?.externalId
-                        if(diskExternalId) {
+                        if (diskExternalId) {
                             commands << "${fromDisk} = Get-SCVirtualHardDisk -VMMServer " +
                                     "localhost -ID \"${diskExternalId}\""
                         }
                     }
-                    def busNumber = '0'
+                    def busNumber = EXIT_CODE_SUCCESS
                     def generateResults = generateDataDiskCommand(busNumber, index, diskJobGuid,
                             (int) dataDisk.maxStorage.div(ComputeUtility.ONE_MEGABYTE), dataDisk.volumePath,
                             fromDisk, deployingToCloud)
@@ -2776,8 +2868,7 @@ For (\$i=0; \$i -le 10; \$i++) {
             commands << "\$virtualMachineConfiguration = New-SCVMConfiguration -VMTemplate \$template -Name \"$vmId\""
 
             if (doStatic && doPool) {
-                commands << "\$VNAConfig = Get-SCVirtualNetworkAdapterConfiguration " +
-                        "-VMConfiguration \$virtualMachineConfiguration"
+                commands << "\$VNAConfig = Get-SCVirtualNetworkAdapterConfiguration " + VM_CONFIGURATION_PARAM
                 if (doPool) {
                     commands << "\$ippool = Get-SCStaticIPAddressPool -ID \"$poolId\""
                     commands << "\$ipaddress = Get-SCIPAddress -IPAddress \"$ipAddress\""
@@ -2800,29 +2891,29 @@ For (\$i=0; \$i -le 10; \$i++) {
             if (deployingToCloud) {
                 // deployingToCloud - then assign cloud Only - no need to pin Storage paths
                 // Deploying to a Cloud $cloud should be available
-                commands << "\$ignore = Set-SCVMConfiguration -VMConfiguration \$virtualMachineConfiguration" +
+                commands << IGNORE_SET_VM_CONFIGURATION +
                         " -CapabilityProfile \$CapabilityProfile -cloud \$cloud"
-                commands << "\$ignore = Update-SCVMConfiguration -VMConfiguration \$virtualMachineConfiguration"
+                commands << IGNORE_UPDATE_VM_CONFIGURATION
                 def newVMString = "\$createdVm = New-SCVirtualMachine" +
                         " -Name \"$vmId\" -VMConfiguration \$virtualMachineConfiguration" +
                         " ${isSysprep ? "-AnswerFile \$AnswerFile" : ""} -HardwareProfile \$HardwareProfile" +
                         " -JobGroup \"$diskJobGuid\" -StartAction \"TurnOnVMIfRunningWhenVSStopped\" " +
-                        "-RunAsynchronously -StopAction \"SaveVM\""
+                        RUN_ASYNCHRONOUSLY_STOP_ACTION
                 newVMString = appendOSCustomization(newVMString, opts)
                 commands << newVMString
             } else {
                 //HostGroup deployment NOT TO CLOUD
-                if(hostExternalId) {
+                if (hostExternalId) {
                     commands << "\$vmHost = Get-SCVMHost -ID \"$hostExternalId\""
-                    commands << "\$ignore = Set-SCVMConfiguration -VMConfiguration \$virtualMachineConfiguration" +
+                    commands << IGNORE_SET_VM_CONFIGURATION +
                             " -VMHost \$vmHost"
-                    commands << "\$ignore = Update-SCVMConfiguration -VMConfiguration \$virtualMachineConfiguration"
+                    commands << IGNORE_UPDATE_VM_CONFIGURATION
                     //Do Not map Additional volumes here - done later
                     def newVMString = "\$createdVm = New-SCVirtualMachine -Name \"$vmId\" -VMConfiguration" +
                             " \$virtualMachineConfiguration ${isSysprep ? "-AnswerFile \$AnswerFile" : ""} " +
                             "${isTemplate ? "-HardwareProfile \$HardwareProfile" : ""} " +
                             "-JobGroup \"$diskJobGuid\" -StartAction \"TurnOnVMIfRunningWhenVSStopped\" " +
-                            "-RunAsynchronously -StopAction \"SaveVM\""
+                            RUN_ASYNCHRONOUSLY_STOP_ACTION
                     newVMString = appendOSCustomization(newVMString, opts)
                     commands << newVMString
                 } else {
@@ -2847,29 +2938,29 @@ For (\$i=0; \$i -le 10; \$i++) {
                 ipConfig = "-IPv4AddressType Dynamic"
             }
             commands << "if (\$VMSubnet) {"
-            commands << "Set-SCVirtualNetworkAdapter -VirtualNetworkAdapter \$VirtualNetworkAdapter " +
+            commands << SET_VIRTUAL_NETWORK_ADAPTER +
                     "-VMNetwork \$VMNetwork -VMSubnet " +
                     "\$VMSubnet ${vlanEnabled ? "-VLanEnabled \$true" : ""} " +
                     "${vlanEnabled ? "-VLanID ${vlanId}" : ''} -VirtualNetwork \$VirtualNetwork -" +
                     "MACAddressType Dynamic ${ipConfig} -IPv6AddressType Dynamic " +
                     "-NoPortClassification -EnableVMNetworkOptimization \$false -EnableMACAddressSpoofing \$false" +
                     " -JobGroup $virtualNetworkGuid"
-            commands << "} else {"
-            commands << "Set-SCVirtualNetworkAdapter -VirtualNetworkAdapter \$VirtualNetworkAdapter " +
+            commands << ELSE_CLOSE
+            commands << SET_VIRTUAL_NETWORK_ADAPTER +
                     "-VMNetwork \$VMNetwork ${vlanEnabled ? "-VLanEnabled \$true" : ""}" +
                     " ${vlanEnabled ? "-VLanID ${vlanId}" : ''} -VirtualNetwork \$VirtualNetwork -MACAddressType" +
                     " Dynamic ${ipConfig} -IPv6AddressType Dynamic -NoPortClassification " +
                     "-EnableVMNetworkOptimization \$false -EnableMACAddressSpoofing \$false " +
                     "-JobGroup $virtualNetworkGuid"
-            commands << "}"
+            commands << CLOSE_BRACE
             if (hostExternalId) {
                 commands << "\$vmHost = Get-SCVMHost -ID \"$hostExternalId\""
                 def newVMString
                 if (deployingToCloud) {
                     newVMString = "\$createdVm = New-SCVirtualMachine -VM \$VM -Name \"$vmId\" " +
                             "-JobGroup $virtualNetworkGuid -UseDiffDiskOptimization -RunAsynchronously " +
-                            "-Cloud \$cloud -HardwareProfile \$HardwareProfile -StartAction " +
-                            "TurnOnVMIfRunningWhenVSStopped -StopAction SaveVM"
+                            CLOUD_HARDWARE_PROFILE_START_ACTION +
+                            TURN_ON_VM_IF_RUNNING_WHEN_VS_STOPPED
                 } else {
                     newVMString = "\$createdVm = New-SCVirtualMachine -VM \$VM -Name \"$vmId\" " +
                             "-JobGroup $virtualNetworkGuid -UseDiffDiskOptimization -RunAsynchronously " +
@@ -2884,15 +2975,15 @@ For (\$i=0; \$i -le 10; \$i++) {
                 def newVMString = "\$createdVm = New-SCVirtualMachine -VM \$VM " +
                         "-Name \"$vmId\" ${deployingToCloud ? "-Cloud \$cloud" : ""} " +
                         "-JobGroup $virtualNetworkGuid -UseDiffDiskOptimization -RunAsynchronously " +
-                        "-Cloud \$cloud -HardwareProfile \$HardwareProfile -StartAction " +
-                        "TurnOnVMIfRunningWhenVSStopped -StopAction SaveVM"
+                        CLOUD_HARDWARE_PROFILE_START_ACTION +
+                        TURN_ON_VM_IF_RUNNING_WHEN_VS_STOPPED
                 newVMString = appendOSCustomization(newVMString, opts)
                 commands << newVMString
             }
         }
         commands << "\$createdVm | Select ID, ObjectType"
 
-        rtn.launchCommand = commands.join('\n')
+        rtn.launchCommand = commands.join(NEWLINE_CHAR)
         rtn.hardwareProfileName = hardwareProfileName
         rtn.templateName = templateName
         rtn
@@ -2928,7 +3019,7 @@ For (\$i=0; \$i -le 10; \$i++) {
         retString
     }
 
-    def generateDataDiskCommand(busNumber = '0', dataDiskNumber, diskJobGuid, sizeMB,
+    def generateDataDiskCommand(busNumber = EXIT_CODE_SUCCESS, dataDiskNumber, diskJobGuid, sizeMB,
                                 path = null, fromDisk = null, discoverAvailableLUN = false,
                                 deployingToCloud = false) {
         def rtn = [command: null, fileName: '']
@@ -2984,7 +3075,7 @@ For (\$i=0; \$i -le 10; \$i++) {
     def getScvmmZoneOpts(MorpheusContext context, Cloud cloud) {
         def cloudConfig = cloud.getConfigMap()
         def keyPair = context.services.keyPair.find(
-                new DataQuery().withFilter("accountId", cloud?.account?.id))
+                new DataQuery().withFilter(ACCOUNT_ID, cloud?.account?.id))
         return [
                 account      : cloud.account,
                 zoneConfig   : cloudConfig,
@@ -2993,7 +3084,7 @@ For (\$i=0; \$i -le 10; \$i++) {
                 publicKey    : keyPair?.publicKey,
                 privateKey   : keyPair?.privateKey,
                 //controllerServer       : controllerServer,
-                rootSharePath: cloudConfig['libraryShare'],
+                rootSharePath: cloudConfig[LIBRARY_SHARE],
                 regionCode   : cloud.regionCode
         ]
         //baseBoxProvisionService: scvmmProvisionService]
@@ -3002,7 +3093,7 @@ For (\$i=0; \$i -le 10; \$i++) {
     def getScvmmCloudOpts(MorpheusContext context, Cloud cloud, controllerServer) {
         def cloudConfig = cloud.getConfigMap()
         def keyPair = context.services.keyPair.find(new DataQuery().withFilter(
-                "accountId", cloud?.account?.id))
+                ACCOUNT_ID, cloud?.account?.id))
         return [
                 account         : cloud.account,
                 zoneConfig      : cloudConfig,
@@ -3011,7 +3102,7 @@ For (\$i=0; \$i -le 10; \$i++) {
                 publicKey       : keyPair?.publicKey,
                 privateKey      : keyPair?.privateKey,
                 controllerServer: controllerServer,
-                rootSharePath   : cloudConfig['libraryShare'],
+                rootSharePath   : cloudConfig[LIBRARY_SHARE],
                 regionCode      : cloud.regionCode
         ]
     }
@@ -3025,7 +3116,7 @@ For (\$i=0; \$i -le 10; \$i++) {
                 : serverConfig.diskPath?.length() > 0
                 ? serverConfig.diskPath
                 : null
-        def diskRoot = configuredDiskPath ? configuredDiskPath : defaultRoot + '\\Disks'
+        def diskRoot = configuredDiskPath ? configuredDiskPath : defaultRoot + DISKS_FOLDER
         def configuredWorkingPath = zoneConfig.workingPath?.length() > 0
                 ? zoneConfig.workingPath
                 : serverConfig.workingPath?.length() > 0
@@ -3033,7 +3124,7 @@ For (\$i=0; \$i -le 10; \$i++) {
                 : null
         def zoneRoot = configuredWorkingPath ? configuredWorkingPath : defaultRoot
         return [hypervisorConfig: serverConfig, hypervisor: hypervisor, sshHost: hypervisor.sshHost,
-                sshUsername: hypervisor.sshUsername,
+                sshUsername     : hypervisor.sshUsername,
                 sshPassword     : hypervisor.sshPassword, zoneRoot: zoneRoot, diskRoot: diskRoot]
     }
 
@@ -3075,34 +3166,37 @@ For (\$i=0; \$i -le 10; \$i++) {
 
     def extractFileName(imageName) {
         def rtn = imageName
-        def lastIndex = imageName?.lastIndexOf('/')
-        if (lastIndex > -1)
+        def lastIndex = imageName?.lastIndexOf(FORWARD_SLASH)
+        if (lastIndex > INDEX_NOT_FOUND) {
             rtn = imageName.substring(lastIndex + 1)
+        }
         return rtn
     }
 
     def extractImageFileName(imageName) {
         def rtn = extractFileName(imageName)
-        if (rtn.indexOf('.tar.gz') > -1)
-            rtn = rtn.replaceAll('.tar.gz', '')
-        if (rtn.indexOf('.gz') > -1)
-            rtn = rtn.replaceAll('.gz', '')
+        if (rtn.indexOf(TAR_GZ_EXTENSION) > INDEX_NOT_FOUND) {
+            rtn = rtn.replaceAll(TAR_GZ_EXTENSION, '')
+        }
+        if (rtn.indexOf(DOT_GZ) > INDEX_NOT_FOUND) {
+            rtn = rtn.replaceAll(DOT_GZ, '')
+        }
         return rtn
     }
 
     def formatImageFolder(imageName) {
         def rtn = imageName
-        rtn = rtn.replaceAll(' ', '_')
-        rtn = rtn.replaceAll('\\.', '_')
+        rtn = rtn.replaceAll(' ', UNDERSCORE)
+        rtn = rtn.replaceAll('\\.', UNDERSCORE)
     }
 
     def getScvmmInitializationOpts(cloud) {
         def cloudConfig = cloud.getConfigMap()
-        def diskRoot = cloudConfig.diskPath?.length() > 0 ? cloudConfig.diskPath : defaultRoot + '\\Disks'
+        def diskRoot = cloudConfig.diskPath?.length() > 0 ? cloudConfig.diskPath : defaultRoot + DISKS_FOLDER
         def cloudRoot = cloudConfig.workingPath?.length() > 0 ? cloudConfig.workingPath : defaultRoot
-        return [sshHost : cloudConfig.host, sshUsername: getUsername(cloud),
+        return [sshHost    : cloudConfig.host, sshUsername: getUsername(cloud),
                 sshPassword: getPassword(cloud), zoneRoot: cloudRoot,
-                diskRoot: diskRoot]
+                diskRoot   : diskRoot]
     }
 
     protected getUsername(Cloud cloud) {
