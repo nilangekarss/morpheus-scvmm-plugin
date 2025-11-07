@@ -150,7 +150,7 @@ class ScvmmApiService {
         def out = wrapExecuteCommand(cmdString, opts)
 
         if (!out.success) {
-            throw new Exception("Error in getting Get-SCVirtualHardDisk")
+            throw new IllegalStateException("Error in getting Get-SCVirtualHardDisk")
         }
         def vhdBlocks = out.data ?: []
         if (vhdBlocks?.size() == 0) {
@@ -200,7 +200,7 @@ class ScvmmApiService {
                 }
 
                 if (!out.success) {
-                    throw new Exception("Error in importing physical resource")
+                    throw new IllegalStateException("Error in importing physical resource")
                 } else {
                     // Delete it from the temp directory
                     deleteImage(opts, imageName)
@@ -273,7 +273,7 @@ class ScvmmApiService {
                     rtn.errorMsg = 'The virtual hard disk selected is not compatible with the template which' +
                             ' include generation 1 virtual machine functionality.'
                 }
-                throw new Exception("Error in launching VM: ${createData}")
+                throw new IllegalStateException("Error in launching VM: ${createData}")
             }
 
             server = morpheusContext.services.computeServer.get(opts.serverId)//ComputeServer.get(opts.serverId)
@@ -282,7 +282,7 @@ class ScvmmApiService {
             def newServerExternalId = createData.data && createData.data.size() ==
                     1 && createData.data[0].ObjectType?.toString() == OBJECT_TYPE_1 ? createData.data[0].ID : null
             if (!newServerExternalId) {
-                throw new Exception("Failed to create VM with command: ${launchCommand}: ${createData.error}")
+                throw new IllegalStateException("Failed to create VM with command: ${launchCommand}: ${createData.error}")
             }
             opts.externalId = newServerExternalId
             // Make sure we save the externalId ASAP
@@ -1446,6 +1446,7 @@ foreach (\$network in \$networks) {
             def out = wrapExecuteCommand(command, opts)
             log.info("releaseIPAddress: ${out}")
             if (out.success && out.exitCode == EXIT_CODE_SUCCESS) {
+                rtn.success = true
                 // Do nothing
             } else {
                 if (out.errorData?.contains("Unable to find the specified allocated IP address")) {
@@ -1821,7 +1822,7 @@ Status=\$job.Status.toString()
 \$report"""
             def out = wrapExecuteCommand(generateCommandString(command), opts)
             if (!out.success) {
-                throw new Exception("Error in getting job")
+                throw new IllegalStateException("Error in getting job")
             }
 
             rtn.jobDetail = out.data.getAt(0)
@@ -1858,6 +1859,7 @@ Status=\$job.Status.toString()
                     }
 
                     if (waitForIp && !ipAddress) {
+                        log.debug("Waiting for IP address assignment...")
                         // Keep waiting
                     } else {
                         // Most likely, server gets its IP from cloud-init calling back to
@@ -1944,7 +1946,7 @@ if(\$VM.Status -ne 'PowerOff') {
                 def serverFolder = "${sharePath}\\${opts.serverFolder}"
                 def diskFolder = "${opts.diskRoot}\\${opts.serverFolder}"
                 if (!opts.serverFolder) {
-                    throw new Exception("serverFolder MUST be specified")
+                    throw new IllegalArgumentException("serverFolder MUST be specified")
                 }
                 def command = """\$VM = Get-SCVirtualMachine -VMMServer localhost -ID \"${vmId}\"
 if(\$VM) { 
@@ -2010,12 +2012,12 @@ foreach(\$share in \$shares) {
 \$report"""
         def out = wrapExecuteCommand(generateCommandString(command), opts)
         if (!out.success) {
-            throw new Exception("Error in getting library share")
+            throw new IllegalStateException("Error in getting library share")
         }
 
         def shareBlocks = out.data
         if (shareBlocks.size() == 0) {
-            throw new Exception("No library share found")
+            throw new IllegalStateException("No library share found")
         }
 
         return shareBlocks.first().Path
@@ -2061,7 +2063,7 @@ foreach(\$share in \$shares) {
                 inputStream, opts.cloudConfigBytes?.size(), null, true)
         log.debug("importScript: fileResults.success: ${fileResults.success}")
         if (!fileResults.success) {
-            throw new Exception("Script Upload to SCVMM Host Failed. " +
+            throw new IllegalStateException("Script Upload to SCVMM Host Failed. " +
                     "Perhaps an agent communication issue...${opts.hypervisor.name}")
         }
         def importResults = importPhysicalResource(
@@ -2124,7 +2126,7 @@ For (\$i=0; \$i -le 10; \$i++) {
                 inputStream, cloudConfigBytes?.size())
         log.debug("importAndMountIso: fileResults?.success: ${fileResults?.success}")
         if (!fileResults.success) {
-            throw new Exception("ISO Upload to SCVMM Host Failed." +
+            throw new IllegalStateException("ISO Upload to SCVMM Host Failed." +
                     " Perhaps an agent communication issue...${opts.hypervisor.name}")
         }
         def importResults = importPhysicalResource(opts, isoAction.targetPath,
