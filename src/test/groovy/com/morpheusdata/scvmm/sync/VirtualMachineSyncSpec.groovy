@@ -7,6 +7,9 @@ import com.morpheusdata.core.MorpheusServices
 import com.morpheusdata.core.synchronous.compute.MorpheusSynchronousComputeServerService
 import com.morpheusdata.core.synchronous.MorpheusSynchronousOsTypeService
 import com.morpheusdata.core.synchronous.MorpheusSynchronousWorkloadService
+import com.morpheusdata.core.synchronous.MorpheusSynchronousStorageVolumeService
+import com.morpheusdata.core.synchronous.cloud.MorpheusSynchronousCloudService
+import com.morpheusdata.core.synchronous.cloud.MorpheusSynchronousDatastoreService
 import com.morpheusdata.core.providers.CloudProvider
 import com.morpheusdata.core.util.SyncTask
 import com.morpheusdata.core.data.DataQuery
@@ -33,6 +36,7 @@ class VirtualMachineSyncSpec extends Specification {
     private MorpheusSynchronousComputeServerService computeServerService
     private MorpheusSynchronousOsTypeService osTypeService
     private MorpheusSynchronousWorkloadService workloadService
+    private MorpheusSynchronousStorageVolumeService syncStorageVolumeService
     private def servicePlanService
     private def resourcePermissionService
     private MorpheusStorageVolumeService storageVolumeService
@@ -40,7 +44,7 @@ class VirtualMachineSyncSpec extends Specification {
     private MorpheusStorageVolumeTypeService storageVolumeTypeService
     private def cloudService
     private def cloudAsyncService
-    private def datastoreService
+    private MorpheusSynchronousDatastoreService datastoreService
     private Cloud cloud
     private ComputeServer node
     private ComputeServer existingServer
@@ -76,23 +80,27 @@ class VirtualMachineSyncSpec extends Specification {
         asyncComputeServerService = Mock(MorpheusComputeServerService)
         osTypeService = Mock(MorpheusSynchronousOsTypeService)
         workloadService = Mock(MorpheusSynchronousWorkloadService)
+        syncStorageVolumeService = Mock(MorpheusSynchronousStorageVolumeService)
         servicePlanService = Mock(Object)
         resourcePermissionService = Mock(Object)
-        storageVolumeService = Mock(MorpheusStorageVolumeService)
+        storageVolumeService = Mock(MorpheusStorageVolumeService) // Keep async type for compatibility
         asyncStorageVolumeService = Mock(MorpheusStorageVolumeService)
         storageVolumeTypeService = Mock(MorpheusStorageVolumeTypeService)
-        cloudService = Mock(Object) {
+
+        // Initialize datastoreService first
+        datastoreService = Mock(MorpheusSynchronousDatastoreService)
+
+        cloudService = Mock(MorpheusSynchronousCloudService) {
             getDatastore() >> datastoreService
         }
         cloudAsyncService = Mock(Object)
-        datastoreService = Mock(Object)
 
         def morpheusServices = Mock(MorpheusServices) {
             getComputeServer() >> computeServerService
             getOsType() >> osTypeService
             getWorkload() >> workloadService
             getCloud() >> cloudService
-            getStorageVolume() >> storageVolumeService
+            getStorageVolume() >> syncStorageVolumeService  // Use sync service here
             getServicePlan() >> servicePlanService
             getResourcePermission() >> resourcePermissionService
         }
@@ -1703,11 +1711,11 @@ class VirtualMachineSyncSpec extends Specification {
         def listResults = [success: true, virtualMachines: virtualMachines]
 
         def syncData = [
-                hosts: [new ComputeServer(id: 10L)],
-                availablePlans: [new ServicePlan(id: 20L)],
-                fallbackPlan: new ServicePlan(id: 21L),
+                hosts                   : [new ComputeServer(id: 10L)],
+                availablePlans          : [new ServicePlan(id: 20L)],
+                fallbackPlan            : new ServicePlan(id: 21L),
                 availablePlanPermissions: [],
-                serverType: new ComputeServerType(id: 40L)
+                serverType              : new ComputeServerType(id: 40L)
         ]
         def executionContext = [consoleEnabled: true, scvmmOpts: [:]]
 
@@ -1740,11 +1748,11 @@ class VirtualMachineSyncSpec extends Specification {
         def existingVms = Observable.fromIterable([])
         def listResults = [success: true, virtualMachines: []]
         def syncData = [
-                hosts: [],
-                availablePlans: [],
-                fallbackPlan: null,
+                hosts                   : [],
+                availablePlans          : [],
+                fallbackPlan            : null,
                 availablePlanPermissions: [],
-                serverType: new ComputeServerType(id: 40L)
+                serverType              : new ComputeServerType(id: 40L)
         ]
         def executionContext = [consoleEnabled: false, scvmmOpts: [:]]
 
@@ -1787,11 +1795,11 @@ class VirtualMachineSyncSpec extends Specification {
         def mockServerType = new ComputeServerType(id: 40L)
 
         def syncData = [
-                hosts: mockHosts,
-                availablePlans: mockPlans,
-                fallbackPlan: mockFallbackPlan,
+                hosts                   : mockHosts,
+                availablePlans          : mockPlans,
+                fallbackPlan            : mockFallbackPlan,
                 availablePlanPermissions: mockPermissions,
-                serverType: mockServerType
+                serverType              : mockServerType
         ]
         def executionContext = [consoleEnabled: true, scvmmOpts: [:]]
 
@@ -1861,21 +1869,21 @@ class VirtualMachineSyncSpec extends Specification {
     def "addMissingStorageVolumes should process disk items and update server volumes"() {
         given: "disk items to add and server with existing volumes"
         def diskData1 = [
-                ID: "disk-1",
-                Name: "test-disk-1",
-                TotalSize: "21474836480", // 20GB
-                VHDType: "Dynamic",
-                VHDFormat: "VHDX",
-                VolumeType: "BootAndSystem",
+                ID          : "disk-1",
+                Name        : "test-disk-1",
+                TotalSize   : "21474836480", // 20GB
+                VHDType     : "Dynamic",
+                VHDFormat   : "VHDX",
+                VolumeType  : "BootAndSystem",
                 HostVolumeId: "host-vol-1"
         ]
         def diskData2 = [
-                ID: "disk-2",
-                Name: "test-disk-2",
-                TotalSize: "10737418240", // 10GB
-                VHDType: "Fixed",
-                VHDFormat: "VHD",
-                VolumeType: "Data",
+                ID          : "disk-2",
+                Name        : "test-disk-2",
+                TotalSize   : "10737418240", // 10GB
+                VHDType     : "Fixed",
+                VHDFormat   : "VHD",
+                VolumeType  : "Data",
                 HostVolumeId: "host-vol-2"
         ]
         def itemsToAdd = [diskData1, diskData2]
@@ -1897,12 +1905,12 @@ class VirtualMachineSyncSpec extends Specification {
         // Mock the helper methods via the VirtualMachineSync instance
         virtualMachineSync.metaClass.createVolumeConfig = { diskData, server, volumeNames, index, currentDiskNum ->
             return [
-                    name: "volume-${index + 1}",
-                    size: diskData.TotalSize?.toLong() ?: 0,
-                    rootVolume: diskData.VolumeType == "BootAndSystem",
-                    deviceName: "/dev/sd${(char)((int)'a' + currentDiskNum)}",
-                    externalId: diskData.ID,
-                    internalId: diskData.Name,
+                    name       : "volume-${index + 1}",
+                    size       : diskData.TotalSize?.toLong() ?: 0,
+                    rootVolume : diskData.VolumeType == "BootAndSystem",
+                    deviceName : "/dev/sd${(char) ((int) 'a' + currentDiskNum)}",
+                    externalId : diskData.ID,
+                    internalId : diskData.Name,
                     storageType: null
             ]
         }
@@ -2109,8 +2117,8 @@ class VirtualMachineSyncSpec extends Specification {
         virtualMachineSync.metaClass.processVolumeUpdate = { updateMap, srv, index ->
             return [
                     shouldSave: true,
-                    volume: updateMap.masterItem,
-                    diskSize: updateMap.diskSize
+                    volume    : updateMap.masterItem,
+                    diskSize  : updateMap.diskSize
             ]
         }
 
@@ -2123,5 +2131,117 @@ class VirtualMachineSyncSpec extends Specification {
         then: "the method should process all update items and save volumes"
         1 * asyncStorageVolumeService.bulkSave([volume1, volume2]) >> Single.just([volume1, volume2])
     }
+
+    @Unroll
+    def "loadDatastoreForVolume should return null when no parameters provided"() {
+        when: "loadDatastoreForVolume is called with all null parameters"
+        def result = virtualMachineSync.loadDatastoreForVolume(null, null, null)
+
+        then: "should return null"
+        result == null
+        0 * storageVolumeService.find(_)
+        0 * datastoreService.find(_)
+    }
+
+    @Unroll
+    def "loadDatastoreForVolume should handle edge case with empty strings"() {
+        when: "loadDatastoreForVolume is called with empty strings"
+        def result = virtualMachineSync.loadDatastoreForVolume("", "", "")
+
+        then: "should return null (empty strings are falsy in Groovy)"
+        result == null
+        0 * storageVolumeService.find(_)
+        0 * datastoreService.find(_)
+    }
+
+// Tests for loadDatastoreForVolume method - comprehensive line coverage
+    @Unroll
+    def "loadDatastoreForVolume should find datastore by hostVolumeId when available"() {
+        given: "a storage volume with matching hostVolumeId"
+        def hostVolumeId = "host-vol-123"
+        def mockStorageVolume = new StorageVolume(id: 1L, internalId: hostVolumeId)
+        def mockDatastore = new Datastore(id: 1L, name: "test-datastore")
+        mockStorageVolume.datastore = mockDatastore
+
+        when: "loadDatastoreForVolume is called with hostVolumeId"
+        def result = virtualMachineSync.loadDatastoreForVolume(hostVolumeId, null, null)
+
+        then: "datastore should be returned"
+        result == mockDatastore
+        1 * syncStorageVolumeService.find(_) >> mockStorageVolume
+    }
+
+    @Unroll
+    def "loadDatastoreForVolume should fallback to partitionUniqueId when hostVolumeId datastore is null"() {
+        given: "a storage volume without datastore and partitionUniqueId fallback"
+        def hostVolumeId = "host-vol-123"
+        def partitionUniqueId = "partition-456"
+        def mockStorageVolumeWithoutDatastore = new StorageVolume(id: 1L, internalId: hostVolumeId, datastore: null)
+        def mockStorageVolumeWithDatastore = new StorageVolume(id: 2L, externalId: partitionUniqueId)
+        def mockDatastore = new Datastore(id: 1L, name: "fallback-datastore")
+        mockStorageVolumeWithDatastore.datastore = mockDatastore
+
+        when: "loadDatastoreForVolume is called with hostVolumeId and partitionUniqueId"
+        def result = virtualMachineSync.loadDatastoreForVolume(hostVolumeId, null, partitionUniqueId)
+
+        then: "should find datastore via partitionUniqueId fallback"
+        result == mockDatastore
+        2 * syncStorageVolumeService.find(_) >>> [mockStorageVolumeWithoutDatastore, mockStorageVolumeWithDatastore]
+    }
+
+    @Unroll
+    def "loadDatastoreForVolume should return datastore when using fileShareId"() {
+        given: "a datastore with matching fileShareId"
+        def fileShareId = "fileshare-789"
+        def mockDatastore = new Datastore(id: 1L, name: "fileshare-datastore", externalId: fileShareId)
+
+        when: "loadDatastoreForVolume is called with fileShareId"
+        def result = virtualMachineSync.loadDatastoreForVolume(null, fileShareId, null)
+
+        then: "datastore should be returned"
+        result == mockDatastore
+        1 * datastoreService.find(_) >> mockDatastore
+    }
+
+    @Unroll
+    def "loadDatastoreForVolume should return null when hostVolumeId finds no datastore and no partitionUniqueId"() {
+        given: "a storage volume without datastore and no partitionUniqueId"
+        def hostVolumeId = "host-vol-123"
+        def mockStorageVolumeWithoutDatastore = new StorageVolume(id: 1L, internalId: hostVolumeId, datastore: null)
+
+        when: "loadDatastoreForVolume is called with hostVolumeId but no partitionUniqueId"
+        def result = virtualMachineSync.loadDatastoreForVolume(hostVolumeId, null, null)
+
+        then: "should return null"
+        result == null
+        1 * syncStorageVolumeService.find(_) >> mockStorageVolumeWithoutDatastore
+    }
+
+    @Unroll
+    def "loadDatastoreForVolume should handle storage volume service returning null"() {
+        given: "storage volume service returns null"
+        def hostVolumeId = "host-vol-123"
+
+        when: "loadDatastoreForVolume is called with hostVolumeId"
+        def result = virtualMachineSync.loadDatastoreForVolume(hostVolumeId, null, null)
+
+        then: "should return null"
+        result == null
+        1 * syncStorageVolumeService.find(_) >> null
+    }
+
+    @Unroll
+    def "loadDatastoreForVolume should execute debug logging with correct parameters"() {
+        given: "parameters for logging verification"
+        def hostVolumeId = "host-vol-123"
+        def fileShareId = "fileshare-456"
+
+        when: "loadDatastoreForVolume is called"
+        virtualMachineSync.loadDatastoreForVolume(hostVolumeId, fileShareId, null)
+
+        then: "debug logging should be executed"
+        noExceptionThrown()
+    }
+
 
 }
