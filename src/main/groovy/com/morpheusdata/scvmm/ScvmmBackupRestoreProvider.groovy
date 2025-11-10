@@ -4,20 +4,21 @@ import com.morpheusdata.core.MorpheusContext
 import com.morpheusdata.core.Plugin
 import com.morpheusdata.core.backup.BackupRestoreProvider
 import com.morpheusdata.core.backup.response.BackupRestoreResponse
-import com.morpheusdata.response.ServiceResponse;
-import com.morpheusdata.model.BackupRestore;
-import com.morpheusdata.model.BackupResult;
-import com.morpheusdata.model.Backup;
+import com.morpheusdata.response.ServiceResponse
+import com.morpheusdata.model.BackupRestore
+import com.morpheusdata.model.BackupResult
+import com.morpheusdata.model.Backup
 import com.morpheusdata.model.Instance
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
 
+@SuppressWarnings('CompileStatic')
 class ScvmmBackupRestoreProvider implements BackupRestoreProvider {
-
+    static final int SLEEP_DURATION_MS = 30000
     Plugin plugin
     MorpheusContext morpheusContext
     ScvmmApiService apiService
-    private LogInterface log = LogWrapper.instance
+    private final LogInterface log = LogWrapper.instance
 
     ScvmmBackupRestoreProvider(Plugin plugin, MorpheusContext morpheusContext) {
         this.plugin = plugin
@@ -77,34 +78,35 @@ class ScvmmBackupRestoreProvider implements BackupRestoreProvider {
         return ServiceResponse.success()
     }
 
-    /**
-     * Get restore options to configure the restore wizard. Although
-     * the {@link com.morpheusdata.core.backup.BackupProvider} and
-     * {@link com.morpheusdata.core.backup.BackupTypeProvider} supply configuration, there may be situations
-     * where the instance
-     * configuration will determine which options need to be presented in the restore wizard.
-     * <p>
-     * Available Restore options:
-     * 		<ul>
-     * 		 	<li>
-     * 		 	    restoreExistingEnabled (Boolean) -- determines the visibility of the restore to existing option
-     * 		 	</li>
-     * 		 	<li>
-     * 		 	  	restoreNewEnabled (Boolean) -- determines the visibility of the restore to new option
-     * 		 	</li>
-     * 		 	<li>
-     * 		 	  	name (String) -- default name of the restored instance
-     * 		 	</li>
-     * 		 	<li>
-     * 		 		hostname (String) -- default hostname of the restored instance
-     * 		 	</li>
-     * 		</ul>
-     *
-     * @param backupModel the backup
-     * @param opts optional parameters
-     * @return a {@link ServiceResponse} object. A ServiceResponse with a false success will indicate a failed
-     * configuration and will halt the backup restore process.
-     */
+/**
+ * Get restore options to configure the restore wizard. Although
+ * the {@link com.morpheusdata.core.backup.BackupProvider} and
+ * {@link com.morpheusdata.core.backup.BackupTypeProvider} supply configuration, there may be situations
+ * where the instance
+ * configuration will determine which options need to be presented in the restore wizard.
+ * <p>
+ * Available Restore options:
+ *      <ul>
+ *          <li>
+ *              restoreExistingEnabled (Boolean) -- determines the visibility of the restore to existing option
+ *          </li>
+ *          <li>
+ *              restoreNewEnabled (Boolean) -- determines the visibility of the restore to new option
+ *          </li>
+ *          <li>
+ *              name (String) -- default name of the restored instance
+ *          </li>
+ *          <li>
+ *              hostname (String) -- default hostname of the restored instance
+ *          </li>
+ *      </ul>
+ *
+ * @param backupModel the backup
+ * @param opts optional parameters
+ * @return a {@link ServiceResponse} object. A ServiceResponse with a false success will indicate a failed
+ * configuration and will halt the backup restore process.
+ */
+
     @Override
     ServiceResponse getRestoreOptions(Backup backup, Map opts) {
         return ServiceResponse.success()
@@ -119,6 +121,7 @@ class ScvmmBackupRestoreProvider implements BackupRestoreProvider {
      * @return a {@link ServiceResponse} object. A ServiceResponse with a false success will indicate a failed
      * configuration and will halt the backup restore process.
      */
+    @SuppressWarnings('UnnecessaryGetter')
     @Override
     ServiceResponse restoreBackup(BackupRestore backupRestore, BackupResult backupResult, Backup backup, Map opts) {
         log.info("restoreBackup {}", backupResult)
@@ -135,13 +138,13 @@ class ScvmmBackupRestoreProvider implements BackupRestoreProvider {
                 def node = provisionProvider.pickScvmmController(cloud)
                 def restoreOpts =
                         apiService.getScvmmZoneAndHypervisorOpts(morpheusContext, cloud, node)
-                //execute restore
+                // execute restore
                 def restoreResults = apiService.restoreServer(restoreOpts, vmId, snapshotId)
                 log.debug("restoreResults: ${restoreResults}")
-                sleep(30000)
+                sleep(SLEEP_DURATION_MS)
                 // argh.. why!?  need to restart the server in order for the agent to call back home for some reason
                 provisionProvider.stopWorkload(workload)
-                sleep(30000)
+                sleep(SLEEP_DURATION_MS)
                 provisionProvider.startWorkload(workload)
                 rtn.data.backupRestore.status = BackupResult.Status.SUCCEEDED
                 rtn.data.updates = true
