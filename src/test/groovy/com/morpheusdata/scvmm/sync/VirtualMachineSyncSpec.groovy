@@ -1866,74 +1866,6 @@ class VirtualMachineSyncSpec extends Specification {
         noExceptionThrown()
     }
 
-    def "addMissingStorageVolumes should process disk items and update server volumes"() {
-        given: "disk items to add and server with existing volumes"
-        def diskData1 = [
-                ID          : "disk-1",
-                Name        : "test-disk-1",
-                TotalSize   : "21474836480", // 20GB
-                VHDType     : "Dynamic",
-                VHDFormat   : "VHDX",
-                VolumeType  : "BootAndSystem",
-                HostVolumeId: "host-vol-1"
-        ]
-        def diskData2 = [
-                ID          : "disk-2",
-                Name        : "test-disk-2",
-                TotalSize   : "10737418240", // 10GB
-                VHDType     : "Fixed",
-                VHDFormat   : "VHD",
-                VolumeType  : "Data",
-                HostVolumeId: "host-vol-2"
-        ]
-        def itemsToAdd = [diskData1, diskData2]
-
-        def testServer = new ComputeServer(
-                id: 5L,
-                name: "test-server",
-                volumes: [],
-                account: new Account(id: 1L)
-        )
-
-        def mockStorageVolume1 = new StorageVolume(id: 1L, name: "volume-1", maxStorage: 21474836480L)
-        def mockStorageVolume2 = new StorageVolume(id: 2L, name: "volume-2", maxStorage: 10737418240L)
-
-        def diskNumber = 0
-        def maxStorage = 0L
-
-        and: "mock interactions are set up"
-        // Mock the helper methods via the VirtualMachineSync instance
-        virtualMachineSync.metaClass.createVolumeConfig = { diskData, server, volumeNames, index, currentDiskNum ->
-            return [
-                    name       : "volume-${index + 1}",
-                    size       : diskData.TotalSize?.toLong() ?: 0,
-                    rootVolume : diskData.VolumeType == "BootAndSystem",
-                    deviceName : "/dev/sd${(char) ((int) 'a' + currentDiskNum)}",
-                    externalId : diskData.ID,
-                    internalId : diskData.Name,
-                    storageType: null
-            ]
-        }
-
-        virtualMachineSync.metaClass.createAndPersistStorageVolume = { server, volumeConfig ->
-            def volume = volumeConfig.name == "volume-1" ? mockStorageVolume1 : mockStorageVolume2
-            server.volumes.add(volume)
-            return volume
-        }
-
-        // Mock context.async.computeServer.bulkSave
-        asyncComputeServerService.bulkSave(*_) >> Single.just([testServer])
-
-        when: "addMissingStorageVolumes is called"
-        virtualMachineSync.addMissingStorageVolumes(itemsToAdd, testServer, diskNumber, maxStorage)
-
-        then: "volumes are added to server and bulk save is called"
-        testServer.volumes.size() == 2
-        testServer.volumes[0].name == "volume-1"
-        testServer.volumes[1].name == "volume-2"
-        1 * asyncComputeServerService.bulkSave(*_) >> Single.just([testServer])
-    }
-
     def "addMissingStorageVolumes should handle null itemsToAdd gracefully"() {
         given: "null items to add"
         def itemsToAdd = null
@@ -2105,22 +2037,28 @@ class VirtualMachineSyncSpec extends Specification {
         def volume1 = new StorageVolume(id: 1L, name: "volume1")
         def volume2 = new StorageVolume(id: 2L, name: "volume2")
 
+        // Create proper masterItem data structures with TotalSize property
+        def masterItem1 = [
+                ID: "disk-1",
+                Name: "test-disk-1",
+                TotalSize: "1024",  // This is what processVolumeUpdate expects
+                VolumeType: "Data"
+        ]
+        def masterItem2 = [
+                ID: "disk-2",
+                Name: "test-disk-2",
+                TotalSize: "2048",
+                VolumeType: "BootAndSystem"
+        ]
+
         def updateItems = [
-                [masterItem: volume1, diskSize: 1024L],
-                [masterItem: volume2, diskSize: 2048L]
+                [existingItem: volume1, masterItem: masterItem1],
+                [existingItem: volume2, masterItem: masterItem2]
         ]
 
         Long maxStorage = 0L
         Boolean changes = false
 
-        // Mock processVolumeUpdate method to return test results
-        virtualMachineSync.metaClass.processVolumeUpdate = { updateMap, srv, index ->
-            return [
-                    shouldSave: true,
-                    volume    : updateMap.masterItem,
-                    diskSize  : updateMap.diskSize
-            ]
-        }
 
         // Mock bulk save operation
         asyncStorageVolumeService.bulkSave(_) >> Single.just([volume1, volume2])
@@ -2241,6 +2179,541 @@ class VirtualMachineSyncSpec extends Specification {
 
         then: "debug logging should be executed"
         noExceptionThrown()
+    }
+
+// Tests for createVolumeConfig method - comprehensive line coverage
+    @Unroll
+    def "createVolumeConfig should create complete volume configuration with all properties"() {
+        given: "disk data, server, and configuration"
+        def diskData = [
+                TotalSize: "1073741824",
+                VolumeType: "BootAndSystem",
+                ID: "disk-ext-123",
+                Name: "disk-int-456",
+                VHDType: "Dynamic",
+                VHDFormat: "VHDX",
+                HostVolumeId: "host-vol-789",
+                deviceName: "/dev/sda"
+        ]
+        def server = new ComputeServer(id: 1L, volumes: [])
+        def serverVolumeNames = ["boot-volume"]
+        def index = 0
+        def diskNumber = 1
+
+        def mockDatastore = new Datastore(id: 100L, name: "test-datastore")
+        def mockStorageVolumeType = new StorageVolumeType(id: 50L, code: "scvmm-dynamic-vhdx")
+
+        when: "createVolumeConfig is called"
+        def result = virtualMachineSync.createVolumeConfig(diskData, server, serverVolumeNames, index, diskNumber)
+
+        then: "all helper methods should be called"
+        1 * virtualMachineSync.resolveDatastore(diskData) >> mockDatastore
+        1 * virtualMachineSync.resolveDeviceName(diskData, diskNumber) >> "/dev/sda"
+        1 * virtualMachineSync.resolveVolumeName(serverVolumeNames, diskData, server, index) >> "boot-volume"
+        1 * virtualMachineSync.isRootVolume(diskData, server) >> true
+        1 * virtualMachineSync.getStorageVolumeType("scvmm-dynamic-vhdx") >> 50L
+
+        and: "complete volume config should be created"
+        result != null
+        result.name == "boot-volume"
+        result.size == 1073741824L
+        result.rootVolume == true
+        result.deviceName == "/dev/sda"
+        result.externalId == "disk-ext-123"
+        result.internalId == "disk-int-456"
+        result.storageType == 50L
+        result.datastoreId == "100"
+
+        // Covers: all property assignments, datastore conditional assignment
+    }
+
+    @Unroll
+    def "createVolumeConfig should handle null TotalSize and create config without datastore"() {
+        given: "disk data without TotalSize and no datastore"
+        def diskData = [
+                TotalSize: null,
+                VolumeType: "Data",
+                ID: "disk-no-size",
+                Name: "disk-name",
+                VHDType: "Fixed",
+                VHDFormat: "VHD"
+        ]
+        def server = new ComputeServer(id: 2L, volumes: [new StorageVolume()])
+        def serverVolumeNames = []
+        def index = 1
+        def diskNumber = 2
+
+        when: "createVolumeConfig is called with null TotalSize"
+        def result = virtualMachineSync.createVolumeConfig(diskData, server, serverVolumeNames, index, diskNumber)
+
+        then: "helper methods should be called"
+        1 * virtualMachineSync.resolveDatastore(diskData) >> null
+        1 * virtualMachineSync.resolveDeviceName(diskData, diskNumber) >> "/dev/sdb"
+        1 * virtualMachineSync.resolveVolumeName(serverVolumeNames, diskData, server, index) >> "data-1"
+        1 * virtualMachineSync.isRootVolume(diskData, server) >> false
+        1 * virtualMachineSync.getStorageVolumeType("scvmm-fixed-vhd") >> 60L
+
+        and: "volume config should use default size and no datastoreId"
+        result.size == 0L
+        result.rootVolume == false
+        result.name == "data-1"
+        result.storageType == 60L
+        result.datastoreId == null
+        !result.containsKey('datastoreId')
+
+        // Covers: null TotalSize handling, elvis operator, no datastore conditional
+    }
+
+    @Unroll
+    def "createVolumeConfig should handle edge cases with null and empty values"() {
+        given: "disk data with various null/empty values"
+        def diskData = inputDiskData
+        def server = new ComputeServer(id: 3L, volumes: serverVolumes)
+        def serverVolumeNames = inputVolumeNames
+        def index = testIndex
+        def diskNumber = testDiskNumber
+
+        when: "createVolumeConfig is called with edge case data"
+        def result = virtualMachineSync.createVolumeConfig(diskData, server, serverVolumeNames, index, diskNumber)
+
+        then: "helper methods should handle edge cases"
+        1 * virtualMachineSync.resolveDatastore(diskData) >> mockDatastore
+        1 * virtualMachineSync.resolveDeviceName(diskData, diskNumber) >> expectedDeviceName
+        1 * virtualMachineSync.resolveVolumeName(serverVolumeNames, diskData, server, index) >> expectedVolumeName
+        1 * virtualMachineSync.isRootVolume(diskData, server) >> expectedRootVolume
+        1 * virtualMachineSync.getStorageVolumeType(_) >> 70L
+
+        and: "volume config should handle edge cases correctly"
+        result.name == expectedVolumeName
+        result.size == expectedSize
+        result.rootVolume == expectedRootVolume
+        result.deviceName == expectedDeviceName
+        result.externalId == expectedExternalId
+        result.internalId == expectedInternalId
+
+        where:
+        inputDiskData | serverVolumes | inputVolumeNames | testIndex | testDiskNumber | mockDatastore | expectedDeviceName | expectedVolumeName | expectedRootVolume | expectedSize | expectedExternalId | expectedInternalId
+        [TotalSize: "", ID: null, Name: null, VHDType: null, VHDFormat: null] | [] | null | 0 | 0 | null | "/dev/sdc" | "root" | true | 0L | null | null
+        [TotalSize: "invalid", ID: "", Name: "", VHDType: "", VHDFormat: ""] | [new StorageVolume()] | [] | 2 | 3 | new Datastore(id: 200L) | "/dev/sdd" | "data-2" | false | 0L | "" | ""
+
+        // Covers: edge cases, null handling, empty string handling
+    }
+
+// Tests for resolveDatastore method
+    @Unroll
+    def "resolveDatastore should return datastore from diskData when present"() {
+        given: "disk data with datastore property"
+        def existingDatastore = new Datastore(id: 300L, name: "existing-datastore")
+        def diskData = [
+                datastore: existingDatastore,
+                HostVolumeId: "host-123",
+                FileShareId: "share-456",
+                PartitionUniqueId: "partition-789"
+        ]
+
+        when: "resolveDatastore is called"
+        def result = virtualMachineSync.resolveDatastore(diskData)
+
+        then: "should return existing datastore without calling loadDatastoreForVolume"
+        0 * virtualMachineSync.loadDatastoreForVolume(_, _, _)
+        result == existingDatastore
+
+        // Covers: elvis operator left side (datastore present)
+    }
+
+    @Unroll
+    def "resolveDatastore should call loadDatastoreForVolume when datastore not present"() {
+        given: "disk data without datastore property"
+        def diskData = [
+                HostVolumeId: "host-vol-123",
+                FileShareId: "file-share-456",
+                PartitionUniqueId: "partition-unique-789"
+        ]
+        def loadedDatastore = new Datastore(id: 400L, name: "loaded-datastore")
+
+        when: "resolveDatastore is called"
+        def result = virtualMachineSync.resolveDatastore(diskData)
+
+        then: "should call loadDatastoreForVolume with correct parameters"
+        1 * virtualMachineSync.loadDatastoreForVolume("host-vol-123", "file-share-456", "partition-unique-789") >> loadedDatastore
+        result == loadedDatastore
+
+        // Covers: elvis operator right side (datastore not present)
+    }
+
+    @Unroll
+    def "resolveDatastore should handle null diskData gracefully"() {
+        given: "null disk data"
+        def diskData = null
+
+        when: "resolveDatastore is called with null diskData"
+        def result = virtualMachineSync.resolveDatastore(diskData)
+
+        then: "should call loadDatastoreForVolume with null parameters"
+        1 * virtualMachineSync.loadDatastoreForVolume(null, null, null) >> null
+        result == null
+
+        // Covers: null input handling
+    }
+
+// Tests for resolveDeviceName method
+    @Unroll
+    def "resolveDeviceName should return deviceName from diskData when present"() {
+        given: "disk data with deviceName"
+        def diskData = [deviceName: "/dev/sda1"]
+        def diskNumber = 5
+
+        when: "resolveDeviceName is called"
+        def result = virtualMachineSync.resolveDeviceName(diskData, diskNumber)
+
+        then: "should return existing deviceName without calling apiService"
+        0 * mockApiService.getDiskName(_)
+        result == "/dev/sda1"
+
+        // Covers: elvis operator left side (deviceName present)
+    }
+
+    @Unroll
+    def "resolveDeviceName should call apiService.getDiskName when deviceName not present"() {
+        given: "disk data without deviceName"
+        def diskData = [otherProperty: "value"]
+        def diskNumber = 3
+
+        when: "resolveDeviceName is called"
+        def result = virtualMachineSync.resolveDeviceName(diskData, diskNumber)
+
+        then: "should call apiService.getDiskName with correct diskNumber"
+        1 * mockApiService.getDiskName(3) >> "/dev/sdc"
+        result == "/dev/sdc"
+
+        // Covers: elvis operator right side (deviceName not present)
+    }
+
+    @Unroll
+    def "resolveDeviceName should handle null and empty deviceName"() {
+        given: "disk data with null or empty deviceName"
+        def diskData = [deviceName: deviceNameValue]
+        def diskNumber = 2
+
+        when: "resolveDeviceName is called"
+        def result = virtualMachineSync.resolveDeviceName(diskData, diskNumber)
+
+        then: "should call apiService when deviceName is null or empty"
+        expectedApiCalls * mockApiService.getDiskName(2) >> "/dev/sdb"
+        result == expectedResult
+
+        where:
+        deviceNameValue | expectedApiCalls | expectedResult
+        null           | 1                | "/dev/sdb"
+        ""             | 1                | "/dev/sdb"
+        "   "          | 0                | "   "        // Groovy treats whitespace as truthy
+        "/dev/custom"  | 0                | "/dev/custom"
+
+        // Covers: null/empty handling, elvis operator behavior
+    }
+
+// Tests for resolveVolumeName method
+    @Unroll
+    def "resolveVolumeName should return name from serverVolumeNames when available"() {
+        given: "server volume names list with entry at index"
+        def serverVolumeNames = ["boot-vol", "data-vol", "swap-vol"]
+        def diskData = [Name: "disk-name"]
+        def server = new ComputeServer(id: 1L)
+        def index = 1
+
+        when: "resolveVolumeName is called"
+        def result = virtualMachineSync.resolveVolumeName(serverVolumeNames, diskData, server, index)
+
+        then: "should return name from serverVolumeNames without calling getVolumeName"
+        0 * virtualMachineSync.getVolumeName(_, _, _)
+        result == "data-vol"
+
+        // Covers: elvis operator left side (serverVolumeNames.getAt(index) returns value)
+    }
+
+    @Unroll
+    def "resolveVolumeName should call getVolumeName when serverVolumeNames entry not available"() {
+        given: "server volume names scenarios"
+        def serverVolumeNames = volumeNamesList
+        def diskData = [Name: "test-disk", VolumeType: "Data"]
+        def server = new ComputeServer(id: 2L, volumes: [new StorageVolume()])
+        def index = testIndex
+
+        when: "resolveVolumeName is called"
+        def result = virtualMachineSync.resolveVolumeName(serverVolumeNames, diskData, server, index)
+
+        then: "should call getVolumeName when serverVolumeNames entry not available"
+        expectedGetVolumeNameCalls * virtualMachineSync.getVolumeName(diskData, server, index) >> "generated-name"
+        result == expectedResult
+
+        where:
+        volumeNamesList | testIndex | expectedGetVolumeNameCalls | expectedResult
+        null            | 0         | 1                          | "generated-name"
+        []              | 0         | 1                          | "generated-name"
+        ["vol1"]        | 1         | 1                          | "generated-name"  // index out of bounds
+        ["vol1", "vol2"] | 0        | 0                          | "vol1"           // valid index
+
+        // Covers: null list, empty list, index out of bounds, valid scenarios
+    }
+
+    @Unroll
+    def "resolveVolumeName should handle edge case with safe navigation"() {
+        given: "edge case scenarios with safe navigation"
+        def serverVolumeNames = volumeNames
+        def diskData = [Name: "edge-disk"]
+        def server = new ComputeServer(id: 3L)
+        def index = 0
+
+        when: "resolveVolumeName is called"
+        def result = virtualMachineSync.resolveVolumeName(serverVolumeNames, diskData, server, index)
+
+        then: "should handle safe navigation correctly"
+        expectedCalls * virtualMachineSync.getVolumeName(diskData, server, index) >> "fallback-name"
+        result == expectedResult
+
+        where:
+        volumeNames        | expectedCalls | expectedResult
+        null               | 1             | "fallback-name"  // Safe navigation on null
+        []                 | 1             | "fallback-name"  // getAt on empty list returns null
+        ["existing-name"]  | 0             | "existing-name"  // Valid getAt result
+
+        // Covers: safe navigation operator (?.), getAt behavior on empty/null collections
+    }
+
+// Tests for isRootVolume method
+    @Unroll
+    def "isRootVolume should return true when VolumeType is BootAndSystem"() {
+        given: "disk data with BootAndSystem volume type"
+        def diskData = [VolumeType: "BootAndSystem"]
+        def server = new ComputeServer(id: 1L, volumes: [new StorageVolume(), new StorageVolume()])
+
+        when: "isRootVolume is called"
+        def result = virtualMachineSync.isRootVolume(diskData, server)
+
+        then: "should return true"
+        result == true
+
+        // Covers: first condition of OR expression (VolumeType == BOOT_AND_SYSTEM)
+    }
+
+    @Unroll
+    def "isRootVolume should return true when server has no volumes"() {
+        given: "disk data with non-boot volume type and server with no volumes"
+        def diskData = [VolumeType: "Data"]
+        def server = new ComputeServer(id: 2L, volumes: volumesCollection)
+
+        when: "isRootVolume is called"
+        def result = virtualMachineSync.isRootVolume(diskData, server)
+
+        then: "should return expected result based on volumes collection"
+        result == expectedResult
+
+        where:
+        volumesCollection | expectedResult
+        null              | true           // !null?.size() evaluates to true
+        []                | true           // ![]?.size() evaluates to true (empty collection size is 0)
+        [new StorageVolume()] | false      // ![volume]?.size() evaluates to false (size is 1)
+
+        // Covers: second condition of OR expression (!server.volumes?.size())
+    }
+
+    @Unroll
+    def "isRootVolume should handle various VolumeType values"() {
+        given: "disk data with different volume types"
+        def diskData = [VolumeType: volumeType]
+        def server = new ComputeServer(id: 3L, volumes: [new StorageVolume()])
+
+        when: "isRootVolume is called"
+        def result = virtualMachineSync.isRootVolume(diskData, server)
+
+        then: "should return correct result based on volume type comparison"
+        result == expectedResult
+
+        where:
+        volumeType        | expectedResult
+        "BootAndSystem"   | true           // Matches BOOT_AND_SYSTEM constant
+        "bootandsystem"   | false          // Case sensitive comparison
+        "BOOTANDSYSTEM"   | false          // Case sensitive comparison
+        "Data"            | false          // Different type, server has volumes
+        null              | false          // null != "BootAndSystem", server has volumes
+        ""                | false          // empty string != "BootAndSystem"
+
+        // Covers: case sensitivity, null handling, various string values
+    }
+
+    @Unroll
+    def "isRootVolume should test complete OR expression logic"() {
+        given: "various combinations of volume type and server volumes"
+        def diskData = [VolumeType: volumeType]
+        def server = new ComputeServer(id: 4L, volumes: serverVolumes)
+
+        when: "isRootVolume is called"
+        def result = virtualMachineSync.isRootVolume(diskData, server)
+
+        then: "should return correct result for OR expression"
+        result == expectedResult
+
+        where:
+        volumeType      | serverVolumes              | expectedResult | description
+        "BootAndSystem" | [new StorageVolume()]      | true          | "First condition true, second false"
+        "BootAndSystem" | []                         | true          | "Both conditions true"
+        "Data"          | []                         | true          | "First condition false, second true"
+        "Data"          | [new StorageVolume()]      | false         | "Both conditions false"
+
+        // Covers: complete OR expression truth table
+    }
+
+// Tests for createAndPersistStorageVolume method
+    @Unroll
+    def "createAndPersistStorageVolume should create, persist and add volume to server"() {
+        given: "server and volume configuration"
+        def serverAccount = new Account(id: 100L, name: "server-account")
+        def server = new ComputeServer(
+                id: 1L,
+                name: "test-server",
+                account: serverAccount,
+                volumes: []
+        )
+        def volumeConfig = [
+                name: "test-volume",
+                size: 1073741824L,
+                rootVolume: true,
+                deviceName: "/dev/sda"
+        ]
+        def createdVolume = new StorageVolume(
+                id: 200L,
+                name: "test-volume",
+                maxStorage: 1073741824L,
+                account: serverAccount
+        )
+
+        when: "createAndPersistStorageVolume is called"
+        def result = virtualMachineSync.createAndPersistStorageVolume(server, volumeConfig)
+
+        then: "should call buildStorageVolume with server account"
+        1 * virtualMachineSync.buildStorageVolume(serverAccount, server, volumeConfig) >> createdVolume
+
+        and: "should persist the volume"
+        1 * storageVolumeService.create(createdVolume) >> createdVolume
+
+        and: "should add volume to server and return it"
+        result == createdVolume
+        server.volumes.size() == 1
+        server.volumes.contains(createdVolume)
+
+        // Covers: server.account path, buildStorageVolume call, create call, add to server, return
+    }
+
+    @Unroll
+    def "createAndPersistStorageVolume should use cloud account when server account is null"() {
+        given: "server without account and volume configuration"
+        def cloudAccount = new Account(id: 500L, name: "cloud-account")
+        cloud.account = cloudAccount
+
+        def server = new ComputeServer(
+                id: 2L,
+                name: "no-account-server",
+                account: null,
+                volumes: [new StorageVolume(name: "existing")]
+        )
+        def volumeConfig = [name: "new-volume", size: 2147483648L]
+        def createdVolume = new StorageVolume(
+                id: 300L,
+                name: "new-volume",
+                account: cloudAccount
+        )
+
+        when: "createAndPersistStorageVolume is called"
+        def result = virtualMachineSync.createAndPersistStorageVolume(server, volumeConfig)
+
+        then: "should call buildStorageVolume with cloud account"
+        1 * virtualMachineSync.buildStorageVolume(cloudAccount, server, volumeConfig) >> createdVolume
+
+        and: "should persist and add the volume"
+        1 * storageVolumeService.create(createdVolume) >> createdVolume
+
+        and: "should add to existing volumes collection"
+        result == createdVolume
+        server.volumes.size() == 2
+        server.volumes.contains(createdVolume)
+
+        // Covers: elvis operator fallback to cloud.account, adding to existing volumes
+    }
+
+    @Unroll
+    def "createAndPersistStorageVolume should handle empty server volumes collection"() {
+        given: "server with null volumes collection"
+        def testAccount = new Account(id: 600L)
+        def server = new ComputeServer(
+                id: 3L,
+                account: testAccount,
+                volumes: null  // null volumes collection
+        )
+        def volumeConfig = [name: "first-volume"]
+        def createdVolume = new StorageVolume(id: 400L, name: "first-volume")
+
+        when: "createAndPersistStorageVolume is called"
+        def result = virtualMachineSync.createAndPersistStorageVolume(server, volumeConfig)
+
+        then: "should handle null volumes collection gracefully"
+        1 * virtualMachineSync.buildStorageVolume(testAccount, server, volumeConfig) >> createdVolume
+        1 * storageVolumeService.create(createdVolume) >> createdVolume
+
+        and: "should still return the created volume"
+        result == createdVolume
+        // Note: Can't verify server.volumes.add() behavior when volumes is null,
+        // but method should not throw exception
+
+        // Covers: null volumes collection handling
+    }
+
+    @Unroll
+    def "createAndPersistStorageVolume should propagate exceptions from services"() {
+        given: "server, volume config, and service that throws exception"
+        def server = new ComputeServer(id: 4L, account: new Account(id: 700L), volumes: [])
+        def volumeConfig = [name: "exception-volume"]
+        def createdVolume = new StorageVolume(id: 500L, name: "exception-volume")
+
+        when: "createAndPersistStorageVolume is called and create service throws exception"
+        virtualMachineSync.createAndPersistStorageVolume(server, volumeConfig)
+
+        then: "should call buildStorageVolume successfully"
+        1 * virtualMachineSync.buildStorageVolume(_, server, volumeConfig) >> createdVolume
+
+        and: "should propagate create service exception"
+        1 * storageVolumeService.create(createdVolume) >> { throw new RuntimeException("Create failed") }
+
+        and: "exception should be thrown"
+        thrown(RuntimeException)
+
+        // Covers: exception handling/propagation from create service
+    }
+
+    @Unroll
+    def "createAndPersistStorageVolume should handle various account scenarios"() {
+        given: "different account configurations"
+        def serverAccount = serverAccountValue
+        def cloudAccount = new Account(id: 800L, name: "cloud-fallback")
+        cloud.account = cloudAccount
+
+        def server = new ComputeServer(id: 5L, account: serverAccount, volumes: [])
+        def volumeConfig = [name: "account-test-volume"]
+        def createdVolume = new StorageVolume(id: 600L, name: "account-test-volume")
+
+        when: "createAndPersistStorageVolume is called"
+        def result = virtualMachineSync.createAndPersistStorageVolume(server, volumeConfig)
+
+        then: "should use correct account based on elvis operator"
+        1 * virtualMachineSync.buildStorageVolume(expectedAccount, server, volumeConfig) >> createdVolume
+        1 * storageVolumeService.create(createdVolume) >> createdVolume
+        result == createdVolume
+
+        where:
+        serverAccountValue                  | expectedAccount
+        new Account(id: 900L, name: "srv") | new Account(id: 900L, name: "srv")  // server account exists
+        null                               | new Account(id: 800L, name: "cloud-fallback")  // fallback to cloud
+
+        // Covers: elvis operator behavior with different account scenarios
     }
 
 

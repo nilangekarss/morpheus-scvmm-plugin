@@ -686,7 +686,7 @@ class VirtualMachineSync {
         context.async.computeServer.bulkSave([server]).blockingGet()
     }
 
-    private Map createVolumeConfig(Map diskData, ComputeServer server, List serverVolumeNames, int index, int diskNumber) {
+    protected Map createVolumeConfig(Map diskData, ComputeServer server, List serverVolumeNames, int index, int diskNumber) {
         def datastore = resolveDatastore(diskData)
         def deviceName = resolveDeviceName(diskData, diskNumber)
         def volumeName = resolveVolumeName(serverVolumeNames, diskData, server, index)
@@ -708,24 +708,24 @@ class VirtualMachineSync {
         volumeConfig
     }
 
-    private def resolveDatastore(Map diskData) {
+    protected def resolveDatastore(Map diskData) {
         return diskData.datastore ?:
                 loadDatastoreForVolume(diskData.HostVolumeId, diskData.FileShareId, diskData.PartitionUniqueId)
     }
 
-    private String resolveDeviceName(Map diskData, int diskNumber) {
+    protected String resolveDeviceName(Map diskData, int diskNumber) {
         return diskData.deviceName ?: apiService.getDiskName(diskNumber)
     }
 
-    private String resolveVolumeName(List serverVolumeNames, Map diskData, ComputeServer server, int index) {
+    protected String resolveVolumeName(List serverVolumeNames, Map diskData, ComputeServer server, int index) {
         return serverVolumeNames?.getAt(index) ?: getVolumeName(diskData, server, index)
     }
 
-    private boolean isRootVolume(Map diskData, ComputeServer server) {
+    protected boolean isRootVolume(Map diskData, ComputeServer server) {
         return diskData.VolumeType == BOOT_AND_SYSTEM || !server.volumes?.size()
     }
 
-    private StorageVolume createAndPersistStorageVolume(ComputeServer server, Map volumeConfig) {
+    protected StorageVolume createAndPersistStorageVolume(ComputeServer server, Map volumeConfig) {
         def storageVolume = buildStorageVolume(server.account ?: cloud.account, server, volumeConfig)
         context.services.storageVolume.create(storageVolume)
         server.volumes.add(storageVolume)
@@ -753,7 +753,7 @@ class VirtualMachineSync {
         }
     }
 
-    private Map processVolumeUpdate(Map updateMap, ComputeServer server, int index) {
+    protected Map processVolumeUpdate(Map updateMap, ComputeServer server, int index) {
         StorageVolume volume = updateMap.existingItem
         def masterItem = updateMap.masterItem
         def masterDiskSize = masterItem?.TotalSize?.toLong() ?: 0
@@ -772,7 +772,7 @@ class VirtualMachineSync {
         ]
     }
 
-    private boolean updateVolumeSize(StorageVolume volume, long masterDiskSize) {
+    protected boolean updateVolumeSize(StorageVolume volume, long masterDiskSize) {
         if (!masterDiskSize || volume.maxStorage == masterDiskSize) {
             return false
         }
@@ -790,7 +790,7 @@ class VirtualMachineSync {
         }
     }
 
-    private boolean updateVolumeInternalId(StorageVolume volume, Map masterItem) {
+    protected boolean updateVolumeInternalId(StorageVolume volume, Map masterItem) {
         if (volume.internalId != masterItem.Name) {
             volume.internalId = masterItem.Name
             true
@@ -799,7 +799,7 @@ class VirtualMachineSync {
         }
     }
 
-    private boolean updateVolumeRootFlag(StorageVolume volume, Map masterItem, ComputeServer server) {
+    protected boolean updateVolumeRootFlag(StorageVolume volume, Map masterItem, ComputeServer server) {
         def isRootVolume = (masterItem?.VolumeType == BOOT_AND_SYSTEM) || (server.volumes.size() == 1)
         if (volume.rootVolume != isRootVolume) {
             volume.rootVolume = isRootVolume
@@ -809,7 +809,7 @@ class VirtualMachineSync {
         }
     }
 
-    private boolean updateVolumeName(StorageVolume volume, Map masterItem, ComputeServer server, int index) {
+    protected boolean updateVolumeName(StorageVolume volume, Map masterItem, ComputeServer server, int index) {
         if (volume.name == null) {
             volume.name = getVolumeName(masterItem, server, index)
             true
@@ -817,7 +817,6 @@ class VirtualMachineSync {
             false
         }
     }
-
 
     def removeMissingStorageVolumes(List removeItems, ComputeServer server, Boolean changes) {
         removeItems?.each { currentVolume ->
