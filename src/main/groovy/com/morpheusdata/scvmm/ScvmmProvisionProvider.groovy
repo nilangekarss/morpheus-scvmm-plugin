@@ -798,7 +798,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                     def cloudFiles =
                             context.async.virtualImage.getVirtualImageFiles(virtualImage).blockingGet()
                     log.debug("cloudFiles?.size(): ${cloudFiles?.size()}")
-                    if (cloudFiles?.size() == ZeroInt) {
+                    if (cloudFiles?.size() == ZERO_INT) {
                         server.statusMessage = 'Failed to find cloud files'
                         provisionResponse.setError("Cloud files could not be found for ${virtualImage}")
                         provisionResponse.success = false
@@ -1227,7 +1227,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 
         def rtn = []
         def rootVolume = location.volumes.find { it.rootVolume }
-        rtn << [rootVolume: true, externalId: rootVolume.externalId, idx: ZeroInt]
+        rtn << [rootVolume: true, externalId: rootVolume.externalId, idx: ZERO_INT]
         location.volumes?.eachWithIndex { vol, index ->
             if (!vol.rootVolume) {
                 rtn << [rootVolume: false, externalId: vol.externalId, idx: SORT_ORDER_1 + index]

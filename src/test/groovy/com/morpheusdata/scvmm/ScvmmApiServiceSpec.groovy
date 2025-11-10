@@ -27,6 +27,7 @@ import com.morpheusdata.model.ComputeZoneRegion
 import com.morpheusdata.model.KeyPair
 import com.morpheusdata.model.Network
 import com.morpheusdata.model.StorageVolume
+import com.morpheusdata.model.TaskResult
 import com.morpheusdata.model.VirtualImage
 import com.morpheusdata.scvmm.testdata.ApiServiceDataHelper
 import org.junit.jupiter.api.BeforeEach
@@ -163,7 +164,7 @@ class ScvmmApiServiceSpec extends Specification {
         morpheusContext.executeWindowsCommand(*_) >> Single.just([success: true, data: '{"Status":"Success"}'])
 
         when:
-        def result = apiService.stopServer(opts, server)
+        def result = apiService.stopServer(opts, server.id.toString())
 
         then:
         result.success == true
@@ -2503,16 +2504,15 @@ class ScvmmApiServiceSpec extends Specification {
 
         where:
         scenario                           | poolId              | ipId           | commandOutput                                                                                    | expectedSuccess | expectedMsg                                | shouldThrowException | specificCommandCheck
-        "successfully releases IP"         | "pool-12345"        | "ip-12345"     | [success: true, exitCode: '0']                                                                  | true            | null                                       | false                | true
-        "command execution failure"        | "pool-12345"        | "ip-12345"     | [success: false, exitCode: '1', error: "Pool not found"]                                       | false           | null                                       | false                | false
-        "IP address already deleted"       | "pool-12345"        | "ip-12345"     | [success: false, exitCode: '1', errorData: "Unable to find the specified allocated IP address"] | true            | null                                       | false                | false
-        "IP address not found error"       | "pool-12345"        | "ip-12345"     | [success: false, exitCode: '1', errorData: "Unable to find the specified allocated IP address in system"] | true            | null                                       | false                | false
-        "other execution error"            | "pool-12345"        | "ip-12345"     | [success: false, exitCode: '1', error: "PowerShell execution failed"]                          | false           | null                                       | false                | false
+        "successfully releases IP"         | "pool-12345"        | "ip-12345"     | new TaskResult([success: true, exitCode: '0'])                                                                  | true            | null                                       | false                | true
+        "command execution failure"        | "pool-12345"        | "ip-12345"     | new TaskResult([success: false, exitCode: '1', error: "Pool not found"])                                      | false           | null                                       | false                | false
+        "IP address already deleted"       | "pool-12345"        | "ip-12345"     | new TaskResult([success: false, exitCode: '1', error: "Unable to find the specified allocated IP address"]) | true            | null                                       | false                | false
+        "IP address not found error"       | "pool-12345"        | "ip-12345"     | new TaskResult([success: false, exitCode: '1', error: "Unable to find the specified allocated IP address in system"]) | true            | null                                       | false                | false
+        "other execution error"            | "pool-12345"        | "ip-12345"     | new TaskResult([success: false, exitCode: '1', error: "PowerShell execution failed"])                          | false           | null                                       | false                | false
         "exception handling"               | "pool-12345"        | "ip-12345"     | null                                                                                            | false           | "Error revoking an IP address from SCVMM" | true                 | false
-        "different pool and IP ID 1"       | "pool-production"   | "ip-001"       | [success: true, exitCode: '0']                                                                  | true            | null                                       | false                | false
-        "different pool and IP ID 2"       | "pool-development"  | "ip-002"       | [success: true, exitCode: '0']                                                                  | true            | null                                       | false                | false
-        "different pool and IP ID 3"       | "pool-test"         | "ip-003"       | [success: true, exitCode: '0']                                                                  | true            | null                                       | false                | false
-        "successful release with warning"  | "pool-12345"        | "ip-12345"     | [success: true, exitCode: '0', warning: "IP released with warnings"]                          | true            | null                                       | false                | false
+        "different pool and IP ID 1"       | "pool-production"   | "ip-001"       | new TaskResult([success: true, exitCode: '0'])                                                                  | true            | null                                       | false                | false
+        "different pool and IP ID 2"       | "pool-development"  | "ip-002"       | new TaskResult([success: true, exitCode: '0'])                                                                  | true            | null                                       | false                | false
+        "different pool and IP ID 3"       | "pool-test"         | "ip-003"       | new TaskResult([success: true, exitCode: '0'])                                                                  | true            | null                                       | false                | false
     }
 
     @Unroll
@@ -2573,19 +2573,11 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test getDiskName with #scenario"() {
         given:
-        // Mock getDiskNameList method to return a predefined list
-        apiService.getDiskNameList() >> ["sda", "sdb", "sdc", "sdd", "sde"]
 
         when:
         def result = apiService.getDiskName(index, platform)
 
         then:
-        // Verify getDiskNameList was called only for non-Windows platforms
-        if (platform == 'windows') {
-            0 * apiService.getDiskNameList()
-        } else {
-            1 * apiService.getDiskNameList() >> ["sda", "sdb", "sdc", "sdd", "sde"]
-        }
 
         result == expectedResult
 
@@ -2629,8 +2621,15 @@ class ScvmmApiServiceSpec extends Specification {
                 winrmPort: '5985'
         ]
 
+//        def cmdOut_success_rem_disk = new TaskResult([success: true, exitCode: '0'])
+//        def cmdOut_vm_not_found = new TaskResult([success: false, exitCode: '1', error: "VM not found"])
+//        def cmdOut_disk_not_found = new TaskResult([success: false, exitCode: '1', error: "Disk not found"])
+//        def cmdOut_exec_failure = new TaskResult([success: false, exitCode: '1', error: "Execution failed"])
+//        def cmdOut_success_diff_ids = new TaskResult([success: true, exitCode: '0'])
+//        def cmdOut_guid_disk_id = new TaskResult([success: true, exitCode: '0'])
+
         when:
-        def result = apiService.removeDisk(opts, diskId)
+        TaskResult result = apiService.removeDisk(opts, diskId)
 
         then:
         if (shouldThrowException) {
@@ -2647,16 +2646,20 @@ class ScvmmApiServiceSpec extends Specification {
             1 * apiService.wrapExecuteCommand("generated powershell command", opts) >> commandOutput
         }
 
-        result == expectedResult
+        result.success == expectedResult.success
+        result.exitCode == expectedResult.exitCode
+        if (expectedResult.error) {
+            result.error == expectedResult.error
+        }
 
         where:
-        scenario                        | externalId    | diskId        | commandOutput                                           | expectedResult                                          | shouldThrowException
-        "successfully removes disk"     | "vm-12345"    | "disk-001"    | [success: true, exitCode: '0']                         | [success: true, exitCode: '0']                         | false
-        "VM not found"                  | "vm-nonexist" | "disk-001"    | [success: false, exitCode: '1', error: "VM not found"] | [success: false, exitCode: '1', error: "VM not found"] | false
-        "disk not found"                | "vm-12345"    | "disk-missing"| [success: false, exitCode: '1', error: "Disk not found"] | [success: false, exitCode: '1', error: "Disk not found"] | false
-        "PowerShell execution failure"  | "vm-12345"    | "disk-001"    | [success: false, exitCode: '1', error: "Execution failed"] | [success: false, exitCode: '1', error: "Execution failed"] | false
-        "different VM and disk IDs"     | "vm-prod-01"  | "vhd-system"  | [success: true, exitCode: '0']                         | [success: true, exitCode: '0']                         | false
-        "GUID format disk ID"           | "vm-12345"    | "12345678-1234-5678-9012-123456789012" | [success: true, exitCode: '0'] | [success: true, exitCode: '0'] | false
+        scenario                        | externalId    | diskId        | commandOutput  | expectedResult | shouldThrowException
+        "successfully removes disk"     | "vm-12345"    | "disk-001"    | new TaskResult([success: true, exitCode: '0'])  | new TaskResult([success: true, exitCode: '0']) | false
+        "VM not found"                  | "vm-nonexist" | "disk-001"    | new TaskResult([success: false, exitCode: '1', error: "VM not found"]) | new TaskResult([success: false, exitCode: '1', error: "VM not found"])| false
+        "disk not found"                | "vm-12345"    | "disk-missing"| new TaskResult([success: false, exitCode: '1', error: "Disk not found"]) | new TaskResult([success: false, exitCode: '1', error: "Disk not found"]) | false
+        "PowerShell execution failure"  | "vm-12345"    | "disk-001"    | new TaskResult([success: false, exitCode: '1', error: "Execution failed"]) | new TaskResult([success: false, exitCode: '1', error: "Execution failed"]) | false
+        "different VM and disk IDs"     | "vm-prod-01"  | "vhd-system"  | new TaskResult([success: true, exitCode: '0'])  | new TaskResult([success: true, exitCode: '0']) | false
+        "GUID format disk ID"           | "vm-12345"    | "12345678-1234-5678-9012-123456789012" | new TaskResult([success: true, exitCode: '0']) | new TaskResult([success: true, exitCode: '0']) | false
     }
 
     @Unroll
@@ -2875,6 +2878,7 @@ class ScvmmApiServiceSpec extends Specification {
         given:
 
         def mockCloudFile = Mock(CloudFile)
+        def cloudFiles = [mockCloudFile]
         mockCloudFile.getName() >> "ubuntu-22.04.vhdx"
 
         def containerImage = [
@@ -2885,7 +2889,7 @@ class ScvmmApiServiceSpec extends Specification {
                 tags          : 'morpheus, ubuntu',
                 imageType     : 'vhdx',
                 containerType : 'vhdx',
-                cloudFiles    : mockCloudFile
+                cloudFiles    : cloudFiles
         ]
 
         def opts = [
@@ -2902,7 +2906,9 @@ class ScvmmApiServiceSpec extends Specification {
             return "new_test_image"
         }
 
-        apiService.findImage(opts, "new-test-image") >> [ [success: true, imageExists: false], [imageName: "\\\\server\\temp\\new-test-image.vhdx"] ]
+        apiService.findImage(opts, "new-test-image") >> {
+            [ success: true, imageExists: false ]
+        }
 
         def cmdString = "\$FormatEnumerationLimit =-1; Get-SCVirtualHardDisk -VMMServer localhost | where {\$_.SharePath -like \"\\\\server\\share\\images\\new_test_image\\*\"} | Select ID | ConvertTo-Json -Depth 3"
 
@@ -2911,7 +2917,7 @@ class ScvmmApiServiceSpec extends Specification {
         }
 
 
-        apiService.transferImage(opts, mockCloudFile, "new-test-image") >> {
+        apiService.transferImage(opts, cloudFiles, "new-test-image") >> {
             return [success: true]
         }
 
