@@ -13,93 +13,94 @@ import com.bertramlabs.plugins.karman.CloudFile
 class ScvmmApiService {
 // At the top of ScvmmApiService.groovy
 
-    static final CMD_SEPARATOR = ";"
-    static final OBJECT_TYPE_1 = '1'
-    static final ARRAY_INIT = "@()"
-    static final WIN2022_STD_CORE = '2022.std.core'
-    static final WIN2022_DC_CORE = '2022.dc.core'
-    static final DEFAULT_PAGE_SIZE = 50
-    static final EXIT_CODE_SUCCESS = '0'
-    static final VMID_PLACEHOLDER = "<%vmid%>"
-    static final EXCEPTION_MSG = 'An Exception Has Occurred'
-    static final TAR_GZ_EXTENSION = '.tar.gz'
+    static final String CMD_SEPARATOR = ";"
+    static final String OBJECT_TYPE_1 = '1'
+    static final String ARRAY_INIT = "@()"
+    static final String WIN2022_STD_CORE = '2022.std.core'
+    static final String WIN2022_DC_CORE = '2022.dc.core'
+    static final String DEFAULT_PAGE_SIZE = 50
+    static final String EXIT_CODE_SUCCESS = '0'
+    static final String VMID_PLACEHOLDER = "<%vmid%>"
+    static final String EXCEPTION_MSG = 'An Exception Has Occurred'
+    static final String TAR_GZ_EXTENSION = '.tar.gz'
     static final Integer MAX_IMPORT_ATTEMPTS = 5
     static final String JOB_STATUS_COMPLETED = 'completed'
     static final String JOB_STATUS_SUCCEED_WITH_INFO = 'succeedwithinfo'
 
-    static final GET_SC_LOGICAL_NETWORK_CMD = "Get-SCLogicalNetwork -VMMServer localhost | Select ID,Name"
-    static final VHDNAME_PLACEHOLDER = "<%vhdname%>"
-    static final SET_VIRTUAL_DVD_NO_MEDIA_CMD = "\$ignore = Set-SCVirtualDVDDrive -VirtualDVDDrive \$dvd " +
+    static final String GET_SC_LOGICAL_NETWORK_CMD = "Get-SCLogicalNetwork -VMMServer localhost | Select ID,Name"
+    static final String VHDNAME_PLACEHOLDER = "<%vhdname%>"
+    static final String SET_VIRTUAL_DVD_NO_MEDIA_CMD = "\$ignore = Set-SCVirtualDVDDrive -VirtualDVDDrive \$dvd " +
             "-Bus \$dvd.Bus -LUN \$dvd.Lun -NoMedia"
-    static final SET_HARDWARE_PROFILE_CMD = " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile "
-    static final IGNORE_IF_NOT = "\$ignore = If (-not "
-    static final CLOSE_BRACE = "}"
-    static final IGNORE_NEW_HARDWARE_PROFILE = "\$ignore = New-SCHardwareProfile -VMMServer localhost "
-    static final HARDWARE_PROFILE_GET_CMD = "\$HardwareProfile = Get-SCHardwareProfile -VMMServer localhost |"
-    static final IGNORE_SET_HARDWARE_PROFILE = "\$ignore = Set-SCHardwareProfile -HardwareProfile \$HardwareProfile "
+    static final String SET_HARDWARE_PROFILE_CMD = " { Set-SCHardwareProfile -HardwareProfile \$HardwareProfile "
+    static final String IGNORE_IF_NOT = "\$ignore = If (-not "
+    static final String CLOSE_BRACE = "}"
+    static final String IGNORE_NEW_HARDWARE_PROFILE = "\$ignore = New-SCHardwareProfile -VMMServer localhost "
+    static final String HARDWARE_PROFILE_GET_CMD = "\$HardwareProfile = Get-SCHardwareProfile -VMMServer localhost |"
+    static final String IGNORE_SET_HARDWARE_PROFILE = "\$ignore = Set-SCHardwareProfile " +
+            "-HardwareProfile \$HardwareProfile "
 
 // Groovy
-    static final IGNORE_NEW_VIRTUAL_DISK_DRIVE = "\$ignore = New-SCVirtualDiskDrive -VMMServer "
-    static final VM_CONFIGURATION_PARAM = "-VMConfiguration \$virtualMachineConfiguration"
+    static final String IGNORE_NEW_VIRTUAL_DISK_DRIVE = "\$ignore = New-SCVirtualDiskDrive -VMMServer "
+    static final String VM_CONFIGURATION_PARAM = "-VMConfiguration \$virtualMachineConfiguration"
 
-    static final IGNORE_SET_VM_CONFIGURATION = "\$ignore = Set-SCVMConfiguration " + VM_CONFIGURATION_PARAM
-    static final IGNORE_UPDATE_VM_CONFIGURATION = "\$ignore = Update-SCVMConfiguration " + VM_CONFIGURATION_PARAM
-    static final RUN_ASYNCHRONOUSLY_STOP_ACTION = "-RunAsynchronously -StopAction \"SaveVM\""
-    static final ELSE_CLOSE = "} else {"
-    static final SET_VIRTUAL_NETWORK_ADAPTER = "Set-SCVirtualNetworkAdapter " +
+    static final String IGNORE_SET_VM_CONFIGURATION = "\$ignore = Set-SCVMConfiguration " + VM_CONFIGURATION_PARAM
+    static final String IGNORE_UPDATE_VM_CONFIGURATION = "\$ignore = Update-SCVMConfiguration " + VM_CONFIGURATION_PARAM
+    static final String RUN_ASYNCHRONOUSLY_STOP_ACTION = "-RunAsynchronously -StopAction \"SaveVM\""
+    static final String ELSE_CLOSE = "} else {"
+    static final String SET_VIRTUAL_NETWORK_ADAPTER = "Set-SCVirtualNetworkAdapter " +
             "-VirtualNetworkAdapter \$VirtualNetworkAdapter "
-    static final CLOUD_HARDWARE_PROFILE_START_ACTION = "-Cloud \$cloud -HardwareProfile \$HardwareProfile -StartAction "
-    static final TURN_ON_VM_IF_RUNNING_WHEN_VS_STOPPED = "TurnOnVMIfRunningWhenVSStopped -StopAction SaveVM"
-    static final IF_STARTUP_GT_MIN_DYNAMIC_MEMORY = "If (\$startupMemory -gt \$minimumDynamicMemory) " +
+    static final String CLOUD_HARDWARE_PROFILE_START_ACTION = "-Cloud \$cloud -HardwareProfile \$HardwareProfile -StartAction "
+    static final String TURN_ON_VM_IF_RUNNING_WHEN_VS_STOPPED = "TurnOnVMIfRunningWhenVSStopped -StopAction SaveVM"
+    static final String IF_STARTUP_GT_MIN_DYNAMIC_MEMORY = "If (\$startupMemory -gt \$minimumDynamicMemory) " +
             "{ \$minimumDynamicMemory = \$startupMemory };"
-    static final IF_STARTUP_GT_MAX_DYNAMIC_MEMORY = "If (\$startupMemory -gt \$maximumDynamicMemory) " +
+    static final String IF_STARTUP_GT_MAX_DYNAMIC_MEMORY = "If (\$startupMemory -gt \$maximumDynamicMemory) " +
             "{ \$maximumDynamicMemory = \$startupMemory };"
 
-    static final NEWLINE_CHAR = '\n'
-    static final ACCOUNT_ID = "accountId"
-    static final LIBRARY_SHARE = 'libraryShare'
-    static final FORWARD_SLASH = '/'
-    static final UNDERSCORE = '_'
-    static final DOT_GZ = '.gz'
-    static final DISKS_FOLDER = '\\Disks'
+    static final String NEWLINE_CHAR = '\n'
+    static final String ACCOUNT_ID = "accountId"
+    static final String LIBRARY_SHARE = 'libraryShare'
+    static final String FORWARD_SLASH = '/'
+    static final String UNDERSCORE = '_'
+    static final String DOT_GZ = '.gz'
+    static final String DISKS_FOLDER = '\\Disks'
 
-    static final METADATA_JSON = 'metadata.json'
-    static final GENERATION1 = 'generation1'
+    static final String METADATA_JSON = 'metadata.json'
+    static final String GENERATION1 = 'generation1'
     static final Integer TAKE_36 = 36
-    static final SLEEP_MILLISECONDS = 1000L
-    static final SLEEP_SECONDS = 5L
-    static final CREATION_FAILED = 'CreationFailed'
-    static final MAX_NOT_FOUND_ATTEMPTS = 10
-    static final VM_STATE_RUNNING = 'Running'
-    static final CONFIG_ISO = 'config.iso'
-    static final FIELD_NETWORK_INTERFACE = 'networkInterface'
-    static final MSG_NETWORK_REQUIRED = 'Network is required'
-    static final IP_MODE_STATIC = 'static'
-    static final MSG_ENTER_IP = 'You must enter an ip address'
-    static final FIELD_NETWORK_ID = 'networkId'
-    static final FIELD_NODE_COUNT = 'nodeCount'
-    static final POWERSHELL_NULL = '$null'
+    static final Long SLEEP_MILLISECONDS = 1000L
+    static final Long SLEEP_SECONDS = 5L
+    static final String CREATION_FAILED = 'CreationFailed'
+    static final Integer MAX_NOT_FOUND_ATTEMPTS = 10
+    static final String VM_STATE_RUNNING = 'Running'
+    static final String CONFIG_ISO = 'config.iso'
+    static final String FIELD_NETWORK_INTERFACE = 'networkInterface'
+    static final String MSG_NETWORK_REQUIRED = 'Network is required'
+    static final String IP_MODE_STATIC = 'static'
+    static final String MSG_ENTER_IP = 'You must enter an ip address'
+    static final String FIELD_NETWORK_ID = 'networkId'
+    static final String FIELD_NODE_COUNT = 'nodeCount'
+    static final String POWERSHELL_NULL = '$null'
 
-    static final WINDOWS_8_64 = 'windows.8.64'
-    static final WINDOWS_SERVER_2008 = 'windows.server.2008'
-    static final WINDOWS_SERVER_2008_R2 = 'windows.server.2008.r2'
-    static final WINDOWS_SERVER_2012 = 'windows.server.2012'
-    static final WINDOWS = 'windows'
-    static final CENT = 'cent'
-    static final OTHER = 'other'
-    static final ORACLE_32 = 'oracle.32'
-    static final ORACLE_LINUX_64 = 'oracle.linux.64'
-    static final REDHAT = 'redhat'
-    static final LINUX_32 = 'linux.32'
-    static final LINUX_64 = 'linux.64'
-    static final SUSE = 'suse'
-    static final UBUNTU = 'ubuntu'
-    static final UBUNTU_64 = 'ubuntu.64'
-    static final WINDOWS_8 = 'windows.8'
-    static final WINDOWS_SERVER_2016 = 'windows.server.2016'
-    static final WINDOWS_SERVER_2019 = 'windows.server.2019'
-    static final WINDOWS_SERVER_2025 = 'windows.server.2025'
-    static final INDEX_NOT_FOUND = -1
+    static final String WINDOWS_8_64 = 'windows.8.64'
+    static final String WINDOWS_SERVER_2008 = 'windows.server.2008'
+    static final String WINDOWS_SERVER_2008_R2 = 'windows.server.2008.r2'
+    static final String WINDOWS_SERVER_2012 = 'windows.server.2012'
+    static final String WINDOWS = 'windows'
+    static final String CENT = 'cent'
+    static final String OTHER = 'other'
+    static final String ORACLE_32 = 'oracle.32'
+    static final String ORACLE_LINUX_64 = 'oracle.linux.64'
+    static final String REDHAT = 'redhat'
+    static final String LINUX_32 = 'linux.32'
+    static final String LINUX_64 = 'linux.64'
+    static final String SUSE = 'suse'
+    static final String UBUNTU = 'ubuntu'
+    static final String UBUNTU_64 = 'ubuntu.64'
+    static final String WINDOWS_8 = 'windows.8'
+    static final String WINDOWS_SERVER_2016 = 'windows.server.2016'
+    static final String WINDOWS_SERVER_2019 = 'windows.server.2019'
+    static final String WINDOWS_SERVER_2025 = 'windows.server.2025'
+    static final Integer INDEX_NOT_FOUND = -1
 
     MorpheusContext morpheusContext
     private LogInterface log = LogWrapper.instance
@@ -563,6 +564,7 @@ if(\$vm) {
         return rtn
     }
 
+    @SuppressWarnings('LineLength')
     def getCloud(opts) {
         def rtn = [success: false, cloud: null]
         def command = generateCommandString("""\$cloud = Get-SCCloud -VMMServer localhost | where { \$_.ID -eq \'${opts.zone.regionCode}\' }
@@ -615,6 +617,7 @@ if(\$cloud) {
         return rtn
     }
 
+    @SuppressWarnings('LineLength')
     def listVirtualMachines(opts) {
         def rtn = [success: false, virtualMachines: []]
 
@@ -854,6 +857,7 @@ foreach (\$VHDconf in \$Disks) {
         return rtn
     }
 
+    @SuppressWarnings('LineLength')
     def internalListHostGroups(Map opts) {
         def rtn = [success: false, hostGroups: []]
         def commandStr = """Get-SCVMHostGroup -VMMServer localhost | Select-Object @{Name="id";Expression={\$_.ID.Guid}}, @{Name="name";Expression={\$_.Name}}, @{Name="path";Expression={\$_.Path}}, @{Name="parent";Expression={\$_.ParentHostGroup.Name}}, @{Name="root";Expression={\$_.IsRoot}}"""
@@ -931,6 +935,7 @@ foreach (\$cloud in \$clouds) {
         return rtn
     }
 
+    @SuppressWarnings('LineLength')
     def listHosts(Map opts) {
         def rtn = [success: false, hosts: []]
 
@@ -1006,6 +1011,7 @@ foreach (\$cloud in \$clouds) {
         return rtn
     }
 
+    @SuppressWarnings('LineLength')
     def listDatastores(Map opts) {
         def rtn = [success: false, datastores: []]
 
@@ -1062,6 +1068,7 @@ foreach (\$cloud in \$clouds) {
         return rtn
     }
 
+    @SuppressWarnings('LineLength')
     def listRegisteredFileShares(Map opts) {
         def rtn = [success: false, datastores: []]
 
@@ -1127,6 +1134,7 @@ foreach (\$FileShare in \$FileShares){
         return rtn
     }
 
+    @SuppressWarnings('LineLength')
     def listAllNetworks(opts) {
         def rtn = [success: true, networks: []]
         try {
@@ -1173,6 +1181,7 @@ foreach (\$network in \$networks) {
         return rtn
     }
 
+    @SuppressWarnings('LineLength')
     def removeOrphanedResourceLibraryItems(opts) {
         log.debug "removeOrphanedResourceLibraryItems: ${opts}"
 
@@ -1188,6 +1197,7 @@ foreach (\$network in \$networks) {
         }
     }
 
+    @SuppressWarnings('LineLength')
     def listNetworks(opts) {
         def rtn = [success: true, networks: []]
         try {
@@ -1271,6 +1281,7 @@ foreach (\$network in \$networks) {
         return rtn
     }
 
+    @SuppressWarnings('LineLength')
     def listNoIsolationVLans(opts) {
         def rtn = [success: true, networks: []]
         try {
@@ -1415,6 +1426,7 @@ foreach (\$network in \$networks) {
         return rtn
     }
 
+    @SuppressWarnings('LineLength')
     def reserveIPAddress(opts, poolId) {
         def rtn = [success: true, ipAddress: []]
         try {
@@ -1798,8 +1810,9 @@ foreach (\$network in \$networks) {
                     }
                 }
                 attempts++
-                if (attempts > 350)
+                if (attempts > 350) {
                     pending = false
+                }
             }
         } catch (e) {
             log.error(EXCEPTION_MSG, e)
@@ -1902,6 +1915,7 @@ Status=\$job.Status.toString()
         return rtn
     }
 
+    @SuppressWarnings('LineLength')
     def startServer(opts, vmId) {
         def rtn = [success: false]
         try {
@@ -1986,7 +2000,7 @@ if(\$VM) {
         }
 
         if (!rtn.success) {
-            throw new Exception("Error in importing physical resource: ${rtn}")
+            throw new IllegalStateException("Error in importing physical resource: ${rtn}")
         } else {
             executeCommand("\$libraryshare = Get-SCLibraryShare -VMMServer localhost" +
                     " | where { \$_.Path -eq \"${rootSharePath}\" };" +
@@ -1998,6 +2012,7 @@ if(\$VM) {
         return rtn
     }
 
+    @SuppressWarnings('DuplicateStringLiteral')
     def getRootSharePath(opts) {
         def command = """\$report = @()
 \$shares = Get-SCLibraryShare -VMMServer localhost 
@@ -2057,7 +2072,7 @@ foreach(\$share in \$shares) {
         def scriptPath
         InputStream inputStream = new ByteArrayInputStream(content.getBytes())
         def command = "\$ignore = mkdir \"${diskFolder}\""
-        def dirResults = wrapExecuteCommand(generateCommandString(command), opts)
+        wrapExecuteCommand(generateCommandString(command), opts)
         def fileResults = morpheusContext.services.fileCopy.copyToServer(
                 opts.hypervisor, "${opts.fileName}", "${diskFolder}\\${opts.fileName}",
                 inputStream, opts.cloudConfigBytes?.size(), null, true)
