@@ -1573,7 +1573,7 @@ foreach (\$network in \$networks) {
         String resizeCmd = templateCmd.stripIndent().trim()
                 .replace(VMID_PLACEHOLDER, opts.externalId)
                 .replace("<%diskid%>", diskId ?: "")
-                .replace("<%sizegb%>", "${(int) (diskSizeBytes.toLong()).div(ComputeUtility.ONE_GIGABYTE)}")
+                .replace("<%sizegb%>", "${(int) (diskSizeBytes.toLong() / ComputeUtility.ONE_GIGABYTE)}")
 
         log.debug "resizeDisk: ${resizeCmd}"
         def resizeResults = wrapExecuteCommand(generateCommandString(resizeCmd), opts)
@@ -1836,7 +1836,7 @@ Status=\$job.Status.toString()
                 throw new IllegalStateException("Error in getting job")
             }
 
-            rtn.jobDetail = out.data.getAt(0)
+            rtn.jobDetail = out.data[0]
             rtn.success = true
         } catch (e) {
             log.error "error in calling job detail: ${e}", e
@@ -2164,6 +2164,7 @@ For (\$i=0; \$i -le 10; \$i++) {
             // 	rtn.errors += [field: 'networkInterface', msg: 'You must choose a network']
             // }
             if (opts.networkId) {
+                log.debug("validateServerConfig networkId: ${opts.networkId}")
                 // great
             } else if (opts?.networkInterfaces) {
                 // JSON (or Map from parseNetworks)
@@ -2209,10 +2210,10 @@ For (\$i=0; \$i -le 10; \$i++) {
         def rtn = [success: false]
         try {
             def minDynamicMemory = updates.minDynamicMemory
-                    ? (int) updates.minDynamicMemory.div(ComputeUtility.ONE_MEGABYTE)
+                    ? (int) (updates.minDynamicMemory / ComputeUtility.ONE_MEGABYTE)
                     : null
             def maxDynamicMemory = updates.maxDynamicMemory
-                    ? (int) updates.maxDynamicMemory.div(ComputeUtility.ONE_MEGABYTE)
+                    ? (int) (updates.maxDynamicMemory /ComputeUtility.ONE_MEGABYTE)
                     : null
 
             if (updates.maxMemory || updates.maxCores || minDynamicMemory || maxDynamicMemory) {
@@ -2222,7 +2223,7 @@ For (\$i=0; \$i -le 10; \$i++) {
                 }
 
                 if (updates.maxMemory) {
-                    def maxMemory = (int) updates.maxMemory.div(ComputeUtility.ONE_MEGABYTE)
+                    def maxMemory = (int) (updates.maxMemory / ComputeUtility.ONE_MEGABYTE)
                     command += "\$maxMemory = ${maxMemory};"
                     command += "\$minDynamicMemory = ${minDynamicMemory ?: POWERSHELL_NULL};"
                     command += "\$maxDynamicMemory = ${maxDynamicMemory ?: POWERSHELL_NULL};"
@@ -2549,12 +2550,12 @@ For (\$i=0; \$i -le 10; \$i++) {
         def scvmmGeneration = opts.scvmmGeneration ?: GENERATION1
         def hardwareProfileName = "Profile${UUID.randomUUID().toString()}"
         def maxCores = opts.maxCores
-        def memoryMB = (int) opts.memory.div(ComputeUtility.ONE_MEGABYTE)
+        def memoryMB = (int) (opts.memory / ComputeUtility.ONE_MEGABYTE)
         def minDynamicMemoryMB = opts.minDynamicMemory
-                ? (int) opts.minDynamicMemory.div(ComputeUtility.ONE_MEGABYTE)
+                ? (int) (opts.minDynamicMemory / ComputeUtility.ONE_MEGABYTE)
                 : null
         def maxDynamicMemoryMB = opts.maxDynamicMemory
-                ? (int) opts.maxDynamicMemory.div(ComputeUtility.ONE_MEGABYTE)
+                ? (int) (opts.maxDynamicMemory / ComputeUtility.ONE_MEGABYTE)
                 : null
 
         def zone = opts.zone
@@ -2833,6 +2834,7 @@ For (\$i=0; \$i -le 10; \$i++) {
             def diskJobGuid = UUID.randomUUID().toString()
             // Start with an SCVMM Template or a VHD Image to create the OS Disk and volume
             if (isTemplate && templateId) {
+                log.debug("Using existing Template ID to create VM: ${templateId}")
                 // For a Template its all good
             } else {
                 // virtualImage is an SCVMM VHD - locate this and use to form a Temporary Template
@@ -2861,7 +2863,7 @@ For (\$i=0; \$i -le 10; \$i++) {
                     }
                     def busNumber = EXIT_CODE_SUCCESS
                     def generateResults = generateDataDiskCommand(busNumber, index, diskJobGuid,
-                            (int) dataDisk.maxStorage.div(ComputeUtility.ONE_MEGABYTE), dataDisk.volumePath,
+                            (int) (dataDisk.maxStorage / ComputeUtility.ONE_MEGABYTE), dataDisk.volumePath,
                             fromDisk, deployingToCloud)
                     commands << generateResults.command
                 }
@@ -3155,6 +3157,7 @@ For (\$i=0; \$i -le 10; \$i++) {
             } catch (e) {
 //				File file = new File("/Users/bob/Desktop/bad.json")
 //				file.write payload
+                log.error("An error occurred : ${e.message}", e)
             }
             out.data = new groovy.json.JsonSlurper().parseText(payload)
         }
