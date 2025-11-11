@@ -30,7 +30,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     public static final String PROVIDER_CODE = 'scvmm.provision'
     public static final String PROVISION_TYPE_CODE = 'scvmm'
     protected static final String[] DISK_NAMES = ['sda', 'sdb', 'sdc', 'sdd', 'sde', 'sdf', 'sdg', 'sdh',
-                                     'sdi', 'sdj', 'sdk', 'sdl']
+                                                  'sdi', 'sdj', 'sdk', 'sdl']
     // Add these new constants
     private static final String DEFAULT_CAPABILITY_PROFILE = '-1'
     private static final String COMPUTE_SERVER_TYPE_CODE_FIELD = 'computeServerType.code'
@@ -42,6 +42,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     private static final String ID_FIELD = 'id'
     private static final String PROVISIONED_STATUS = 'provisioned'
     private static final String COMPUTE_ZONE_REF_TYPE = 'ComputeZone'
+    private static final String DATASTORE_REF_TYPE_FIELD = 'datastore.refType'
     private static final String EXTERNAL_ID_FIELD = 'externalId'
     private static final String MAX_MEMORY_FIELD = 'maxMemory'
     private static final String MAX_CORES_FIELD = 'maxCores'
@@ -69,6 +70,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     private static final String ONE_CORE_2GB_DESC = '1 Core, 2GB Memory'
 
 // Common numeric constants
+    private static final Integer FIVE_TWELVE_INT = 512
 
     private static final Integer DISPLAY_ORDER_6 = 6
     private static final Integer DISPLAY_ORDER_7 = 7
@@ -90,6 +92,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     private static final Long ONE_SIXTY_LONG = 160L
     private static final Long TWO_FORTY_LONG = 240L
     private static final Long THREE_TWENTY_LONG = 320L
+
 
     private static final Long ONE_GB_STORAGE = TEN_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB
     private static final Long TWO_GB_STORAGE = TWENTY_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB
@@ -583,76 +586,76 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                                          description     : ONE_CORE_1GB_DESC, sortOrder: SORT_ORDER_1,
                                          maxStorage      : ONE_GB_STORAGE,
                                          maxMemory       : ONE_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB,
-                                         maxCpu: ZERO_LONG,
-                                         maxCores: ONE_LONG,
+                                         maxCpu          : ZERO_LONG,
+                                         maxCores        : ONE_LONG,
                                          customMaxStorage: true, customMaxDataStorage: true, addVolumes: true,])
 
         servicePlans << new ServicePlan([code            : 'scvmm-2048', editable: true, name: ONE_CORE_2GB_DESC,
                                          description     : ONE_CORE_2GB_DESC, sortOrder: SORT_ORDER_2,
                                          maxStorage      : TWO_GB_STORAGE,
                                          maxMemory       : TWO_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB,
-                                         maxCpu: ZERO_LONG,
-                                         maxCores: ONE_LONG,
+                                         maxCpu          : ZERO_LONG,
+                                         maxCores        : ONE_LONG,
                                          customMaxStorage: true, customMaxDataStorage: true, addVolumes: true,])
 
         servicePlans << new ServicePlan([code            : 'scvmm-4096', editable: true, name: ONE_CORE_4GB_DESC,
                                          description     : ONE_CORE_4GB_DESC, sortOrder: SORT_ORDER_3,
                                          maxStorage      : FORTY_GB_STORAGE,
                                          maxMemory       : FOUR_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB,
-                                         maxCpu: ZERO_LONG,
-                                         maxCores: ONE_LONG,
+                                         maxCpu          : ZERO_LONG,
+                                         maxCores        : ONE_LONG,
                                          customMaxStorage: true, customMaxDataStorage: true, addVolumes: true,])
 
         servicePlans << new ServicePlan([code            : 'scvmm-8192', editable: true, name: TWO_CORE_8GB_DESC,
                                          description     : TWO_CORE_8GB_DESC, sortOrder: SORT_ORDER_4,
                                          maxStorage      : EIGHTY_GB_STORAGE,
                                          maxMemory       : EIGHT_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB,
-                                         maxCpu: ZERO_LONG,
-                                         maxCores: CORES_TWO,
+                                         maxCpu          : ZERO_LONG,
+                                         maxCores        : CORES_TWO,
                                          customMaxStorage: true, customMaxDataStorage: true, addVolumes: true,])
 
         servicePlans << new ServicePlan([code            : 'scvmm-16384', editable: true, name: TWO_CORE_16GB_DESC,
                                          description     : TWO_CORE_16GB_DESC, sortOrder: SORT_ORDER_5,
                                          maxStorage      : ONE_SIXTY_GB_STORAGE,
                                          maxMemory       : SIXTEEN_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB,
-                                         maxCpu: ZERO_LONG,
-                                         maxCores: CORES_TWO,
+                                         maxCpu          : ZERO_LONG,
+                                         maxCores        : CORES_TWO,
                                          customMaxStorage: true, customMaxDataStorage: true, addVolumes: true,])
 
         servicePlans << new ServicePlan([code            : 'scvmm-24576', editable: true, name: FOUR_CORE_24GB_DESC,
                                          description     : FOUR_CORE_24GB_DESC, sortOrder: SORT_ORDER_6,
                                          maxStorage      : TWO_FORTY_GB_STORAGE,
                                          maxMemory       : THIRTY_TWO_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB,
-                                         maxCpu: ZERO_LONG,
-                                         maxCores: FOUR_LONG,
+                                         maxCpu          : ZERO_LONG,
+                                         maxCores        : FOUR_LONG,
                                          customMaxStorage: true, customMaxDataStorage: true, addVolumes: true,])
 
         servicePlans << new ServicePlan([code            : 'scvmm-32768', editable: true, name: FOUR_CORE_32GB_DESC,
                                          description     : FOUR_CORE_32GB_DESC, sortOrder: SORT_ORDER_7,
                                          maxStorage      : THREE_TWENTY_GB_STORAGE,
                                          maxMemory       : THIRTY_TWO_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB,
-                                         maxCpu: ZERO_LONG, maxCores: CORES_FOUR,
+                                         maxCpu          : ZERO_LONG, maxCores: CORES_FOUR,
                                          customMaxStorage: true, customMaxDataStorage: true, addVolumes: true,])
 
         servicePlans << new ServicePlan([code           : 'scvmm-hypervisor', editable: false,
-                                         name: 'SCVMM hypervisor',
+                                         name           : 'SCVMM hypervisor',
                                          description    : 'custom hypervisor plan', sortOrder: SORT_ORDER_100,
-                                         hidden: true,
+                                         hidden         : true,
                                          maxCores       : ONE_LONG, maxCpu: ONE_LONG,
-                                         maxStorage: TWO_GB_STORAGE,
+                                         maxStorage     : TWO_GB_STORAGE,
                                          maxMemory      : (long) (ONE_LONG * BYTES_IN_KB * BYTES_IN_KB * BYTES_IN_KB),
-                                         active: true,
+                                         active         : true,
                                          customCores    : true, customMaxStorage: true, customMaxDataStorage: true,
                                          customMaxMemory: true,])
 
         servicePlans << new ServicePlan([code            : 'internal-custom-scvmm', editable: false,
                                          name            : CUSTOM_SCVMM_DESC, description: CUSTOM_SCVMM_DESC,
-                                         sortOrder: ZERO_INT,
+                                         sortOrder       : ZERO_INT,
                                          customMaxStorage: true, customMaxDataStorage: true, addVolumes: true,
                                          customCpu       : true, customCores: true, customMaxMemory: true,
-                                         deletable: false,
+                                         deletable       : false,
                                          provisionable   : false, maxStorage: ZERO_LONG, maxMemory: ZERO_LONG,
-                                         maxCpu: ZERO_LONG,])
+                                         maxCpu          : ZERO_LONG,])
 
         return servicePlans
     }
@@ -681,6 +684,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
      * @param opts additional configuration options that may have been passed during provisioning
      * @return Response from API
      */
+    @SuppressWarnings(['UnnecessarySetter','UnnecessaryGetter'])
     @Override
     ServiceResponse<ProvisionResponse> runWorkload(Workload workload, WorkloadRequest workloadRequest, Map opts) {
         log.debug "runWorkload: ${workload} ${workloadRequest} ${opts}"
@@ -691,12 +695,12 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         )
         ServiceResponse<ProvisionResponse> rtn = new ServiceResponse()
         def server = workload.server
-        def containerId = workload?.id
+        // def containerId = workload?.id
         Cloud cloud = server.cloud
         def scvmmOpts = [:]
         try {
-            def containerConfig = workload.getConfigMap()
-            WorkloadType workloadType = context.services.workloadType.get(workload.workloadType.id)
+            def containerConfig = workload.configMap
+            // WorkloadType workloadType = context.services.workloadType.get(workload.workloadType.id)
             opts.server = workload.server
 
             def controllerNode = pickScvmmController(cloud)
@@ -722,7 +726,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             Datastore datastore
             def volumePath, nodeId, highlyAvailable
             def storageVolumes = server.volumes
-            def rootVolume = storageVolumes.find { vol -> vol.rootVolume == true}
+            def rootVolume = storageVolumes.find { vol -> vol.rootVolume == true }
             def maxStorage = getContainerRootSize(workload)
             def maxMemory = workload.maxMemory ?: workload.instance.plan.maxMemory
             setDynamicMemory(scvmmOpts, workload.instance.plan)
@@ -800,13 +804,13 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                     log.debug("cloudFiles?.size(): ${cloudFiles?.size()}")
                     if (cloudFiles?.size() == ZERO_INT) {
                         server.statusMessage = 'Failed to find cloud files'
-                        provisionResponse.setError("Cloud files could not be found for ${virtualImage}")
+                        provisionResponse.error = "Cloud files could not be found for ${virtualImage}"
                         provisionResponse.success = false
                     }
                     def containerImage = [
                             name          : virtualImage.name ?: workload.workloadType.imageCode,
                             minDisk       : INTEGER_FIVE,
-                            minRam        : 512 * ComputeUtility.ONE_MEGABYTE,
+                            minRam        : FIVE_TWELVE_INT * ComputeUtility.ONE_MEGABYTE,
                             virtualImageId: virtualImage.id,
                             tags          : MORPHEUS_UBUNTU_TAGS,
                             imageType     : virtualImage.imageType,
@@ -873,8 +877,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 scvmmOpts.imageId = imageId
                 scvmmOpts.server = server
                 scvmmOpts += getScvmmContainerOpts(workload)
-                scvmmOpts.hostname = server.getExternalHostname()
-                scvmmOpts.domainName = server.getExternalDomain()
+                scvmmOpts.hostname = server.externalHostname
+                scvmmOpts.domainName = server.externalDomain
                 scvmmOpts.fqdn = scvmmOpts.hostname
                 if (scvmmOpts.domainName) {
                     scvmmOpts.fqdn += '.' + scvmmOpts.domainName
@@ -895,7 +899,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 
                 if (virtualImage?.isCloudInit || scvmmOpts.isSysprep) {
                     def initOptions = constructCloudInitOptions(workload, workloadRequest,
-                            opts.installAgent, scvmmOpts.platform, virtualImage, scvmmOpts.networkConfig,
+                            opts.installAgent, scvmmOpts.platform, virtualImage,
                             scvmmOpts.licenses, scvmmOpts)
                     scvmmOpts.cloudConfigUser = initOptions.cloudConfigUser
                     scvmmOpts.cloudConfigMeta = initOptions.cloudConfigMeta
@@ -922,8 +926,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                             parentContainer.server.serverOs?.platform != WINDOWS_PLATFORM)
                     if (cloneBaseOpts.cloudInitIsoNeeded) {
                         def initOptions = constructCloudInitOptions(parentContainer, workloadRequest,
-								opts.installAgent, scvmmOpts.platform, virtualImage, scvmmOpts.networkConfig,
-								scvmmOpts.licenses, scvmmOpts)
+                                opts.installAgent, scvmmOpts.platform, virtualImage,
+                                scvmmOpts.licenses, scvmmOpts)
                         def clonedScvmmOpts = apiService.getScvmmZoneOpts(context, cloud)
                         clonedScvmmOpts += apiService.getScvmmControllerOpts(cloud, controllerNode)
                         clonedScvmmOpts += getScvmmContainerOpts(parentContainer)
@@ -954,7 +958,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                         server = saveAndGetMorpheusServer(server, true)
                     } else {
                         log.error "Failed to obtain ip address for server, ${checkReadyResults}"
-                        throw new Exception("Failed to obtain ip address for server")
+                        throw new IllegalStateException("Failed to obtain ip address for server")
                     }
                     if (scvmmOpts.deleteDvdOnComplete?.removeIsoFromDvd) {
                         apiService.setCdrom(scvmmOpts)
@@ -971,7 +975,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                         def serverDisks = createResults.server.disks
                         if (serverDisks && server.volumes) {
                             storageVolumes = server.volumes
-                            rootVolume = storageVolumes.find {vol -> vol.rootVolume == true }
+                            rootVolume = storageVolumes.find { vol -> vol.rootVolume == true }
                             rootVolume.externalId = serverDisks.diskMetaData[serverDisks.osDisk?.externalId]?.VhdID
                             context.services.storageVolume.save(rootVolume)
                             // Fix up the externalId.. initially set to the VirtualDiskDrive ID..
@@ -1024,11 +1028,11 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                             server.status = PROVISIONED_STATUS
                             context.async.computeServer.save(server).blockingGet()
                             provisionResponse.success = true
-							// By default installAgent is true.
-							// 1. The below section instructs the subsequent code to
-							// 1a. skip agent installation for Linux VMs (as cloud init will take care of
-							// installing agent)
-							// 1b. If we are in a Clone scenario, we don't want to skip agent installation here.
+                            // By default installAgent is true.
+                            // 1. The below section instructs the subsequent code to
+                            // 1a. skip agent installation for Linux VMs (as cloud init will take care of
+                            // installing agent)
+                            // 1b. If we are in a Clone scenario, we don't want to skip agent installation here.
                             if (server?.platform == LINUX_PLATFORM && !scvmmOpts.cloneVMId) {
                                 provisionResponse.installAgent = false
                             }
@@ -1122,7 +1126,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                                 scvmmOpts.deleteDvdOnComplete.deleteIso)
                     }
                 }
-            } catch (Exception ex) {
+            } catch (RuntimeException ex) {
                 log.error("Error during parent VM cleanup for ${scvmmOpts.cloneVMId}: ${ex.message}", ex)
                 rtn.warning = true
                 rtn.msg = "Error during parent VM cleanup for ${scvmmOpts.cloneVMId}: ${ex.message}"
@@ -1130,25 +1134,25 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         }
     }
 
-    Map getUserAddedVolumes(workload) {
+    Map getUserAddedVolumes(Workload workload) {
         def configs = workload.configs
         if (configs instanceof String) {
             configs = new JsonSlurper().parseText(configs)
         }
         def volumesList = configs?.volumes ?: []
         def storageVolumeProps = StorageVolume.metaClass.properties*.name as Set
-        def nonRootVolumes = volumesList.findAll { !it.rootVolume }
+        def nonRootVolumes = volumesList.findAll { vol -> !vol.rootVolume }
         def nonRootCount = nonRootVolumes.size()
-        def storageVolumes = volumesList.findAll { !it.rootVolume }.collect { volMap ->
+        def storageVolumes = volumesList.findAll { volList -> !volList.rootVolume }.collect { volMap ->
             def filteredVolMap = volMap.findAll { k, v -> storageVolumeProps.contains(k) }
             if (filteredVolMap.id == MINUS_ONE) {
                 new StorageVolume(filteredVolMap)
             }
-        }.findAll { it != null }
+        }.findAll { v ->  v != null }
         return [count: nonRootCount, volumes: storageVolumes]
     }
 
-    def additionalTemplateDisksConfig(Workload workload, scvmmOpts) {
+    List additionalTemplateDisksConfig(Workload workload, Map scvmmOpts) {
         // Determine what additional disks need to be added after provisioning
         def additionalTemplateDisks = []
         def totalDataVolsAndNewVols = getUserAddedVolumes(workload)
@@ -1184,11 +1188,12 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         }
 
         log.debug "returning additionalTemplateDisks ${additionalTemplateDisks}"
-        additionalTemplateDisks
+        return additionalTemplateDisks
     }
 
-    protected constructCloudInitOptions(Workload container, WorkloadRequest workloadRequest, installAgent,
-                                        platform, VirtualImage virtualImage, networkConfig, licenses, scvmmOpts) {
+    protected Map constructCloudInitOptions(Workload container, WorkloadRequest workloadRequest, boolean installAgent,
+                                            String platform, VirtualImage virtualImage,
+                                            Object licenses, Map scvmmOpts) {
         log.debug("constructCloudInitOptions: ${container}, ${installAgent}, ${platform}")
         def rtn = [:]
         ComputeServer server = container.server
@@ -1221,22 +1226,22 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return rtn
     }
 
-    def getDiskExternalIds(VirtualImage virtualImage, cloud) {
+    List getDiskExternalIds(VirtualImage virtualImage, Cloud cloud) {
         // The mapping of volumes is off of the VirtualImageLocation
         VirtualImageLocation location = getVirtualImageLocation(virtualImage, cloud)
 
         def rtn = []
         def rootVolume = location.volumes.find { it.rootVolume }
-        rtn << [rootVolume: true, externalId: rootVolume.externalId, idx: ZERO_INT]
+        rtn << [rootVolume: true, externalId: rootVolume.externalId, idx: ZERO_INT,]
         location.volumes?.eachWithIndex { vol, index ->
             if (!vol.rootVolume) {
-                rtn << [rootVolume: false, externalId: vol.externalId, idx: SORT_ORDER_1 + index]
+                rtn << [rootVolume: false, externalId: vol.externalId, idx: SORT_ORDER_1 + index,]
             }
         }
-        rtn
+        return rtn
     }
 
-    protected setDynamicMemory(Map targetMap, ServicePlan plan) {
+    protected void setDynamicMemory(Map targetMap, ServicePlan plan) {
         log.debug "setDynamicMemory: ${plan}"
         if (plan) {
             def ranges = plan.getConfigProperty('ranges') ?: [:]
@@ -1245,7 +1250,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         }
     }
 
-    protected getVirtualImageLocation(VirtualImage virtualImage, Cloud cloud) {
+    protected VirtualImageLocation getVirtualImageLocation(VirtualImage virtualImage, Cloud cloud) {
         def location = context.services.virtualImage.location.find(new DataQuery().withFilters(
                 new DataFilter(VIRTUAL_IMAGE_ID_FIELD, virtualImage.id),
                 new DataOrFilter(
@@ -1299,7 +1304,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return rtn
     }
 
-    def pickScvmmController(cloud) {
+    ComputeServer pickScvmmController(Cloud cloud) {
         // Could be using a shared controller
         def sharedControllerId = cloud.getConfigProperty(SHARED_CONTROLLER_KEY)
         def sharedController =
@@ -1312,7 +1317,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 .withFilter(COMPUTE_SERVER_TYPE_CODE_FIELD, SCVMM_CONTROLLER_CODE)
                 .withJoin(COMPUTE_SERVER_TYPE_FIELD))
         if (rtn == null) {
-            //old zone with wrong type
+            // old zone with wrong type
             rtn = context.services.computeServer.find(new DataQuery()
                     .withFilter(CLOUD_ID_FIELD, cloud.id)
                     .withFilter(COMPUTE_SERVER_TYPE_CODE_FIELD, SCVMM_HYPERVISOR_TYPE)
@@ -1331,27 +1336,26 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return rtn
     }
 
-    def getContainerRootSize(container) {
+    Long getContainerRootSize(Workload container) {
         def rtn
         def rootDisk = getContainerRootDisk(container)
         if (rootDisk) {
             rtn = rootDisk.maxStorage
-        }
-        else {
+        } else {
             rtn = container.maxStorage ?: container.instance.plan.maxStorage
         }
         return rtn
     }
 
-    def getContainerRootDisk(container) {
-        def rtn = container.server?.volumes?.find { it.rootVolume == true }
+    StorageVolume getContainerRootDisk(Workload container) {
+        def rtn = container.server?.volumes?.find { vol -> vol.rootVolume == true }
         return rtn
     }
 
-    def getContainerVolumeSize(container) {
+    Long getContainerVolumeSize(Workload container) {
         def rtn = container.maxStorage ?: container.instance.plan.maxStorage
         if (container.server?.volumes?.size() > ZERO_INT) {
-            def newMaxStorage = container.server.volumes.sum { it.maxStorage ?: 0 }
+            def newMaxStorage = container.server.volumes.sum { vol -> vol.maxStorage ?: 0 }
             if (newMaxStorage > rtn) {
                 rtn = newMaxStorage
             }
@@ -1359,14 +1363,14 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return rtn
     }
 
-    static getContainerDataDiskList(container) {
-        def rtn = container.server?.volumes?.findAll { it.rootVolume == false }?.sort { it.id }
+    static List<StorageVolume> getContainerDataDiskList(Workload container) {
+        def rtn = container.server?.volumes?.findAll { vol -> vol.rootVolume == false }?.sort { it.id }
         return rtn
     }
 
-    def getScvmmContainerOpts(container) {
-        def serverConfig = container.server.getConfigMap()
-        def containerConfig = container.getConfigMap()
+    Map getScvmmContainerOpts(Workload container) {
+        def serverConfig = container.server.configMap
+        def containerConfig = container.configMap
         def network = context.services.cloud.network.get(containerConfig.networkId?.toLong())
         def serverFolder = "morpheus\\morpheus_server_${container.server.id}"
         def maxMemory = container.maxMemory ?: container.instance.plan.maxMemory
@@ -1380,7 +1384,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 container.server.osType == WINDOWS_PLATFORM) ? WINDOWS_PLATFORM : LINUX_PLATFORM
         return [config                : serverConfig, vmId: container.server.externalId,
                 name                  : container.server.externalId, server: container.server,
-                serverId: container.server?.id,
+                serverId              : container.server?.id,
                 memory                : maxMemory, maxCpu: maxCpu, maxCores: maxCores, serverFolder: serverFolder,
                 hostname              : container.hostname,
                 network               : network, networkId: network?.id, platform: platform,
@@ -1389,15 +1393,15 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 hostId                : containerConfig.hostId,
                 osDiskSize            : maxStorage, maxTotalStorage: maxTotalStorage, dataDisks: dataDisks,
                 scvmmCapabilityProfile: (
-                        containerConfig.scvmmCapabilityProfile?.toString() != DEFAULT_CAPABILITY_PROFILE
-                                ? containerConfig.scvmmCapabilityProfile
-                                : null
+                        containerConfig.scvmmCapabilityProfile?.toString() == DEFAULT_CAPABILITY_PROFILE
+                                ? null
+                                : containerConfig.scvmmCapabilityProfile
                 ),
-                accountId             : container.account?.id
+                accountId             : container.account?.id,
         ]
     }
 
-    def getAllScvmmOpts(workload) {
+    Map getAllScvmmOpts(Workload workload) {
         def controllerNode = pickScvmmController(workload.server.cloud)
         def rtn = apiService.getScvmmCloudOpts(context, workload.server.cloud, controllerNode)
         rtn += apiService.getScvmmControllerOpts(workload.server.cloud, controllerNode)
@@ -1527,27 +1531,26 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return ServiceResponse.create(rtn)
     }
 
-    def getServerRootSize(server) {
+    Long getServerRootSize(ComputeServer server) {
         def rtn
         def rootDisk = getServerRootDisk(server)
         if (rootDisk) {
             rtn = rootDisk.maxStorage
-        }
-        else {
+        } else {
             rtn = server.maxStorage ?: server.plan.maxStorage
         }
         return rtn
     }
 
-    def getServerRootDisk(server) {
-        def rtn = server?.volumes?.find { it.rootVolume == true }
+    StorageVolume getServerRootDisk(ComputeServer server) {
+        def rtn = server?.volumes?.find { vol -> vol.rootVolume == true }
         return rtn
     }
 
-    def getServerVolumeSize(server) {
+    Long getServerVolumeSize(ComputeServer server) {
         def rtn = server.maxStorage ?: server.plan.maxStorage
         if (server?.volumes?.size() > 0) {
-            def newMaxStorage = server.volumes.sum { it.maxStorage ?: 0 }
+            def newMaxStorage = server.volumes.sum { vol -> vol.maxStorage ?: 0 }
             if (newMaxStorage > rtn) {
                 rtn = newMaxStorage
             }
@@ -1555,13 +1558,13 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return rtn
     }
 
-    def getServerDataDiskList(server) {
-        def rtn = server?.volumes?.findAll { it.rootVolume == false }?.sort { it.id }
+    List<StorageVolume> getServerDataDiskList(ComputeServer server) {
+        def rtn = server?.volumes?.findAll { vol -> vol.rootVolume == false }?.sort { a, b -> a.id <=> b.id }
         return rtn
     }
 
-    def getScvmmServerOpts(server) {
-        def serverName = server.name //cleanName(server.name)
+    Map getScvmmServerOpts(ComputeServer server) {
+        def serverName = server.name // cleanName(server.name)
         def serverConfig = server.getConfigMap()
         def maxMemory = server.maxMemory ?: server.plan.maxMemory
         def maxCpu = server.maxCpu ?: server.plan?.maxCpu ?: 1
@@ -1573,7 +1576,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         def serverFolder = "morpheus\\morpheus_server_${server.id}"
         return [name                  : serverName, vmId: server.externalId, config: serverConfig, server: server,
                 serverId              : server.id, memory: maxMemory, osDiskSize: maxStorage,
-                externalId: server.externalId,
+                externalId            : server.externalId,
                 maxCpu                : maxCpu, maxCores: maxCores, serverFolder: serverFolder,
                 hostname              : server.getExternalHostname(), network: network, networkId: network?.id,
                 maxTotalStorage       : maxTotalStorage, dataDisks: dataDisks,
@@ -1583,7 +1586,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 accountId             : server.account?.id]
     }
 
-    def getAllScvmmServerOpts(server) {
+    Map getAllScvmmServerOpts(ComputeServer server) {
         def controllerNode = pickScvmmController(server.cloud)
         def rtn = apiService.getScvmmCloudOpts(context, server.cloud, controllerNode)
         rtn += apiService.getScvmmControllerOpts(server.cloud, controllerNode)
@@ -1640,6 +1643,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
      * that is seeded or generated related to this provider will reference it by this code.
      * @return short code string that should be unique across all other plugin implementations.
      */
+    @SuppressWarnings('GetterMethodCouldBeProperty')
     @Override
     String getCode() {
         return PROVIDER_CODE
@@ -1651,6 +1655,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
      *
      * @return either an English name of a Provider or an i18n based key that can be scanned for in a properties file.
      */
+    @SuppressWarnings('GetterMethodCouldBeProperty')
     @Override
     String getName() {
         return 'SCVMM'
@@ -1661,6 +1666,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return true
     }
 
+    @SuppressWarnings('GetterMethodCouldBeProperty')
     @Override
     Integer getMaxNetworks() {
         return 1
@@ -1703,7 +1709,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 
     @Override
     Boolean supportsCustomServicePlans() {
-        return true;
+        return true
     }
 
     @Override
@@ -1718,7 +1724,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 
     @Override
     Boolean customSupported() {
-        return true;
+        return true
     }
 
     @Override
@@ -1726,11 +1732,13 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return true
     }
 
+    @SuppressWarnings('GetterMethodCouldBeProperty')
     @Override
     String getDeployTargetService() {
         return "vmDeployTargetService"
     }
 
+    @SuppressWarnings('GetterMethodCouldBeProperty')
     @Override
     String getNodeFormat() {
         return VM_TYPE
@@ -1746,6 +1754,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return true;
     }
 
+    @SuppressWarnings('GetterMethodCouldBeProperty')
     @Override
     String getHostDiskMode() {
         return 'lvm'
@@ -1783,7 +1792,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                                 ?: opts?.config?.networkInterface?.network?.id
                                 ?: opts.networkInterfaces?.getAt(0)?.network?.id,
                         scvmmCapabilityProfile: opts?.config?.scvmmCapabilityProfile ?: opts?.scvmmCapabilityProfile,
-                        nodeCount             : opts?.config?.nodeCount
+                        nodeCount             : opts?.config?.nodeCount,
                 ]
                 def validationResults = apiService.validateServerConfig(validationOpts)
                 if (!validationResults.success) {
@@ -1801,9 +1810,9 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         def saveResult = context.async.computeServer.bulkSave([server]).blockingGet()
         def updatedServer
         if (saveResult.success == true) {
-            updatedServer = saveResult.persistedItems.find { it.id == server.id }
+            updatedServer = saveResult.persistedItems.find { item -> item.id == server.id }
         } else {
-            updatedServer = saveResult.failedItems.find { it.id == server.id }
+            updatedServer = saveResult.failedItems.find { item -> item.id == server.id }
             log.warn("Error saving server: ${server?.id}")
         }
         return updatedServer ?: server
@@ -1832,17 +1841,16 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                     virtualImage = workloadType.virtualImage
                 }
             }
-            if (!virtualImage) {
-                rtn.msg = "No virtual image selected"
-            } else {
+            if (virtualImage) {
                 server.sourceImage = virtualImage
                 saveAndGet(server)
                 rtn.success = true
+            } else {
+                rtn.msg = "No virtual image selected"
             }
         } catch (e) {
             rtn.msg = "Error in prepareHost: ${e}"
             log.error("${rtn.msg}, ${e}", e)
-
         }
         return rtn
     }
@@ -1869,7 +1877,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return updatedServer ?: server
     }
 
-    def getVolumePathForDatastore(Datastore datastore) {
+    String getVolumePathForDatastore(Datastore datastore) {
         log.debug "getVolumePathForDatastore: ${datastore}"
         def volumePath
         if (datastore) {
@@ -1882,9 +1890,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return volumePath
     }
 
-
-    def getHostAndDatastore(Cloud cloud, account, clusterId, hostId, Datastore datastore,
-                            datastoreOption, size, siteId = null, maxMemory) {
+    List getHostAndDatastore(Cloud cloud, Account account, String clusterId, String hostId, Datastore datastore,
+                             Object datastoreOption, Long size, Long siteId = null, Long maxMemory) {
         log.debug "clusterId: ${clusterId}, hostId: ${hostId}, datastore: ${datastore}," +
                 " datastoreOption: ${datastoreOption}, size: ${size}, siteId: ${siteId}, maxMemory ${maxMemory}"
         ComputeServer node
@@ -1893,26 +1900,27 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 
         // If clusterId (resourcePool) is not specified AND host not specified AND datastore is 'auto',
         // then we are just deploying to the cloud (so... can not select the datastore, nor host)
-        clusterId = clusterId && clusterId != 'null' ? clusterId : null
-        hostId = hostId && hostId.toString().trim() != EMPTY_STRING ? hostId : null
+        def tempClusterId = clusterId && clusterId != 'null' ? clusterId : null
+        def tempHostId = hostId && hostId.toString().trim() != EMPTY_STRING ? hostId : null
         def zoneHasCloud = cloud.regionCode != null && cloud.regionCode != EMPTY_STRING
-        if (zoneHasCloud && !clusterId && !hostId && !datastore && (datastoreOption == 'auto' || !datastoreOption)) {
+        if (zoneHasCloud && !tempClusterId && !tempHostId && !datastore &&
+                (datastoreOption == 'auto' || !datastoreOption)) {
             return [node, datastore, volumePath, highlyAvailable]
         }
         // If host specified by the user, then use it
-        node = hostId ? context.services.computeServer.get(hostId.toLong()) : null
+        node = tempHostId ? context.services.computeServer.get(tempHostId.toLong()) : null
         if (!datastore) {
             def datastoreIds =
                     context.services.resourcePermission.listAccessibleResources(account.id,
                             ResourcePermission.ResourceType.Datastore, siteId, null)
             def hasFilteredDatastores = false
-            // If hostId specifed.. gather all the datastoreIds for the host via storagevolumes
-            if (hostId) {
+            // If hostId specifed.. gather all the datastoreIds for the host via storage volumes
+            if (tempHostId) {
                 hasFilteredDatastores = true
                 def scopedDatastoreIds = context.services.computeServer
-                        .list(new DataQuery().withFilter(HOST_ID_FIELD, hostId.toLong())
+                        .list(new DataQuery().withFilter(HOST_ID_FIELD, tempHostId.toLong())
                                 .withJoin('volumes.datastore'))
-                        .collect { it.volumes.collect { it.datastore?.id } }
+                        .collect { cs -> cs.volumes.collect { vol ->  vol.datastore?.id } }
                         .flatten()
                         .unique()
                 datastoreIds = scopedDatastoreIds
@@ -1946,11 +1954,11 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                         )
                 )
             }
-            if (clusterId) {
-                if (clusterId.toString().isNumber()) {
-                    dsQuery = dsQuery.withFilter('zonePool.id', clusterId.toLong())
+            if (tempClusterId) {
+                if (tempClusterId.toString().isNumber()) {
+                    dsQuery = dsQuery.withFilter('zonePool.id', tempClusterId.toLong())
                 } else {
-                    dsQuery = dsQuery.withFilter('zonePool.externalId', clusterId)
+                    dsQuery = dsQuery.withFilter('zonePool.externalId', tempClusterId)
                 }
             }
             dsList = context.services.cloud.datastore.list(dsQuery.withSort(FREE_SPACE_FIELD,
@@ -1970,17 +1978,17 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                     .withFilter(COMPUTE_SERVER_TYPE_CODE_FIELD, SCVMM_HYPERVISOR_TYPE)
                     .withFilter('volumes.datastore.id', datastore.id)
                     .withFilter('powerState', ComputeServer.PowerState.on))
-            nodes = nodes.findAll {
-                it.capacityInfo?.maxMemory - it.capacityInfo?.usedMemory > maxMemory
-            }?.sort {
-                -(it.capacityInfo?.maxMemory - it.capacityInfo?.usedMemory)
+            nodes = nodes.findAll { cs ->
+                cs.capacityInfo?.maxMemory - cs.capacityInfo?.usedMemory > maxMemory
+            }?.sort { compServ ->
+                -(compServ.capacityInfo?.maxMemory - compServ.capacityInfo?.usedMemory)
             }
             node = nodes?.size() > 0 ? nodes.first() : null
         }
 
         if (!zoneHasCloud && (!node || !datastore)) {
             // Need a node and a datastore for non-cloud scoped zones
-            throw new Exception('Unable to obtain datastore and host for options selected')
+            throw new IllegalStateException('Unable to obtain datastore and host for options selected')
         }
 
         // Get the volumePath (used during provisioning to tell SCVMM where to place the disks)
@@ -1988,7 +1996,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 
         // Highly Available (in the Failover Cluster Manager) if we are in a cluster and
         // the datastore is a shared volume
-        if (clusterId && datastore?.zonePool) {
+        if (tempClusterId && datastore?.zonePool) {
             // datastore found above MUST be part of a shared volume because it has a zonepool
             highlyAvailable = true
         }
@@ -1996,30 +2004,29 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return [node, datastore, volumePath, highlyAvailable]
     }
 
-    def loadDatastoreForVolume(Cloud cloud, hostVolumeId = null, fileShareId = null, partitionUniqueId = null) {
+    @SuppressWarnings('MethodReturnTypeRequired')
+    def loadDatastoreForVolume(Cloud cloud, String hostVolumeId = null, String fileShareId = null,
+                               String partitionUniqueId = null) {
         log.debug "loadDatastoreForVolume: ${hostVolumeId}, ${fileShareId}"
         if (hostVolumeId) {
-
             StorageVolume storageVolume = context.services.storageVolume.find(
                     new DataQuery()
                             .withFilter('internalId', hostVolumeId)
-                            .withFilter('datastore.refType', COMPUTE_ZONE_REF_TYPE)
+                            .withFilter(DATASTORE_REF_TYPE_FIELD, COMPUTE_ZONE_REF_TYPE)
                             .withFilter(DATASTORE_REF_ID_FIELD, cloud.id)
             )
             def ds = storageVolume?.datastore
             if (!ds && partitionUniqueId) {
-
                 storageVolume = context.services.storageVolume.find(
                         new DataQuery()
                                 .withFilter(EXTERNAL_ID_FIELD, partitionUniqueId)
-                                .withFilter('datastore.refType', COMPUTE_ZONE_REF_TYPE)
+                                .withFilter(DATASTORE_REF_TYPE_FIELD, COMPUTE_ZONE_REF_TYPE)
                                 .withFilter(DATASTORE_REF_ID_FIELD, cloud.id)
                 )
                 ds = storageVolume?.datastore
             }
             return ds
         } else if (fileShareId) {
-
             Datastore datastore = context.services.cloud.datastore.find(new DataQuery()
                     .withFilter(EXTERNAL_ID_FIELD, fileShareId)
                     .withFilter(REF_TYPE_FIELD, COMPUTE_ZONE_REF_TYPE)
@@ -2034,7 +2041,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         log.debug("runHost: ${server} ${hostRequest} ${opts}")
         ProvisionResponse provisionResponse = new ProvisionResponse()
         try {
-            def config = server.getConfigMap()
+            def config = server.configMap
             config.resourcePool = ""   // keep it blank else server creation failed
             Cloud cloud = server.cloud
             def account = server.account
@@ -2100,10 +2107,10 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 imageId = virtualImage.externalId
             } else {
                 virtualImage = new VirtualImage(code: 'scvmm.image.morpheus.ubuntu.22.04.20250218.amd64')
-                //better this later
+                // better this later
             }
 
-            if (!imageId) { //If its userUploaded and still needs uploaded
+            if (!imageId) { // If its userUploaded and still needs uploaded
                 def cloudFiles =
                         context.async.virtualImage.getVirtualImageFiles(virtualImage).blockingGet()
                 def imageFile = cloudFiles?.find { cloudFile ->
@@ -2165,11 +2172,11 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 server.cloudConfigMeta = scvmmOpts.cloudConfigMeta
                 server.cloudConfigNetwork = scvmmOpts.cloudConfigNetwork
 
-                //save the server
+                // save the server
                 server = saveAndGetMorpheusServer(server, true)
                 log.debug("create server:${scvmmOpts}")
 
-                //create it in scvmm
+                // create it in scvmm
                 def createResults = apiService.createServer(scvmmOpts)
                 log.debug "create server results:${createResults}"
                 if (createResults.success == true) {
@@ -2212,7 +2219,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 
                         def serverDetails = apiService.getServerDetails(scvmmOpts, server.externalId)
                         if (serverDetails.success == true) {
-                            //fill in ip address.
+                            // fill in ip address.
                             def newIpAddress = serverDetails.server?.ipAddress ?: createResults.server?.ipAddress
                             def macAddress = serverDetails.server?.macAddress
                             applyComputeServerNetworkIp(server, newIpAddress, newIpAddress, 0, macAddress)
@@ -2232,7 +2239,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                             provisionResponse.success = false
                         }
                     } else {
-                        //no reservation
+                        // no reservation
                         server.statusMessage = 'Error loading created server'
                     }
                 } else {
@@ -2242,7 +2249,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                         context.async.computeServer.save(server).blockingGet()
                     }
                     server.statusMessage = ERROR_CREATING_SERVER_MSG
-                    //tell someone :)
+                    // tell someone :)
                 }
             } else {
                 server.statusMessage = ERROR_CREATING_SERVER_MSG
@@ -2255,16 +2262,17 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 return new ServiceResponse<ProvisionResponse>(success: true, data: provisionResponse)
             }
 
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("Error in runHost method: ${e.message}", e)
             provisionResponse.setError(e.message)
             return new ServiceResponse(success: false, msg: e.message, error: e.message, data: provisionResponse)
         }
     }
 
-    protected saveAndGetNetworkInterface(ComputeServer server, privateIp, publicIp, index, macAddress) {
+    protected Map saveAndGetNetworkInterface(ComputeServer server, String privateIp, String publicIp, Integer index,
+                                             String macAddress) {
         log.debug("applyComputeServerNetworkIp: ${privateIp}")
-		def rtn = [:]
+        def rtn = [:]
         ComputeServerInterface netInterface
         if (privateIp) {
             privateIp = privateIp?.toString()?.contains(NEWLINE) ?
@@ -2311,24 +2319,25 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             netInterface.macAddress = macAddress
             if (newInterface == true) {
                 context.async.computeServer.computeServerInterface.create([netInterface], server).blockingGet()
-            }
-            else {
+            } else {
                 context.async.computeServer.computeServerInterface.save([netInterface]).blockingGet()
             }
         }
         def savedServer = saveAndGetMorpheusServer(server, true)
-		rtn.netInterface = netInterface
-		rtn.server = savedServer
+        rtn.netInterface = netInterface
+        rtn.server = savedServer
         return rtn
     }
 
-	private applyComputeServerNetworkIp(ComputeServer server, privateIp, publicIp, index, macAddress) {
-		return saveAndGetNetworkInterface(server, privateIp, publicIp, index, macAddress).netInterface
-	}
+    private ComputeServerInterface applyComputeServerNetworkIp(ComputeServer server, String privateIp,
+                                                               String publicIp, Integer index, String macAddress) {
+        return saveAndGetNetworkInterface(server, privateIp, publicIp, index, macAddress).netInterface
+    }
 
-	protected applyNetworkIpAndGetServer(ComputeServer server, privateIp, publicIp, index, macAddress) {
-		return saveAndGetNetworkInterface(server, privateIp, publicIp, index, macAddress).server
-	}
+    protected ComputeServer applyNetworkIpAndGetServer(ComputeServer server, String privateIp,
+                                                       String publicIp, Integer index, String macAddress) {
+        return saveAndGetNetworkInterface(server, privateIp, publicIp, index, macAddress).server
+    }
 
     @Override
     ServiceResponse<ProvisionResponse> waitForHost(ComputeServer server) {
@@ -2369,17 +2378,17 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         try {
             def config = server.getConfigMap()
             def node = config.hostId
-					? context.services.computeServer.get(config.hostId.toLong())
-					: pickScvmmController(server.cloud)
-			def compServer = context.services.computeServer.get(server.id)
+                    ? context.services.computeServer.get(config.hostId.toLong())
+                    : pickScvmmController(server.cloud)
+            def compServer = context.services.computeServer.get(server.id)
             def scvmmOpts = apiService.getScvmmCloudOpts(context, compServer.cloud, node)
             scvmmOpts += apiService.getScvmmControllerOpts(compServer.cloud, node)
             scvmmOpts += getScvmmServerOpts(compServer)
             def serverDetail = apiService.checkServerReady(scvmmOpts, compServer.externalId)
             if (serverDetail.success == true) {
-				def newIpAddress = serverDetail.server?.ipAddress
-				def macAddress = serverDetail.server?.macAddress
-				def savedServer =
+                def newIpAddress = serverDetail.server?.ipAddress
+                def macAddress = serverDetail.server?.macAddress
+                def savedServer =
                         applyNetworkIpAndGetServer(compServer, newIpAddress, newIpAddress, 0, macAddress)
                 context.async.computeServer.save(savedServer).blockingGet()
                 rtn.success = true
@@ -2487,7 +2496,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                         log.debug("resizing vm storage: count: ${diskCounter} ${volumeUpdate}")
                         StorageVolume existing = volumeUpdate.existingModel
                         Map updateProps = volumeUpdate.updateProps
-                        //existing disk - resize it
+                        // existing disk - resize it
                         if (updateProps.maxStorage > existing.maxStorage) {
                             def volumeId = existing.externalId
                             def diskSize = ComputeUtility.parseGigabytesToBytes(updateProps.size?.toLong())
@@ -2512,8 +2521,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                         //Create the new diskSpec
                         def diskSpec = [
                                 vhdName  : "data-${UUID.randomUUID().toString()}",
-                                vhdType  : null,  //Use Default as determined from existing VM
-                                vhdFormat: null, //Use Default  as determined from existing VM
+                                vhdType  : null,  // Use Default as determined from existing VM
+                                vhdFormat: null, // Use Default  as determined from existing VM
                                 vhdPath  : null, // Place with the VM?? or should this be volumePath?
                                 sizeMb   : diskSize
                         ]
@@ -2525,7 +2534,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                             if (volumePath) {
                                 newVolume.volumePath = volumePath
                             }
-                            //internalId can now be set to the location of the VirtualHardDisk (VhdLocation)
+                            // internalId can now be set to the location of the VirtualHardDisk (VhdLocation)
                             newVolume.internalId = diskResults.disk.VhdLocation
                             newVolume.maxStorage = volumeAdd.size.toInteger() * ComputeUtility.ONE_GIGABYTE
                             newVolume.externalId = diskResults.disk.VhdID
@@ -2564,7 +2573,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             computeServer.status = PROVISIONED_STATUS
             computeServer = saveAndGet(computeServer)
             if (stopRequired) {
-                def startResults = isWorkload ? startWorkload(workload) : startServer(computeServer)
+                isWorkload ? startWorkload(workload) : startServer(computeServer)
             }
             rtn.success = true
         } catch (e) {
@@ -2581,8 +2590,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return rtn
     }
 
-    protected getResizeConfig(Workload workload = null, ComputeServer server = null, ServicePlan plan,
-                            Map opts = [:], ResizeRequest resizeRequest) {
+    protected Map getResizeConfig(Workload workload = null, ComputeServer server = null, ServicePlan plan,
+                                  Map opts = [:], ResizeRequest resizeRequest) {
         log.debug("getResizeConfig: ${resizeRequest}")
         def rtn = [
                 success         : true, allowed: true, hotResize: true, volumeSyncLists: null, requestedMemory: null,
@@ -2608,7 +2617,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             if (opts.volumes) {
                 resizeRequest.volumesUpdate?.each { volumeUpdate ->
                     if (volumeUpdate.existingModel) {
-                        //existing disk - resize it
+                        // existing disk - resize it
                         def volumeCode = volumeUpdate.existingModel.type?.code ?: STANDARD_VALUE
                         if (volumeUpdate.updateProps.maxStorage > volumeUpdate.existingModel.maxStorage) {
                             if (volumeCode.contains("differencing")) {
@@ -2638,7 +2647,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return rtn
     }
 
-    StorageVolume buildStorageVolume(computeServer, volumeAdd, newCounter) {
+    StorageVolume buildStorageVolume(ComputeServer computeServer, Map volumeAdd, Integer newCounter) {
         def newVolume = new StorageVolume(
                 refType: COMPUTE_ZONE_REF_TYPE,
                 refId: computeServer.cloud.id,

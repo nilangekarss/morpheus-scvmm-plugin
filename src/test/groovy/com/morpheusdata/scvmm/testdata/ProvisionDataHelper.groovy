@@ -63,7 +63,7 @@ class ProvisionDataHelper {
             ],
             isVpcSelectable: true,
             customOptions: [:],
-            hostId: 2,
+            hostId: "2",
             createBackup: true,
             hasNoUser: false,
             expose: [],

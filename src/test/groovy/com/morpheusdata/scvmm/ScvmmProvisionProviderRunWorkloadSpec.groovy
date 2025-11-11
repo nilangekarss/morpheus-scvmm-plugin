@@ -215,7 +215,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
             return ProvisionDataHelper.runWorkload_getScvmmContainerOptsResponse(container)
         }
 
-        provisionProvider.constructCloudInitOptions(_, _, _, _, _, _, _, _) >> { args ->
+        provisionProvider.constructCloudInitOptions(_, _, _, _, _, _, _) >> { args ->
             return ProvisionDataHelper.runWorkload_constructCloudInitOptionsResponse(args)
         }
 
@@ -2522,7 +2522,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
                 installAgent,
                 platform,
                 virtualImage,
-                networkConfig,
                 licenses,
                 scvmmOpts
         )
