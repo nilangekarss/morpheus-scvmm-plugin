@@ -27,9 +27,8 @@ class ScvmmApiService {
     static final Integer MAX_IMPORT_ATTEMPTS = 5
     static final String JOB_STATUS_COMPLETED = 'completed'
     static final String JOB_STATUS_SUCCEED_WITH_INFO = 'succeedwithinfo'
-
-    static final List<String> diskNameList = ['sda', 'sdb', 'sdc', 'sdd', 'sde', 'sdf', 'sdg',
-                                              'sdh', 'sdi', 'sdj', 'sdk', 'sdl']
+    static final List<String> DISK_NAME_LIST = ['sda', 'sdb', 'sdc', 'sdd', 'sde', 'sdf', 'sdg',
+                                                'sdh', 'sdi', 'sdj', 'sdk', 'sdl']
 
     static final String GET_SC_LOGICAL_NETWORK_CMD = "Get-SCLogicalNetwork -VMMServer localhost | Select ID,Name"
     static final String VHDNAME_PLACEHOLDER = "<%vhdname%>"
@@ -53,7 +52,8 @@ class ScvmmApiService {
     static final String ELSE_CLOSE = "} else {"
     static final String SET_VIRTUAL_NETWORK_ADAPTER = "Set-SCVirtualNetworkAdapter " +
             "-VirtualNetworkAdapter \$VirtualNetworkAdapter "
-    static final String CLOUD_HARDWARE_PROFILE_START_ACTION = "-Cloud \$cloud -HardwareProfile \$HardwareProfile -StartAction "
+    static final String CLOUD_HARDWARE_PROFILE_START_ACTION = "-Cloud \$cloud " +
+            "-HardwareProfile \$HardwareProfile -StartAction "
     static final String TURN_ON_VM_IF_RUNNING_WHEN_VS_STOPPED = "TurnOnVMIfRunningWhenVSStopped -StopAction SaveVM"
     static final String IF_STARTUP_GT_MIN_DYNAMIC_MEMORY = "If (\$startupMemory -gt \$minimumDynamicMemory) " +
             "{ \$minimumDynamicMemory = \$startupMemory };"
@@ -129,11 +129,11 @@ class ScvmmApiService {
     void prepareNode(Map opts) {
         def zoneRoot = opts.zoneRoot ?: defaultRoot
         def command = "mkdir \"${zoneRoot}\\images\""
-        def out = executeCommand(command, opts)
+        executeCommand(command, opts)
         command = "mkdir \"${zoneRoot}\\export\""
-        out = executeCommand(command, opts)
+        executeCommand(command, opts)
         command = "mkdir \"${opts.diskRoot}\""
-        out = executeCommand(command, opts)
+        executeCommand(command, opts)
     }
 
     String generateCommandString(String command) {
@@ -148,80 +148,87 @@ class ScvmmApiService {
         def rtn = [success: false, imageExists: false]
         def image = opts.image
         def imageName = image.name
-        def imageType = image.imageType
+        // def imageType = image.imageType
         def imageFolderName = formatImageFolder(imageName)
-        // First... see if it is already uploaded to the share
         def rootSharePath = opts.rootSharePath ?: getRootSharePath(opts)
         def tgtFolder = "${rootSharePath}\\images\\$imageFolderName"
-        def tgtFullPath = "${tgtFolder}\\$imageName.$imageType"
-        def cmdString = generateCommandString("Get-SCVirtualHardDisk -VMMServer localhost |" +
-                " where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID")
-        def out = wrapExecuteCommand(cmdString, opts)
+        def vhdBlocks = getVhdBlocks(tgtFolder, opts)
 
-        if (!out.success) {
-            throw new IllegalStateException("Error in getting Get-SCVirtualHardDisk")
-        }
-        def vhdBlocks = out.data ?: []
-        if (vhdBlocks?.size() == 0) {
-            // Upload it (if needed)
-            def match = findImage(opts, imageName)
-            log.info("findImage: ${match}")
-            if (match.imageExists == false) {
-                // transfer it to host
-                def transferResults = transferImage(opts, image.cloudFiles, imageName)
-                log.debug "transferImage: ${transferResults}"
-                if (transferResults.success == true) {
-                    rtn.success = true
-                } else {
-                    rtn.msg = 'Error transferring image'
-                }
-            } else {
-                rtn.success = true
-            }
-
-            // Import it as a physical resource
-            if (rtn.success) {
-                def sourcePath = findImage(opts, imageName)?.imageName
-
-                def commands = []
-                commands << "\$ignore = Import-SCLibraryPhysicalResource -SourcePath \"$sourcePath\"" +
-                        " -SharePath \"$tgtFolder\" -OverwriteExistingFiles -VMMServer localhost"
-                commands << "Get-SCVirtualHardDisk | where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID"
-                def importRes = wrapExecuteCommand(generateCommandString(commands.join(CMD_SEPARATOR)), opts)
-                rtn.imageId = importRes.data?.getAt(0)?.ID
-
-                if (importRes.error != null) {
-                    log.info("Import-SCLibraryPhysicalResource failed for error: ${importRes?.error}. " +
-                            "Trying with Copy-Item")
-                    def copyCommands = []
-                    copyCommands << "\$ignore = Copy-Item \"$sourcePath\" \"$tgtFolder\""
-                    copyCommands << "\$ignore = Get-SCLibraryShare -VMMServer localhost | Read-SCLibraryShare"
-                    copyCommands << "Get-SCVirtualHardDisk | where {\$_.SharePath -like \"${tgtFolder}\\*\"} |" +
-                            " Select ID"
-                    def copyResult =
-                            wrapExecuteCommand(generateCommandString(copyCommands.join(CMD_SEPARATOR)), opts)
-                    if (copyResult.error != null) {
-                        log.error("Error in Copy-Item: ${copyResult.error}")
-                        out.success = false
-                    } else {
-                        rtn.imageId = copyResult.data?.getAt(0)?.ID
-                    }
-                }
-
-                if (out.success) {
-                    // Delete it from the temp directory
-                    deleteImage(opts, imageName)
-                } else {
-                    throw new IllegalStateException("Error in importing physical resource")
-                }
-            }
+        if (vhdBlocks.size() == 0) {
+            rtn = handleImageUploadAndImport(opts, image, imageName, tgtFolder)
         } else {
             rtn.success = true
             rtn.imageId = vhdBlocks.first().ID
         }
-
         return rtn
     }
+
+    protected List getVhdBlocks(String tgtFolder, Map opts) {
+        def cmdString = generateCommandString("Get-SCVirtualHardDisk -VMMServer localhost |" +
+                " where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID")
+        def out = wrapExecuteCommand(cmdString, opts)
+        if (!out.success) {
+            throw new IllegalStateException("Error in getting Get-SCVirtualHardDisk")
+        }
+        return out.data ?: []
+    }
+
+    protected Map handleImageUploadAndImport(Map opts, image, imageName, tgtFolder) {
+        def rtn = [success: false, imageExists: false]
+        def match = findImage(opts, imageName)
+        log.info("findImage: ${match}")
+        if (match.imageExists == false) {
+            def transferResults = transferImage(opts, image.cloudFiles, imageName)
+            log.debug "transferImage: ${transferResults}"
+            rtn.success = transferResults.success == true
+            if (!rtn.success) {
+                rtn.msg = 'Error transferring image'
+            }
+        } else {
+            rtn.success = true
+        }
+        if (rtn.success) {
+            importPhysicalResourceAndHandleErrors(opts, imageName, tgtFolder, rtn)
+        }
+        return rtn
+    }
+
+    protected void importPhysicalResourceAndHandleErrors(Map opts, String imageName, String tgtFolder, Map rtn) {
+        Boolean uploadSuccess = true
+        def sourcePath = findImage(opts, imageName)?.imageName
+        def commands = []
+        commands << "\$ignore = Import-SCLibraryPhysicalResource -SourcePath \"$sourcePath\"" +
+                " -SharePath \"$tgtFolder\" -OverwriteExistingFiles -VMMServer localhost"
+        commands << "Get-SCVirtualHardDisk | where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID"
+        def importRes = wrapExecuteCommand(generateCommandString(commands.join(CMD_SEPARATOR)), opts)
+        rtn.imageId = importRes.data?.getAt(0)?.ID
+        if (importRes.error != null) {
+            log.info("Import-SCLibraryPhysicalResource failed for error: ${importRes?.error}. Trying with Copy-Item")
+            uploadSuccess = handleCopyItemFallback(opts, sourcePath, tgtFolder, rtn)
+        }
+        if (uploadSuccess) {
+            deleteImage(opts, imageName)
+        } else {
+            throw new IllegalStateException("Error in importing physical resource")
+        }
+    }
+
+    protected Boolean handleCopyItemFallback(Map opts, String sourcePath, String tgtFolder, Map rtn) {
+        def copyCommands = [
+                "\$ignore = Copy-Item \"$sourcePath\" \"$tgtFolder\"",
+                "\$ignore = Get-SCLibraryShare -VMMServer localhost | Read-SCLibraryShare",
+                "Get-SCVirtualHardDisk | where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID"
+        ]
+        def copyResult = wrapExecuteCommand(generateCommandString(copyCommands.join(CMD_SEPARATOR)), opts)
+        if (copyResult.error != null) {
+            log.error("Error in Copy-Item: ${copyResult.error}")
+            return false
+        } else {
+            rtn.imageId = copyResult.data?.getAt(0)?.ID
+            return true
+        }
+    }
+
 
     Map createServer(Map opts) {
         log.debug("createServer: ${opts}")
@@ -1722,7 +1729,7 @@ foreach (\$network in \$networks) {
         if (platform == WINDOWS) {
             return "disk ${index + 1}"
         }
-        return diskNameList[index]
+        return DISK_NAME_LIST[index]
     }
 
     TaskResult removeDisk(Map opts, String diskId) {

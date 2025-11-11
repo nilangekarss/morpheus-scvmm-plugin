@@ -2598,7 +2598,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test getDiskNameList returns correct disk name list"() {
         when:
-        def result = apiService.getDiskNameList()
+        def result = apiService.DISK_NAME_LIST
 
         then:
         result == expectedDiskNames
@@ -2874,7 +2874,7 @@ class ScvmmApiServiceSpec extends Specification {
     }
 
     @Unroll
-    def "test insertContainerImage successfully transfers and imports new image"() {
+    def "test insertContainerImage successfully transfers image "() {
         given:
 
         def mockCloudFile = Mock(CloudFile)
@@ -2932,7 +2932,7 @@ class ScvmmApiServiceSpec extends Specification {
 
         when:
 
-        def result = apiService.insertContainerImage(opts)
+        def result = apiService.insertContainerImage1(opts)
 
         then:
 
