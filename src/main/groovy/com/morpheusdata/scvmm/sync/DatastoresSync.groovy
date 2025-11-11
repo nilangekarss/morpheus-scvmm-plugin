@@ -20,7 +20,6 @@ import io.reactivex.rxjava3.core.Observable
  */
 
 class DatastoresSync {
-
     // Constants to avoid duplicate string literals
     private static final String REF_TYPE = 'refType'
     private static final String COMPUTE_ZONE = 'ComputeZone'
@@ -43,7 +42,8 @@ class DatastoresSync {
         this(node, cloud, context, apiService, null)
     }
 
-    DatastoresSync(ComputeServer node, Cloud cloud, MorpheusContext context, ScvmmApiService apiService, LogInterface log) {
+    DatastoresSync(ComputeServer node, Cloud cloud, MorpheusContext context, ScvmmApiService apiService,
+                   LogInterface log) {
         this.node = node
         this.cloud = cloud
         this.context = context
@@ -73,10 +73,12 @@ class DatastoresSync {
         List<CloudPool> clusters = context.services.cloud.pool.list(new DataQuery()
                 .withFilter(REF_TYPE, COMPUTE_ZONE).withFilter(REF_ID, cloud.id)
                 .withFilter(TYPE, 'Cluster').withFilter('internalId', '!=', null))
-        StorageVolumeType volumeType = context.services.storageVolume.storageVolumeType.find(new DataQuery().withFilter('code', 'scvmm-datastore'))
+        StorageVolumeType volumeType = context.services.storageVolume.storageVolumeType.find(
+                new DataQuery().withFilter('code', 'scvmm-datastore'))
         def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(context, cloud, node)
-        List<ComputeServer> existingHosts = context.services.computeServer.list(new DataQuery().withFilter('zone.id', cloud.id)
-                .withFilter('computeServerType.code', 'scvmmHypervisor'))
+        List<ComputeServer> existingHosts = context.services.computeServer.list(
+                new DataQuery().withFilter('zone.id', cloud.id)
+                        .withFilter('computeServerType.code', 'scvmmHypervisor'))
 
         [
                 clusters: clusters,
@@ -99,21 +101,26 @@ class DatastoresSync {
     }
 
     private void performDatastoreSync(List<Map> objList, Map syncContext) {
-        Observable<DatastoreIdentityProjection> existingItems = context.async.cloud.datastore.listIdentityProjections(new DataQuery()
+        Observable<DatastoreIdentityProjection> existingItems = context.async.cloud.datastore.listIdentityProjections(
+                new DataQuery()
                 .withFilter('category', '=~', 'scvmm.datastore.%').withFilter(REF_TYPE, COMPUTE_ZONE)
                 .withFilter(REF_ID, cloud.id).withFilter(TYPE, GENERIC))
 
-        SyncTask<DatastoreIdentityProjection, Map, Datastore> syncTask = new SyncTask<>(existingItems, objList as Collection<Map>)
+        SyncTask<DatastoreIdentityProjection, Map, Datastore> syncTask =
+                new SyncTask<>(existingItems, objList as Collection<Map>)
         syncTask.addMatchFunction { existingItem, cloudItem ->
             existingItem.externalId?.toString() == cloudItem.partitionUniqueID?.toString()
         }.onDelete { removeItems ->
             removeMissingDatastores(removeItems)
         }.onUpdate { updateItems ->
-            updateMatchedDatastores(updateItems, syncContext.clusters, syncContext.existingHosts, syncContext.volumeType)
+            updateMatchedDatastores(updateItems, syncContext.clusters, syncContext.existingHosts,
+                    syncContext.volumeType)
         }.onAdd { itemsToAdd ->
             addMissingDatastores(itemsToAdd, syncContext.clusters, syncContext.existingHosts, syncContext.volumeType)
-        }.withLoadObjectDetailsFromFinder { List<SyncTask.UpdateItemDto<DatastoreIdentityProjection, Map>> updateItems ->
-            context.async.cloud.datastore.listById(updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
+        }.withLoadObjectDetailsFromFinder {
+            List<SyncTask.UpdateItemDto<DatastoreIdentityProjection, Map>> updateItems ->
+            context.async.cloud.datastore.listById(
+                    updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
         }.start()
     }
 
@@ -126,7 +133,9 @@ class DatastoresSync {
         }
     }
 
-    private void updateMatchedDatastores(List<SyncTask.UpdateItem<Datastore, Map>> updateList, List<CloudPool> clusters, List<ComputeServer> existingHosts, StorageVolumeType volumeType) {
+    private void updateMatchedDatastores(List<SyncTask.UpdateItem<Datastore, Map>> updateList,
+                                         List<CloudPool> clusters, List<ComputeServer> existingHosts,
+                                         StorageVolumeType volumeType) {
         try {
             log.debug("updateMatchedDatastores: ${updateList?.size()}")
             updateList.each { item ->
@@ -137,7 +146,8 @@ class DatastoresSync {
         }
     }
 
-    private void updateSingleDatastore(SyncTask.UpdateItem<Datastore, Map> item, List<CloudPool> clusters, List<ComputeServer> existingHosts, StorageVolumeType volumeType) {
+    private void updateSingleDatastore(SyncTask.UpdateItem<Datastore, Map> item, List<CloudPool> clusters,
+                                       List<ComputeServer> existingHosts, StorageVolumeType volumeType) {
         def masterItem = item.masterItem
         def existingItem = item.existingItem
         def host = existingHosts.find { hostItem -> hostItem.hostname == masterItem.vmHost }
@@ -155,7 +165,8 @@ class DatastoresSync {
     private CloudPool findClusterForDatastore(Map masterItem, List<CloudPool> clusters, ComputeServer host) {
         if (masterItem.isClusteredSharedVolume) {
             return clusters.find { c ->
-                c.getConfigProperty(SHARED_VOLUMES)?.toString().contains(masterItem.name) && (!host || host.resourcePool.id == c.id)
+                c.getConfigProperty(SHARED_VOLUMES)?.toString().contains(masterItem.name) &&
+                        (!host || host.resourcePool.id == c.id)
             }
         }
         return null
@@ -197,7 +208,8 @@ class DatastoresSync {
         return masterItem.size ? masterItem.size?.toLong() : masterItem.capacity ? masterItem.capacity?.toLong() : 0
     }
 
-    private void addMissingDatastores(Collection<Map> addList, List<CloudPool> clusters, List<ComputeServer> existingHosts, StorageVolumeType volumeType) {
+    private void addMissingDatastores(Collection<Map> addList, List<CloudPool> clusters,
+                                      List<ComputeServer> existingHosts, StorageVolumeType volumeType) {
         log.debug("addMissingDatastores: addList?.size(): ${addList?.size()}")
         try {
             addList?.each { Map item ->
@@ -208,7 +220,8 @@ class DatastoresSync {
         }
     }
 
-    private void addSingleDatastore(Map item, List<CloudPool> clusters, List<ComputeServer> existingHosts, StorageVolumeType volumeType) {
+    private void addSingleDatastore(Map item, List<CloudPool> clusters, List<ComputeServer> existingHosts,
+                                    StorageVolumeType volumeType) {
         def externalId = getDataStoreExternalId(item)
         ComputeServer host = existingHosts.find { hostItem -> hostItem.hostname == item.vmHost }
         def cluster = findClusterForDatastore(item, clusters, host)
@@ -244,7 +257,8 @@ class DatastoresSync {
         ]
     }
 
-    private void syncVolume(Map item, ComputeServer host, Datastore savedDataStore, StorageVolumeType volumeType, String externalId) {
+    private void syncVolume(Map item, ComputeServer host, Datastore savedDataStore, StorageVolumeType volumeType,
+                            String externalId) {
         try {
             def volumeMetrics = calculateVolumeMetrics(item)
             StorageVolume existingVolume = host.volumes.find { volumeItem -> volumeItem.externalId == externalId }
@@ -281,7 +295,8 @@ class DatastoresSync {
         ]
     }
 
-    private void updateExistingVolume(StorageVolume existingVolume, Map item, Datastore savedDataStore, Map volumeMetrics) {
+    private void updateExistingVolume(StorageVolume existingVolume, Map item, Datastore savedDataStore,
+                                      Map volumeMetrics) {
         boolean save = false
 
         if (existingVolume.internalId != item.id) {

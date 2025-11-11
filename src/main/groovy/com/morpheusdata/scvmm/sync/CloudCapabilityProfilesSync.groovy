@@ -6,10 +6,8 @@ import com.morpheusdata.core.data.DataQuery
 import com.morpheusdata.model.Cloud
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
-import groovy.transform.CompileDynamic
 
 class CloudCapabilityProfilesSync {
-
     private static final String CAPABILITY_PROFILES = 'capabilityProfiles'
 
     private final MorpheusContext morpheusContext
@@ -27,18 +25,20 @@ class CloudCapabilityProfilesSync {
         log.debug 'CloudCapabilityProfilesSync'
         try {
             def scvmmCloud = morpheusContext.services.cloud.get(cloud.id)
-            def server = morpheusContext.services.computeServer.find(new DataQuery().withFilter('cloud.id', scvmmCloud.id))
+            def server = morpheusContext.services.computeServer.find(
+                new DataQuery().withFilter('zone.id', scvmmCloud.id)
+            )
             def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(morpheusContext, scvmmCloud, server)
 
-            if(scvmmCloud.regionCode) {
+            if (scvmmCloud.regionCode) {
                 def cloudResults = apiService.getCloud(scvmmOpts)
-                if(cloudResults.success == true && cloudResults?.cloud?.CapabilityProfiles) {
+                if (cloudResults.success == true && cloudResults?.cloud?.CapabilityProfiles) {
                     scvmmCloud.setConfigProperty(CAPABILITY_PROFILES, cloudResults?.cloud?.CapabilityProfiles)
                     morpheusContext.services.cloud.save(scvmmCloud)
                 }
             } else {
                 def capabilityProfileResults = apiService.getCapabilityProfiles(scvmmOpts)
-                if(capabilityProfileResults.success == true && capabilityProfileResults?.capabilityProfiles) {
+                if (capabilityProfileResults.success == true && capabilityProfileResults?.capabilityProfiles) {
                     scvmmCloud.setConfigProperty(CAPABILITY_PROFILES, capabilityProfileResults.capabilityProfiles*.Name)
                     morpheusContext.services.cloud.save(scvmmCloud)
                 }

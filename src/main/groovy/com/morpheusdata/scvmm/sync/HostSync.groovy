@@ -12,7 +12,6 @@ import com.morpheusdata.model.OsType
 import com.morpheusdata.model.projection.ComputeServerIdentityProjection
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
-import groovy.transform.CompileDynamic
 import java.time.Instant
 
 /**
@@ -20,7 +19,6 @@ import java.time.Instant
  */
 
 class HostSync {
-
     private static final String SCVMM_HYPERVISOR = 'scvmmHypervisor'
     private static final String COMPUTE_ZONE = 'ComputeZone'
     private static final String WINDOWS_SERVER_2016_CODE = 'windows.server.2016'
@@ -155,11 +153,14 @@ class HostSync {
                 new DataQuery().withFilter('zone.id', cloud.id).withFilter('computeServerType.code', SCVMM_HYPERVISOR)
         )
 
-        SyncTask<ComputeServerIdentityProjection, Map, ComputeServer> syncTask = new SyncTask<>(existingItems, filteredHosts as Collection<Map>)
+        SyncTask<ComputeServerIdentityProjection, Map, ComputeServer> syncTask =
+                new SyncTask<>(existingItems, filteredHosts as Collection<Map>)
         syncTask.addMatchFunction { ComputeServerIdentityProjection domainObject, Map cloudItem ->
             domainObject.externalId == cloudItem?.id
-        }.withLoadObjectDetailsFromFinder { List<SyncTask.UpdateItemDto<ComputeServerIdentityProjection, Map>> updateItems ->
-            context.async.computeServer.listById(updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
+        }.withLoadObjectDetailsFromFinder {
+                List<SyncTask.UpdateItemDto<ComputeServerIdentityProjection, Map>> updateItems ->
+            context.async.computeServer.listById(
+                    updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
         }.onAdd { itemsToAdd ->
             log.debug("HostSync, onAdd: ${itemsToAdd}")
             addMissingHosts(itemsToAdd, clusters)

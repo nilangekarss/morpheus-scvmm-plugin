@@ -13,10 +13,8 @@ import com.morpheusdata.model.NetworkType
 import com.morpheusdata.model.projection.NetworkIdentityProjection
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
-import groovy.transform.CompileDynamic
 
 class IsolationNetworkSync {
-
     private static final String OWNER = 'owner'
     private final MorpheusContext morpheusContext
     private final Cloud cloud
@@ -53,7 +51,8 @@ class IsolationNetworkSync {
                                 ),
                                 new DataFilter('category', '=~', "scvmm.vlan.network.${cloud.id}.%")))
 
-                SyncTask<NetworkIdentityProjection, Map, Network> syncTask = new SyncTask<>(existingItems, objList as Collection<Map>)
+                SyncTask<NetworkIdentityProjection, Map, Network> syncTask =
+                        new SyncTask<>(existingItems, objList as Collection<Map>)
 
                 syncTask.addMatchFunction { NetworkIdentityProjection network, Map networkItem ->
                     network?.externalId == networkItem?.ID
@@ -63,8 +62,12 @@ class IsolationNetworkSync {
                     updateMatchedNetworks(updateItems)
                 }.onAdd { itemsToAdd ->
                     addMissingNetworks(itemsToAdd, networkType, server)
-                }.withLoadObjectDetailsFromFinder { List<SyncTask.UpdateItemDto<NetworkIdentityProjection, Map>> updateItems ->
-                    morpheusContext.async.cloud.network.listById(updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
+                }.withLoadObjectDetailsFromFinder {
+                    List<SyncTask.UpdateItemDto<NetworkIdentityProjection, Map>> updateItems ->
+                    morpheusContext.async.cloud.network.listById(
+                            updateItems.collect { updateItem ->
+                                updateItem.existingItem.id
+                            } as List<Long>)
                 }.start()
             } else {
                 log.info('Not getting the listNetworks')
@@ -100,7 +103,7 @@ class IsolationNetworkSync {
                 networkAdds << networkAdd
             }
 
-            //create networks
+            // create networks
             morpheusContext.async.cloud.network.create(networkAdds).blockingGet()
         } catch (e) {
             log.error "Error in adding Isolation Network sync ${e}", e
@@ -117,11 +120,11 @@ class IsolationNetworkSync {
                 log.debug "processing update: ${network}"
                 if (network) {
                     def save = false
-                    if(network.cidr != masterItem.Subnet){
+                    if (network.cidr != masterItem.Subnet) {
                         network.cidr = masterItem.Subnet
                         save = true
                     }
-                    if(network.vlanId != masterItem.VLanID){
+                    if (network.vlanId != masterItem.VLanID) {
                         network.vlanId = masterItem.VLanID
                         save = true
                     }
@@ -133,7 +136,7 @@ class IsolationNetworkSync {
             if (itemsToUpdate.size() > 0) {
                 morpheusContext.async.cloud.network.save(itemsToUpdate).blockingGet()
             }
-        } catch(e) {
+        } catch (e) {
             log.error "Error in update Isolation Network sync ${e}", e
         }
     }

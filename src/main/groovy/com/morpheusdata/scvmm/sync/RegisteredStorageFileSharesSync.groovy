@@ -19,7 +19,6 @@ import io.reactivex.rxjava3.core.Observable
  */
 
 class RegisteredStorageFileSharesSync {
-
     private static final String REF_TYPE = 'refType'
     private static final String COMPUTE_ZONE = 'ComputeZone'
     private static final String REF_ID = 'refId'
@@ -57,7 +56,8 @@ class RegisteredStorageFileSharesSync {
                         .withFilter(REF_TYPE, COMPUTE_ZONE).withFilter(REF_ID, cloud.id)
                         .withFilter(TYPE, GENERIC))
 
-                SyncTask<DatastoreIdentity, Map, Datastore> syncTask = new SyncTask<>(domainRecords, objList as Collection<Map>)
+                SyncTask<DatastoreIdentity, Map, Datastore> syncTask =
+                        new SyncTask<>(domainRecords, objList as Collection<Map>)
 
                 syncTask.addMatchFunction { DatastoreIdentity morpheusItem, Map cloudItem ->
                     morpheusItem?.externalId == cloudItem?.ID
@@ -113,7 +113,7 @@ class RegisteredStorageFileSharesSync {
                 Datastore datastore = new Datastore(datastoreConfig)
                 dataStoreAdds << datastore
                 // buildMap
-                //def externalId = ds.ID
+                // def externalId = ds.ID
                 // Build up a mapping of host (externalId) to registered file shares
                 cloudItem.ClusterAssociations?.each { ca ->
                     def hostEntry = getOrCreateHostEntry(ca.HostID)
@@ -124,7 +124,7 @@ class RegisteredStorageFileSharesSync {
                     hostEntry << externalId
                 }
             }
-            //create dataStore
+            // create dataStore
             if (dataStoreAdds.size() > 0) {
                 context.async.cloud.datastore.bulkCreate(dataStoreAdds).blockingGet()
             }
@@ -151,7 +151,8 @@ class RegisteredStorageFileSharesSync {
         }
     }
 
-    private void processDatastoreUpdate(SyncTask.UpdateItem<Datastore, Map> update, List itemsToUpdate, Map hostToShareMap) {
+    private void processDatastoreUpdate(SyncTask.UpdateItem<Datastore, Map> update,
+                                         List itemsToUpdate, Map hostToShareMap) {
         Datastore existingItem = update.existingItem
         Map masterItem = update.masterItem
 
@@ -279,7 +280,8 @@ class RegisteredStorageFileSharesSync {
         }
     }
 
-    private void syncVolumesForSingleHost(ComputeServer host, Map hostToShareMap, List morphDatastores, Closure findMountPath) {
+    private void syncVolumesForSingleHost(ComputeServer host, Map hostToShareMap,
+                                          List morphDatastores, Closure findMountPath) {
         def volumeType = getVolumeType()
         def existingStorageVolumes = getExistingStorageVolumes(host, volumeType)
         def masterVolumeIds = hostToShareMap[host.externalId]
@@ -300,7 +302,8 @@ class RegisteredStorageFileSharesSync {
         return host.volumes?.findAll { volume -> volume.type == volumeType }
     }
 
-    private SyncTask createStorageVolumeSyncTask(Observable domainRecords, Collection masterVolumeIds, ComputeServer host, List morphDatastores, Closure findMountPath) {
+    private SyncTask createStorageVolumeSyncTask(Observable domainRecords, Collection masterVolumeIds,
+                                                 ComputeServer host, List morphDatastores, Closure findMountPath) {
         def syncTask = new SyncTask<StorageVolumeIdentityProjection, Map, StorageVolume>(
                 domainRecords, masterVolumeIds as Collection<Map>)
 
@@ -310,7 +313,8 @@ class RegisteredStorageFileSharesSync {
                 .onUpdate { updateItems -> updateStorageVolumes(updateItems, morphDatastores, findMountPath) }
                 .onAdd { itemsToAdd -> addStorageVolumes(itemsToAdd, morphDatastores, findMountPath, host) }
                 .withLoadObjectDetailsFromFinder { updateItems ->
-                    context.async.storageVolume.listById(updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
+                    context.async.storageVolume.listById(
+                            updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
                 }
     }
 
@@ -351,7 +355,8 @@ class RegisteredStorageFileSharesSync {
         }
     }
 
-    private boolean updateStorageVolumeProperties(StorageVolume storageVolume, Datastore match, Closure findMountPath, Object dsExternalId) {
+    private boolean updateStorageVolumeProperties(StorageVolume storageVolume, Datastore match,
+                                                  Closure findMountPath, Object dsExternalId) {
         boolean save = false
 
         save |= updateProperty(storageVolume, 'maxStorage', match.storageSize)
@@ -379,13 +384,15 @@ class RegisteredStorageFileSharesSync {
         return false
     }
 
-    private void addStorageVolumes(Collection itemsToAdd, List morphDatastores, Closure findMountPath, ComputeServer host) {
+    private void addStorageVolumes(Collection itemsToAdd, List morphDatastores,
+                                   Closure findMountPath, ComputeServer host) {
         itemsToAdd?.each { dsExternalId ->
             addSingleStorageVolume(dsExternalId, morphDatastores, findMountPath, host)
         }
     }
 
-    private void addSingleStorageVolume(Object dsExternalId, List morphDatastores, Closure findMountPath, ComputeServer host) {
+    private void addSingleStorageVolume(Object dsExternalId, List morphDatastores,
+                                         Closure findMountPath, ComputeServer host) {
         Datastore match = morphDatastores.find { datastore -> datastore.externalId == dsExternalId }
         if (match) {
             log.debug "${host.id}: Adding new volume ${dsExternalId}"

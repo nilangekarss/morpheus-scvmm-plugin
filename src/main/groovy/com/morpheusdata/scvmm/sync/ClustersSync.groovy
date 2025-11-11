@@ -11,11 +11,9 @@ import com.morpheusdata.model.ResourcePermission
 import com.morpheusdata.model.projection.CloudPoolIdentity
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
-import groovy.transform.CompileDynamic
 import io.reactivex.rxjava3.core.Observable
 
 class ClustersSync {
-
     // Constants to avoid duplicate string literals
     private static final String COMPUTE_ZONE = 'ComputeZone'
     private static final String REF_TYPE = 'refType'
@@ -53,10 +51,12 @@ class ClustersSync {
 
                 def masterAccount = cloud.owner.masterAccount
 
-                Observable<CloudPoolIdentity> existingItems = morpheusContext.async.cloud.pool.listIdentityProjections(new DataQuery()
+                Observable<CloudPoolIdentity> existingItems = morpheusContext.async.cloud.pool
+                    .listIdentityProjections(new DataQuery()
                         .withFilter(REF_TYPE, COMPUTE_ZONE).withFilter(REF_ID, cloud.id))
 
-                SyncTask<CloudPoolIdentity, Map, CloudPool> syncTask = new SyncTask<>(existingItems, objList as Collection<Map>)
+                SyncTask<CloudPoolIdentity, Map, CloudPool> syncTask = new SyncTask<>(existingItems,
+                    objList as Collection<Map>)
 
                 syncTask.addMatchFunction { CloudPoolIdentity existingItem, Map syncItem ->
                     existingItem?.externalId == syncItem?.id
@@ -67,9 +67,10 @@ class ClustersSync {
                 }.onAdd { itemsToAdd ->
                     addMissingResourcePools(itemsToAdd)
                 }.withLoadObjectDetailsFromFinder { List<SyncTask.UpdateItemDto<CloudPoolIdentity, Map>> updateItems ->
-                    morpheusContext.async.cloud.pool.listById(updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
+                    morpheusContext.async.cloud.pool.listById(
+                        updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
                 }.start()
-                if(masterAccount == false) {
+                if (masterAccount == false) {
                     chooseOwnerPoolDefaults(cloud.owner)
                 }
             } else {
@@ -81,39 +82,39 @@ class ClustersSync {
     }
 
     def chooseOwnerPoolDefaults(Account currentAccount) {
-        //check for default store and set if not
+        // check for default store and set if not
         def pool = morpheusContext.services.cloud.pool.find(new DataQuery()
                 .withFilter(OWNER, currentAccount)
                 .withFilter(REF_TYPE, COMPUTE_ZONE)
                 .withFilter(REF_ID, cloud.id)
                 .withFilter(DEFAULT_POOL, true))
 
-        if(pool && pool.readOnly == true) {
+        if (pool && pool.readOnly == true) {
             pool.defaultPool = false
             morpheusContext.services.cloud.pool.save(pool)
             pool = null
         }
 
-        if(!pool) {
+        if (!pool) {
             pool = morpheusContext.services.cloud.pool.find(new DataQuery()
                     .withFilter(OWNER, currentAccount)
                     .withFilter(REF_TYPE, COMPUTE_ZONE)
                     .withFilter(REF_ID, cloud.id)
                     .withFilter(DEFAULT_POOL, false)
                     .withFilter('readOnly', '!=', true))
-            if(pool) {
+            if (pool) {
                 pool.defaultPool = true
                 morpheusContext.services.cloud.pool.save(pool)
             }
         }
     }
 
-    private addMissingResourcePools(Collection<Map> addList){
+    private addMissingResourcePools(Collection<Map> addList) {
         log.debug("addMissingResourcePools: ${addList.size()}")
 
         List<CloudPool> clusterAdds = []
         List<ResourcePermission> resourcePerms = []
-        try{
+        try {
             addList?.each { Map item ->
                 log.debug('add cluster: {}', item)
                 def poolConfig = [
@@ -135,12 +136,12 @@ class ClustersSync {
                 clusterAdds << clusterAdd
             }
 
-            if (clusterAdds.size() > 0){
+            if (clusterAdds.size() > 0) {
                 morpheusContext.async.cloud.pool.bulkCreate(clusterAdds).blockingGet()
                 morpheusContext.async.cloud.pool.bulkSave(clusterAdds).blockingGet()
             }
 
-            clusterAdds?.each {cluster ->
+            clusterAdds?.each { cluster ->
                 def permissionConfig = [
                         morpheusResourceType    : 'ComputeZonePool',
                         uuid                    : cluster.externalId,
@@ -151,7 +152,7 @@ class ClustersSync {
                 resourcePerms << resourcePerm
             }
 
-            if(resourcePerms.size() > 0){
+            if (resourcePerms.size() > 0) {
                 morpheusContext.async.resourcePermission.bulkCreate(resourcePerms).blockingGet()
             }
         } catch (e) {
@@ -159,12 +160,12 @@ class ClustersSync {
         }
     }
 
-    private updateMatchedResourcePools(List<SyncTask.UpdateItem<CloudPool, Map>> updateList){
+    private updateMatchedResourcePools(List<SyncTask.UpdateItem<CloudPool, Map>> updateList) {
         log.debug("updateMatchedResourcePools: ${updateList.size()}")
 
         List<CloudPool> itemsToUpdate = []
         try {
-            updateList?.each { updateMap -> //masterItem, existingItem
+            updateList?.each { updateMap -> // masterItem, existingItem
                 def doSave = false
 
                 CloudPool existingItem = updateMap.existingItem
@@ -172,7 +173,8 @@ class ClustersSync {
 
                 // Sometimes scvmm tells us that the cluster has no shared volumes even when it does! #175290155
                 if (existingItem.getConfigProperty(SHARED_VOLUMES) != masterItem.sharedVolumes) {
-                    if(!masterItem.sharedVolumes || (masterItem.sharedVolumes?.size() == 1 && masterItem.sharedVolumes[0] == null)) {
+                    if (!masterItem.sharedVolumes || (masterItem.sharedVolumes?.size() == 1 &&
+                            masterItem.sharedVolumes[0] == null)) {
                         // No shared volumes
                         def nullCount = existingItem.getConfigProperty(NULL_SHARED_VOLUME_SYNC_COUNT)?.toLong() ?: 0
                         if (nullCount >= 5) {
@@ -188,7 +190,7 @@ class ClustersSync {
                     doSave = true
                 }
 
-                if(doSave) {
+                if (doSave) {
                     itemsToUpdate << existingItem
                 }
             }
@@ -196,7 +198,7 @@ class ClustersSync {
             if (itemsToUpdate.size() > 0) {
                 morpheusContext.async.cloud.pool.bulkSave(itemsToUpdate).blockingGet()
             }
-        } catch(e) {
+        } catch (e) {
             log.error "Error in updateMatchedResourcePools ${e}", e
         }
     }
@@ -212,7 +214,7 @@ class ClustersSync {
                 deleteList << removeItem
             }
 
-            if(deleteList.size() > 0) {
+            if (deleteList.size() > 0) {
                 morpheusContext.async.cloud.pool.bulkRemove(deleteList).blockingGet()
             }
         } catch (e) {

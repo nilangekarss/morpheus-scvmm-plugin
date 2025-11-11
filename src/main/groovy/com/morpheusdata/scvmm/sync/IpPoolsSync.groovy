@@ -16,11 +16,9 @@ import com.morpheusdata.model.ResourcePermission
 import com.morpheusdata.model.projection.NetworkPoolIdentityProjection
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
-import groovy.transform.CompileDynamic
 import org.apache.commons.net.util.SubnetUtils
 
 class IpPoolsSync {
-
     private static final String OWNER_FILTER = 'owner'
     private static final String CATEGORY_FILTER = 'category'
     private static final String REGEX_MATCH = '=~'
@@ -51,16 +49,17 @@ class IpPoolsSync {
         }
     }
 
-    def updateNetworkForPool(List<Network> networks, NetworkPool pool, String networkId, String subnetId, List networkMapping) {
+    def updateNetworkForPool(List<Network> networks, NetworkPool pool, String networkId, String subnetId,
+                             List networkMapping) {
         log.debug "updateNetworkForPool: ${networks} ${pool} ${networkId} ${subnetId} ${networkMapping}"
         try {
             Network network = findNetworkForPool(networks, networkId, networkMapping)
 
-            if(network) {
+            if (network) {
                 updateNetworkProperties(network, pool)
             }
 
-            if(subnetId && network) {
+            if (subnetId && network) {
                 updateSubnetForPool(network, pool, subnetId)
             }
         } catch (e) {
@@ -100,7 +99,8 @@ class IpPoolsSync {
                 .withFilter('account.id', cloud.account.id)
                 .withFilter(CATEGORY_FILTER, "scvmm.ipPool.${cloud.id}"))
 
-        SyncTask<NetworkPoolIdentityProjection, Map, NetworkPool> syncTask = new SyncTask<>(existingItems, syncContext.objList as Collection<Map>)
+        SyncTask<NetworkPoolIdentityProjection, Map, NetworkPool> syncTask =
+                new SyncTask<>(existingItems, syncContext.objList as Collection<Map>)
         syncTask.addMatchFunction { NetworkPoolIdentityProjection networkPool, poolItem ->
             networkPool?.externalId == poolItem?.ID
         }.onDelete { removeItems ->
@@ -109,12 +109,15 @@ class IpPoolsSync {
             updateMatchedIpPools(updateItems, networks, syncContext.networkMapping)
         }.onAdd { itemsToAdd ->
             addMissingIpPools(itemsToAdd, networks, syncContext.poolType, syncContext.networkMapping)
-        }.withLoadObjectDetailsFromFinder { List<SyncTask.UpdateItemDto<NetworkPoolIdentityProjection, Map>> updateItems ->
-            morpheusContext.async.cloud.network.pool.listById(updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
+        }.withLoadObjectDetailsFromFinder {
+            List<SyncTask.UpdateItemDto<NetworkPoolIdentityProjection, Map>> updateItems ->
+            morpheusContext.async.cloud.network.pool.listById(
+                    updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
         }.start()
     }
 
-    private addMissingIpPools(Collection<Map> addList, List<Network> networks, NetworkPoolType poolType, List networkMapping) {
+    private addMissingIpPools(Collection<Map> addList, List<Network> networks, NetworkPoolType poolType,
+                              List networkMapping) {
         log.debug("addMissingIpPools: ${addList.size()}")
 
         List<NetworkPool> networkPoolAdds = []
@@ -143,7 +146,7 @@ class IpPoolsSync {
             NetworkPool pool = createNetworkPool(poolData, poolType)
             networkPoolAdds << pool
 
-            if(poolData.IPAddressRangeStart && poolData.IPAddressRangeEnd) {
+            if (poolData.IPAddressRangeStart && poolData.IPAddressRangeEnd) {
                 NetworkPoolRange range = createNetworkPoolRange(poolData, pool)
                 poolRangeAdds << range
                 pool.addToIpRanges(range)
@@ -188,11 +191,11 @@ class IpPoolsSync {
     }
 
     private savePools(List<NetworkPool> networkPoolAdds, List<NetworkPoolRange> poolRangeAdds) {
-        if(networkPoolAdds.size() > 0){
+        if (networkPoolAdds.size() > 0) {
             morpheusContext.async.cloud.network.pool.bulkCreate(networkPoolAdds).blockingGet()
         }
 
-        if(poolRangeAdds.size() > 0){
+        if (poolRangeAdds.size() > 0) {
             morpheusContext.async.cloud.network.pool.poolRange.bulkCreate(poolRangeAdds).blockingGet()
             morpheusContext.async.cloud.network.pool.bulkSave(networkPoolAdds).blockingGet()
         }
@@ -212,7 +215,7 @@ class IpPoolsSync {
             resourcePerms << resourcePerm
         }
 
-        if(resourcePerms.size() > 0){
+        if (resourcePerms.size() > 0) {
             morpheusContext.async.resourcePermission.bulkCreate(resourcePerms).blockingGet()
         }
     }
@@ -233,7 +236,7 @@ class IpPoolsSync {
     private updateNetworkProperties(Network network, NetworkPool pool) {
         def doSave = false
 
-        if(network.pool != pool) {
+        if (network.pool != pool) {
             network.pool = pool
             doSave = true
         }
@@ -243,13 +246,13 @@ class IpPoolsSync {
         doSave = updateNetworkNetmask(network, pool) || doSave
         doSave = updateNetworkStaticOverride(network) || doSave
 
-        if(doSave) {
+        if (doSave) {
             morpheusContext.async.cloud.network.save(network).blockingGet()
         }
     }
 
     private boolean updateNetworkGateway(Network network, NetworkPool pool) {
-        if(pool.gateway && network.gateway != pool.gateway) {
+        if (pool.gateway && network.gateway != pool.gateway) {
             network.gateway = pool.gateway
             true
         } else {
@@ -260,12 +263,12 @@ class IpPoolsSync {
     private boolean updateNetworkDnsServers(Network network, NetworkPool pool) {
         boolean updated = false
 
-        if(pool.dnsServers?.size() && pool.dnsServers[0] && network.dnsPrimary != pool.dnsServers[0]) {
+        if (pool.dnsServers?.size() && pool.dnsServers[0] && network.dnsPrimary != pool.dnsServers[0]) {
             network.dnsPrimary = pool.dnsServers[0] ?: null
             updated = true
         }
 
-        if(pool.dnsServers?.size() > 1 && pool.dnsServers[1] && network.dnsSecondary != pool.dnsServers[1]) {
+        if (pool.dnsServers?.size() > 1 && pool.dnsServers[1] && network.dnsSecondary != pool.dnsServers[1]) {
             network.dnsSecondary = pool.dnsServers[1] ?: null
             updated = true
         }
@@ -274,7 +277,7 @@ class IpPoolsSync {
     }
 
     private boolean updateNetworkNetmask(Network network, NetworkPool pool) {
-        if(pool.netmask && network.netmask != pool.netmask) {
+        if (pool.netmask && network.netmask != pool.netmask) {
             network.netmask = pool.netmask
             true
         } else {
@@ -283,7 +286,7 @@ class IpPoolsSync {
     }
 
     private boolean updateNetworkStaticOverride(Network network) {
-        if(network.allowStaticOverride != true) {
+        if (network.allowStaticOverride != true) {
             network.allowStaticOverride = true
             true
         } else {
@@ -296,7 +299,7 @@ class IpPoolsSync {
 
         if (subnetObj) {
             def subnet = morpheusContext.services.networkSubnet.get(subnetObj.id)
-            if(subnet) {
+            if (subnet) {
                 updateSubnetProperties(subnet, pool)
             }
         }
@@ -305,7 +308,7 @@ class IpPoolsSync {
     private updateSubnetProperties(NetworkSubnet subnet, NetworkPool pool) {
         def doSave = false
 
-        if(subnet.pool != pool) {
+        if (subnet.pool != pool) {
             subnet.pool = pool
             doSave = true
         }
@@ -314,13 +317,13 @@ class IpPoolsSync {
         doSave = updateSubnetDnsServers(subnet, pool) || doSave
         doSave = updateSubnetNetmask(subnet, pool) || doSave
 
-        if(doSave) {
+        if (doSave) {
             morpheusContext.async.networkSubnet.save(subnet).blockingGet()
         }
     }
 
     private boolean updateSubnetGateway(NetworkSubnet subnet, NetworkPool pool) {
-        if(pool.gateway && subnet.gateway != pool.gateway) {
+        if (pool.gateway && subnet.gateway != pool.gateway) {
             subnet.gateway = pool.gateway
             true
         } else {
@@ -331,12 +334,12 @@ class IpPoolsSync {
     private boolean updateSubnetDnsServers(NetworkSubnet subnet, NetworkPool pool) {
         boolean updated = false
 
-        if(pool.dnsServers?.size() && pool.dnsServers[0] && subnet.dnsPrimary != pool.dnsServers[0]) {
+        if (pool.dnsServers?.size() && pool.dnsServers[0] && subnet.dnsPrimary != pool.dnsServers[0]) {
             subnet.dnsPrimary = pool.dnsServers[0] ?: null
             updated = true
         }
 
-        if(pool.dnsServers?.size() > 1 && pool.dnsServers[1] && subnet.dnsSecondary != pool.dnsServers[1]) {
+        if (pool.dnsServers?.size() > 1 && pool.dnsServers[1] && subnet.dnsSecondary != pool.dnsServers[1]) {
             subnet.dnsSecondary = pool.dnsServers[1] ?: null
             updated = true
         }
@@ -345,7 +348,7 @@ class IpPoolsSync {
     }
 
     private boolean updateSubnetNetmask(NetworkSubnet subnet, NetworkPool pool) {
-        if(pool.netmask && subnet.netmask != pool.netmask) {
+        if (pool.netmask && subnet.netmask != pool.netmask) {
             subnet.netmask = pool.netmask
             true
         } else {
@@ -353,7 +356,8 @@ class IpPoolsSync {
         }
     }
 
-    private updateMatchedIpPools(List<SyncTask.UpdateItem<NetworkPool, Map>> updateList, List networks, List networkMapping) {
+    private updateMatchedIpPools(List<SyncTask.UpdateItem<NetworkPool, Map>> updateList, List networks,
+                                  List networkMapping) {
         log.debug("updateMatchedIpPools : ${updateList.size()}")
 
         try {
@@ -364,7 +368,8 @@ class IpPoolsSync {
                     updateIpPoolRange(existingItem, masterItem)
                     updatePoolProperties(existingItem, masterItem)
                     ensureResourcePermission(existingItem)
-                    updateNetworkForPool(networks, existingItem, masterItem.NetworkID, masterItem.SubnetID, networkMapping)
+                    updateNetworkForPool(networks, existingItem, masterItem.NetworkID, masterItem.SubnetID,
+                                         networkMapping)
                 }
             }
         } catch (e) {
@@ -373,8 +378,8 @@ class IpPoolsSync {
     }
 
     private updateIpPoolRange(NetworkPool existingItem, Map masterItem) {
-        if(masterItem.IPAddressRangeStart && masterItem.IPAddressRangeEnd) {
-            if(existingItem.ipRanges) {
+        if (masterItem.IPAddressRangeStart && masterItem.IPAddressRangeEnd) {
+            if (existingItem.ipRanges) {
                 updateExistingIpRange(existingItem, masterItem)
             } else {
                 createNewIpRange(existingItem, masterItem)
@@ -402,7 +407,7 @@ class IpPoolsSync {
                 range.addressCount != (masterItem.TotalAddresses ?: 0).toInteger() ||
                 range.externalId != masterItem.ID)
 
-        if(needsUpdate) {
+        if (needsUpdate) {
             range.startAddress = masterItem.IPAddressRangeStart
             range.endAddress = masterItem.IPAddressRangeEnd
             range.addressCount = (masterItem.TotalAddresses ?: 0).toInteger()
@@ -426,7 +431,7 @@ class IpPoolsSync {
     }
 
     private boolean updatePoolName(NetworkPool existingItem, Map masterItem) {
-        if(existingItem.name != masterItem.Name) {
+        if (existingItem.name != masterItem.Name) {
             existingItem.name = masterItem.Name
             true
         } else {
@@ -436,7 +441,7 @@ class IpPoolsSync {
 
     private boolean updatePoolDisplayName(NetworkPool existingItem, Map masterItem) {
         def displayName = "${masterItem.Name} (${masterItem.Subnet})"
-        if(existingItem.displayName != displayName) {
+        if (existingItem.displayName != displayName) {
             existingItem.displayName = displayName
             true
         } else {
@@ -447,12 +452,12 @@ class IpPoolsSync {
     private boolean updatePoolAddressCounts(NetworkPool existingItem, Map masterItem) {
         boolean updated = false
 
-        if(existingItem.ipCount != (masterItem.TotalAddresses ?: 0).toInteger()) {
+        if (existingItem.ipCount != (masterItem.TotalAddresses ?: 0).toInteger()) {
             existingItem.ipCount = (masterItem.TotalAddresses ?: 0).toInteger()
             updated = true
         }
 
-        if(existingItem.ipFreeCount != (masterItem.AvailableAddresses ?: 0).toInteger()) {
+        if (existingItem.ipFreeCount != (masterItem.AvailableAddresses ?: 0).toInteger()) {
             existingItem.ipFreeCount = (masterItem.AvailableAddresses ?: 0).toInteger()
             updated = true
         }
@@ -462,7 +467,7 @@ class IpPoolsSync {
 
     private boolean updatePoolGateway(NetworkPool existingItem, Map masterItem) {
         def gateway = masterItem.DefaultGateways ? masterItem.DefaultGateways.first() : null
-        if(existingItem.gateway != gateway) {
+        if (existingItem.gateway != gateway) {
             existingItem.gateway = gateway
             true
         } else {
@@ -474,12 +479,12 @@ class IpPoolsSync {
         def info = new SubnetUtils(masterItem.Subnet).info
         boolean updated = false
 
-        if(existingItem.netmask != info.netmask) {
+        if (existingItem.netmask != info.netmask) {
             existingItem.netmask = info.netmask
             updated = true
         }
 
-        if(existingItem.subnetAddress != info.networkAddress) {
+        if (existingItem.subnetAddress != info.networkAddress) {
             existingItem.subnetAddress = info.networkAddress
             updated = true
         }
@@ -493,12 +498,12 @@ class IpPoolsSync {
                 .withFilter('morpheusResourceId', existingItem.id)
                 .withFilter('account', cloud.account))
 
-        if(!existingPermission) {
+        if (!existingPermission) {
             def resourcePerm = new ResourcePermission(
-                    morpheusResourceType:NETWORK_POOL_TYPE,
-                    uuid:existingItem.externalId,
-                    morpheusResourceId:existingItem.id,
-                    account:cloud.account
+                    morpheusResourceType: NETWORK_POOL_TYPE,
+                    uuid: existingItem.externalId,
+                    morpheusResourceId: existingItem.id,
+                    account: cloud.account
             )
             morpheusContext.async.resourcePermission.create(resourcePerm).blockingGet()
         }

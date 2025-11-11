@@ -19,7 +19,6 @@ import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
 
 class NetworkSync {
-
     private static final String OWNER = 'owner'
     private static final String COMPUTE_ZONE = 'ComputeZone'
     private static final String SUBNET_NAME = 'subnetName'
@@ -49,7 +48,7 @@ class NetworkSync {
             if (listResults.success == true && listResults.networks) {
                 def objList = listResults?.networks
                 log.debug('objList: {}', objList)
-                if(!objList) {
+                if (!objList) {
                     log.info 'No networks returned!'
                 }
                 def existingItems = morpheusContext.async.cloud.network.listIdentityProjections(new DataQuery()
@@ -60,7 +59,8 @@ class NetworkSync {
                                 ),
                                 new DataFilter('category', '=~', "scvmm.network.${cloud.id}.%")))
 
-                SyncTask<NetworkIdentityProjection, Map, Network> syncTask = new SyncTask<>(existingItems, objList as Collection<Map>)
+                SyncTask<NetworkIdentityProjection, Map, Network> syncTask =
+                        new SyncTask<>(existingItems, objList as Collection<Map>)
                 syncTask.addMatchFunction { NetworkIdentityProjection network, Map networkItem ->
                     network?.externalId == networkItem?.ID
                 }.onDelete { removeItems ->
@@ -69,8 +69,12 @@ class NetworkSync {
                     updateMatchedNetworks(updateItems, subnetType)
                 }.onAdd { itemsToAdd ->
                     addMissingNetworks(itemsToAdd, networkType, subnetType, server)
-                }.withLoadObjectDetailsFromFinder { List<SyncTask.UpdateItemDto<NetworkIdentityProjection, Map>> updateItems ->
-                    morpheusContext.async.cloud.network.listById(updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
+                }.withLoadObjectDetailsFromFinder {
+                    List<SyncTask.UpdateItemDto<NetworkIdentityProjection, Map>> updateItems ->
+                    morpheusContext.async.cloud.network.listById(
+                            updateItems.collect { updateItem ->
+                                updateItem.existingItem.id
+                            } as List<Long>)
                 }.start()
             } else {
                 log.info('Not getting the listNetworks')
@@ -80,7 +84,8 @@ class NetworkSync {
         }
     }
 
-    private addMissingNetworks(Collection<Map> addList, NetworkType networkType, NetworkSubnetType subnetType, ComputeServer server) {
+    private addMissingNetworks(Collection<Map> addList, NetworkType networkType,
+                               NetworkSubnetType subnetType, ComputeServer server) {
         log.debug('NetworkSync >> addMissingNetworks >> called')
 
         try {
@@ -91,7 +96,8 @@ class NetworkSync {
         }
     }
 
-    private List<Network> createNetworkEntities(Collection<Map> addList, NetworkType networkType, ComputeServer server) {
+    private List<Network> createNetworkEntities(Collection<Map> addList, NetworkType networkType,
+                                                ComputeServer server) {
         def networkAdds = []
         addList?.each { networkItem ->
             def networkConfig = [
@@ -114,14 +120,16 @@ class NetworkSync {
         networkAdds
     }
 
-    private void processNetworksWithSubnets(List<Network> networkAdds, Collection<Map> addList, NetworkSubnetType subnetType) {
+    private void processNetworksWithSubnets(List<Network> networkAdds, Collection<Map> addList,
+                                            NetworkSubnetType subnetType) {
         if (networkAdds.size() > 0) {
             def result = morpheusContext.async.cloud.network.bulkCreate(networkAdds).blockingGet()
             processSubnetsForNetworks(result.persistedItems, addList, subnetType)
         }
     }
 
-    private void processSubnetsForNetworks(List<Network> networks, Collection<Map> addList, NetworkSubnetType subnetType) {
+    private void processSubnetsForNetworks(List<Network> networks, Collection<Map> addList,
+                                           NetworkSubnetType subnetType) {
         networks.each { networkAdd ->
             def cloudItem = addList.find { item -> item.Name == networkAdd.name }
             if (cloudItem) {
@@ -159,7 +167,6 @@ class NetworkSync {
 
         try {
             updateList?.each { updateMap ->
-
                 Network network = updateMap.existingItem
                 def matchedNetwork = updateMap.masterItem
 
@@ -169,7 +176,8 @@ class NetworkSync {
 
                 def masterSubnets = matchedNetwork.Subnets
 
-                SyncTask<NetworkSubnetIdentityProjection, Map, NetworkSubnet> syncTask = new SyncTask<>(existingSubnets, masterSubnets as Collection<Map>)
+                SyncTask<NetworkSubnetIdentityProjection, Map, NetworkSubnet> syncTask =
+                        new SyncTask<>(existingSubnets, masterSubnets as Collection<Map>)
 
                 syncTask.addMatchFunction { NetworkSubnetIdentityProjection subnet, Map scvmmSubnet ->
                     subnet?.externalId == scvmmSubnet.ID
@@ -179,11 +187,13 @@ class NetworkSync {
                     updateMatchedNetworkSubnet(updateItems)
                 }.onAdd { itemsToAdd ->
                     addMissingNetworkSubnet(itemsToAdd, subnetType, network)
-                }.withLoadObjectDetailsFromFinder { List<SyncTask.UpdateItemDto<NetworkSubnetIdentityProjection, Map>> updateItems ->
-                    morpheusContext.async.networkSubnet.listById(updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
+                }.withLoadObjectDetailsFromFinder {
+                    List<SyncTask.UpdateItemDto<NetworkSubnetIdentityProjection, Map>> updateItems ->
+                    morpheusContext.async.networkSubnet.listById(
+                            updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
                 }.start()
             }
-        } catch(e) {
+        } catch (e) {
             log.error("Error in updateMatchedNetworks: ${e}", e)
         }
     }
@@ -218,18 +228,18 @@ class NetworkSync {
                 subnetAdds << subnetAdd
             }
 
-            //create networkSubnets
+            // create networkSubnets
             morpheusContext.async.networkSubnet.create(subnetAdds, network).blockingGet()
         } catch (e) {
             log.error("Error in addMissingNetworkSubnet: ${e}", e)
         }
     }
 
-    private updateMatchedNetworkSubnet(List<SyncTask.UpdateItem<NetworkSubnet, Map>> updateList){
+    private updateMatchedNetworkSubnet(List<SyncTask.UpdateItem<NetworkSubnet, Map>> updateList) {
         log.debug("updateMatchedNetworkSubnet: ${updateList}")
 
         List<NetworkSubnet> itemsToUpdate = []
-        try{
+        try {
             updateList?.each { subnetUpdateMap ->
                 def matchedSubnet = subnetUpdateMap.masterItem
                 NetworkSubnet subnet = subnetUpdateMap.existingItem
@@ -243,7 +253,7 @@ class NetworkSync {
             if (itemsToUpdate.size() > 0) {
                 morpheusContext.async.networkSubnet.save(itemsToUpdate).blockingGet()
             }
-        } catch(e) {
+        } catch (e) {
             log.error "Error in updateMatchedNetworkSubnet ${e}", e
         }
     }

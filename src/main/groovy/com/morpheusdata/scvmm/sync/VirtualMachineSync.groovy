@@ -30,7 +30,6 @@ import java.time.Instant
  */
 
 class VirtualMachineSync {
-
     // Constants for duplicate string literals
     private static final String ZONE_ID = 'zone.id'
     private static final String COMPUTE_SERVER_TYPE_CODE = 'computeServerType.code'
@@ -88,7 +87,8 @@ class VirtualMachineSync {
         try {
             def executionContext = initializeExecutionContext()
             def listResults = apiService.listVirtualMachines(executionContext.scvmmOpts)
-            log.debug("VM List acquired in ${Instant.now().toEpochMilli() - executionContext.startTime.toEpochMilli()}ms")
+            def elapsedTime = Instant.now().toEpochMilli() - executionContext.startTime.toEpochMilli()
+            log.debug("VM List acquired in ${elapsedTime}ms")
 
             if (listResults.success == true) {
                 performVirtualMachineSync(listResults, executionContext, createNew)
@@ -128,7 +128,8 @@ class VirtualMachineSync {
                 new DataFilter('provisionType.code', 'scvmm')
         ))
 
-        ServicePlan fallbackPlan = context.services.servicePlan.find(new DataQuery().withFilter(CODE, 'internal-custom-scvmm'))
+        ServicePlan fallbackPlan = context.services.servicePlan.find(
+                new DataQuery().withFilter(CODE, 'internal-custom-scvmm'))
 
         Collection<ResourcePermission> availablePlanPermissions = []
         if (availablePlans) {
@@ -156,20 +157,24 @@ class VirtualMachineSync {
                 .withFilter(COMPUTE_SERVER_TYPE_CODE, NOT_EQUALS, SCVMM_CONTROLLER))
     }
 
-    protected void executeSyncTask(Observable<ComputeServerIdentityProjection> existingVms, Map listResults, Map syncData, Map executionContext, Boolean createNew) {
-        SyncTask<ComputeServerIdentityProjection, Map, ComputeServer> syncTask = new SyncTask<>(existingVms, listResults.virtualMachines as Collection<Map>)
+    protected void executeSyncTask(Observable<ComputeServerIdentityProjection> existingVms, Map listResults,
+                                   Map syncData, Map executionContext, Boolean createNew) {
+        SyncTask<ComputeServerIdentityProjection, Map, ComputeServer> syncTask =
+                new SyncTask<>(existingVms, listResults.virtualMachines as Collection<Map>)
         syncTask.addMatchFunction { ComputeServerIdentityProjection morpheusItem, Map cloudItem ->
             morpheusItem.externalId == cloudItem.ID
         }.withLoadObjectDetails { List<SyncTask.UpdateItemDto<ComputeServerIdentityProjection, Map>> updateItems ->
-            Map<Long, SyncTask.UpdateItemDto<ComputeServerIdentityProjection, Map>> updateItemMap = updateItems.collectEntries { item -> [(item.existingItem.id): item] }
-            context.async.computeServer.listById(updateItems?.collect { item -> item.existingItem.id }).map { ComputeServer server ->
+            Map<Long, SyncTask.UpdateItemDto<ComputeServerIdentityProjection, Map>> updateItemMap =
+                    updateItems.collectEntries { item -> [(item.existingItem.id): item] }
+            context.async.computeServer.listById(updateItems*.id).map { ComputeServer server ->
                 SyncTask.UpdateItemDto<ComputeServerIdentityProjection, Map> matchItem = updateItemMap[server.id]
                 new SyncTask.UpdateItem<ComputeServer, Map>(existingItem: server, masterItem: matchItem.masterItem)
             }
         }.onAdd { itemsToAdd ->
             if (createNew) {
                 addMissingVirtualMachines(itemsToAdd, syncData.availablePlans, syncData.fallbackPlan,
-                        syncData.availablePlanPermissions, syncData.hosts, executionContext.consoleEnabled, syncData.serverType)
+                        syncData.availablePlanPermissions, syncData.hosts, executionContext.consoleEnabled,
+                        syncData.serverType)
             }
         }.onUpdate { List<SyncTask.UpdateItem<ComputeServer, Map>> updateItems ->
             updateMatchedVirtualMachines(updateItems, syncData.availablePlans, syncData.fallbackPlan,
@@ -179,11 +184,14 @@ class VirtualMachineSync {
         }.observe().blockingSubscribe()
     }
 
-    def addMissingVirtualMachines(List addList, Collection<ServicePlan> availablePlans, ServicePlan fallbackPlan, Collection<ResourcePermission> availablePlanPermissions, List hosts, Boolean consoleEnabled, ComputeServerType defaultServerType) {
+    def addMissingVirtualMachines(List addList, Collection<ServicePlan> availablePlans, ServicePlan fallbackPlan,
+                                  Collection<ResourcePermission> availablePlanPermissions, List hosts,
+                                  Boolean consoleEnabled, ComputeServerType defaultServerType) {
         try {
             for (cloudItem in addList) {
                 log.debug "Adding new virtual machine: ${cloudItem.Name}"
-                ComputeServer newServer = createNewVirtualMachine(cloudItem, availablePlans, fallbackPlan, availablePlanPermissions, hosts, consoleEnabled, defaultServerType)
+                ComputeServer newServer = createNewVirtualMachine(cloudItem, availablePlans, fallbackPlan,
+                        availablePlanPermissions, hosts, consoleEnabled, defaultServerType)
 
                 ComputeServer savedServer = context.async.computeServer.create(newServer).blockingGet()
                 if (savedServer) {
@@ -197,8 +205,11 @@ class VirtualMachineSync {
         }
     }
 
-    private ComputeServer createNewVirtualMachine(Map cloudItem, Collection<ServicePlan> availablePlans, ServicePlan fallbackPlan,
-                                                  Collection<ResourcePermission> availablePlanPermissions, List hosts, Boolean consoleEnabled, ComputeServerType defaultServerType) {
+    private ComputeServer createNewVirtualMachine(Map cloudItem, Collection<ServicePlan> availablePlans,
+                                                  ServicePlan fallbackPlan,
+                                                  Collection<ResourcePermission> availablePlanPermissions,
+                                                  List hosts, Boolean consoleEnabled,
+                                                  ComputeServerType defaultServerType) {
         def vmConfig = buildVmConfig(cloudItem, defaultServerType)
         ComputeServer add = new ComputeServer(vmConfig)
 
@@ -234,8 +245,11 @@ class VirtualMachineSync {
         server.parentServer = hosts?.find { host -> host.externalId == cloudItem.HostId }
     }
 
-    private void configureServerPlan(ComputeServer server, Collection<ServicePlan> availablePlans, ServicePlan fallbackPlan, Collection<ResourcePermission> availablePlanPermissions) {
-        server.plan = SyncUtils.findServicePlanBySizing(availablePlans, server.maxMemory, server.maxCores, null, fallbackPlan, null, cloud.account, availablePlanPermissions)
+    private void configureServerPlan(ComputeServer server, Collection<ServicePlan> availablePlans,
+                                      ServicePlan fallbackPlan,
+                                      Collection<ResourcePermission> availablePlanPermissions) {
+        server.plan = SyncUtils.findServicePlanBySizing(availablePlans, server.maxMemory, server.maxCores,
+                null, fallbackPlan, null, cloud.account, availablePlanPermissions)
     }
 
     private void configureServerOperatingSystem(ComputeServer server, Map cloudItem) {
@@ -263,15 +277,19 @@ class VirtualMachineSync {
     }
 
     private void configureServerCapacity(ComputeServer server) {
-        server.capacityInfo = new ComputeCapacityInfo(maxCores: server.maxCores, maxMemory: server.maxMemory, maxStorage: server.maxStorage)
+        server.capacityInfo = new ComputeCapacityInfo(maxCores: server.maxCores, maxMemory: server.maxMemory,
+                maxStorage: server.maxStorage)
     }
 
-    protected updateMatchedVirtualMachines(List<SyncTask.UpdateItem<ComputeServer, Map>> updateList, Collection availablePlans, ServicePlan fallbackPlan,
-                                           List<ComputeServer> hosts, Boolean consoleEnabled, ComputeServerType defaultServerType) {
+    protected updateMatchedVirtualMachines(List<SyncTask.UpdateItem<ComputeServer, Map>> updateList,
+                                           Collection availablePlans, ServicePlan fallbackPlan,
+                                           List<ComputeServer> hosts, Boolean consoleEnabled,
+                                           ComputeServerType defaultServerType) {
         log.debug('VirtualMachineSync >> updateMatchedVirtualMachines() called')
         try {
             def matchedServers = loadMatchedServers(updateList)
-            List<ComputeServer> saves = processServerUpdates(updateList, matchedServers, availablePlans, fallbackPlan, hosts, consoleEnabled, defaultServerType)
+            List<ComputeServer> saves = processServerUpdates(updateList, matchedServers, availablePlans,
+                    fallbackPlan, hosts, consoleEnabled, defaultServerType)
 
             if (saves) {
                 context.async.computeServer.bulkSave(saves).blockingGet()
@@ -282,14 +300,21 @@ class VirtualMachineSync {
     }
 
     private Map loadMatchedServers(List<SyncTask.UpdateItem<ComputeServer, Map>> updateList) {
-        return context.services.computeServer.list(new DataQuery().withFilter(ID, IN, updateList.collect { up -> up.existingItem.id })
-                .withJoins(['account', 'zone', 'computeServerType', 'plan', 'chassis', 'serverOs', 'sourceImage', 'folder', 'createdBy', 'userGroup',
-                            'networkDomain', 'interfaces', 'interfaces.addresses', 'controllers', 'snapshots', 'metadata', 'volumes',
-                            'volumes.datastore', 'resourcePool', 'parentServer', 'capacityInfo'])).collectEntries { server -> [(server.id): server] }
+        return context.services.computeServer.list(new DataQuery()
+                .withFilter(ID, IN, updateList.collect { up -> up.existingItem.id })
+                .withJoins(['account', 'zone', 'computeServerType', 'plan', 'chassis', 'serverOs', 'sourceImage',
+                            'folder', 'createdBy', 'userGroup',
+                            'networkDomain', 'interfaces', 'interfaces.addresses', 'controllers', 'snapshots',
+                            'metadata', 'volumes',
+                            'volumes.datastore', 'resourcePool', 'parentServer', 'capacityInfo']))
+                .collectEntries { server -> [(server.id): server] }
     }
 
-    private List<ComputeServer> processServerUpdates(List<SyncTask.UpdateItem<ComputeServer, Map>> updateList, Map matchedServers,
-                                                     Collection availablePlans, ServicePlan fallbackPlan, List<ComputeServer> hosts, Boolean consoleEnabled, ComputeServerType defaultServerType) {
+    private List<ComputeServer> processServerUpdates(List<SyncTask.UpdateItem<ComputeServer, Map>> updateList,
+                                                     Map matchedServers,
+                                                     Collection availablePlans, ServicePlan fallbackPlan,
+                                                     List<ComputeServer> hosts, Boolean consoleEnabled,
+                                                     ComputeServerType defaultServerType) {
         List<ComputeServer> saves = []
 
         for (updateMap in updateList) {
@@ -299,7 +324,8 @@ class VirtualMachineSync {
             try {
                 log.debug("Checking state of matched SCVMM Server ${masterItem.ID} - ${currentServer}")
                 if (currentServer.status != PROVISIONING) {
-                    Boolean save = updateSingleServer(currentServer, masterItem, hosts, consoleEnabled, defaultServerType, availablePlans, fallbackPlan)
+                    Boolean save = updateSingleServer(currentServer, masterItem, hosts, consoleEnabled,
+                            defaultServerType, availablePlans, fallbackPlan)
 
                     log.debug ("updateMatchedVirtualMachines: save: ${save}")
                     if (save) {
@@ -315,7 +341,8 @@ class VirtualMachineSync {
     }
 
     private Boolean updateSingleServer(ComputeServer currentServer, Map masterItem, List<ComputeServer> hosts,
-                                       Boolean consoleEnabled, ComputeServerType defaultServerType, Collection availablePlans, ServicePlan fallbackPlan) {
+                                       Boolean consoleEnabled, ComputeServerType defaultServerType,
+                                       Collection availablePlans, ServicePlan fallbackPlan) {
         try {
             Boolean save = false
 
@@ -337,7 +364,8 @@ class VirtualMachineSync {
         }
     }
 
-    private Boolean updateBasicServerProperties(ComputeServer currentServer, Map masterItem, ComputeServerType defaultServerType) {
+    private Boolean updateBasicServerProperties(ComputeServer currentServer, Map masterItem,
+                                               ComputeServerType defaultServerType) {
         Boolean save = false
 
         if (currentServer.name != masterItem.Name) {
@@ -360,7 +388,9 @@ class VirtualMachineSync {
         Boolean save = false
 
         if (masterItem.IpAddress && currentServer.externalIp != masterItem.IpAddress) {
-            def netInterface = currentServer.interfaces.find { iface -> iface.publicIpAddress == currentServer.externalIp}
+            def netInterface = currentServer.interfaces.find { iface ->
+                iface.publicIpAddress == currentServer.externalIp
+            }
             if (netInterface) {
                 netInterface.publicIpAddress = masterItem.IpAddress
                 context.async.computeServer.computeServerInterface.save([netInterface]).blockingGet()
@@ -502,7 +532,8 @@ class VirtualMachineSync {
     }
 
     private Boolean updateOperatingSystem(ComputeServer currentServer, Map masterItem) {
-        def osTypeCode = apiService.getMapScvmmOsType(masterItem.OperatingSystem, true, masterItem.OperatingSystemWindows?.toString() == TRUE_STRING ? 'windows' : null)
+        def osTypeCode = apiService.getMapScvmmOsType(masterItem.OperatingSystem, true,
+                masterItem.OperatingSystemWindows?.toString() == TRUE_STRING ? 'windows' : null)
         def osTypeCodeStr = osTypeCode ?: OTHER
         def osType = context.services.osType.find(new DataQuery().withFilter(CODE, osTypeCodeStr))
 
@@ -517,16 +548,20 @@ class VirtualMachineSync {
     }
 
     private Boolean updatePowerState(ComputeServer currentServer, Map masterItem) {
-        def powerState = masterItem.VirtualMachineState == RUNNING ? ComputeServer.PowerState.on : ComputeServer.PowerState.off
-        if(powerState != currentServer.powerState) {
+        def powerState = masterItem.VirtualMachineState == RUNNING ?
+                ComputeServer.PowerState.on : ComputeServer.PowerState.off
+        if (powerState != currentServer.powerState) {
             currentServer.powerState = powerState
-            if(currentServer.computeServerType?.guestVm) {
-                if(currentServer.powerState == ComputeServer.PowerState.on) {
+            if (currentServer.computeServerType?.guestVm) {
+                if (currentServer.powerState == ComputeServer.PowerState.on) {
                     updateWorkloadAndInstanceStatuses(currentServer, Workload.Status.running, 'running')
                 } else {
-                    def containerStatus = currentServer.powerState == ComputeServer.PowerState.paused ? Workload.Status.suspended : Workload.Status.stopped
-                    def instanceStatus = currentServer.powerState == ComputeServer.PowerState.paused ? 'suspended' : 'stopped'
-                    updateWorkloadAndInstanceStatuses(currentServer, containerStatus, instanceStatus, ['stopping', 'starting'])
+                    def containerStatus = currentServer.powerState == ComputeServer.PowerState.paused ?
+                            Workload.Status.suspended : Workload.Status.stopped
+                    def instanceStatus = currentServer.powerState == ComputeServer.PowerState.paused ?
+                            'suspended' : 'stopped'
+                    updateWorkloadAndInstanceStatuses(currentServer, containerStatus, instanceStatus,
+                            ['stopping', 'starting'])
                 }
             }
             true
@@ -535,9 +570,10 @@ class VirtualMachineSync {
         }
     }
 
-    private Boolean updateServicePlan(ComputeServer currentServer, Collection availablePlans, ServicePlan fallbackPlan) {
-        ServicePlan plan = SyncUtils.findServicePlanBySizing(availablePlans, currentServer.maxMemory, currentServer.maxCores,
-                null, fallbackPlan, currentServer.plan, currentServer.account, [])
+    private Boolean updateServicePlan(ComputeServer currentServer, Collection availablePlans,
+                                      ServicePlan fallbackPlan) {
+        ServicePlan plan = SyncUtils.findServicePlanBySizing(availablePlans, currentServer.maxMemory,
+                currentServer.maxCores, null, fallbackPlan, currentServer.plan, currentServer.account, [])
         if (currentServer.plan?.id != plan?.id) {
             currentServer.plan = plan
             true
@@ -555,7 +591,8 @@ class VirtualMachineSync {
     }
 
     private void updateWorkloadAndInstanceStatuses(ComputeServer server, Workload.Status workloadStatus,
-                                                   String instanceStatus, List<String> additionalExcludedStatuses = []) {
+                                                   String instanceStatus,
+                                                   List<String> additionalExcludedStatuses = []) {
         // Update workloads
         context.services.workload.list(new DataQuery().withFilter(SERVER_ID, server.id)
                 .withFilter(STATUS, NOT_EQUALS, Workload.Status.deploying))?.each { workload ->
@@ -588,7 +625,7 @@ class VirtualMachineSync {
                         new DataFilter(SERVER_ID, server.id)
                 ))?.collect { workload -> workload.instance.id }?.unique()
 
-        if(instanceIds) {
+        if (instanceIds) {
             context.services.instance.list(new DataQuery().withFilter(ID, IN, instanceIds))?.each { instance ->
                 instance.status = instanceStatus
                 context.services.instance.save(instance)
@@ -624,7 +661,8 @@ class VirtualMachineSync {
                 displayName      : cloudItem.Name,
                 singleTenant     : true,
                 computeServerType: defaultServerType,
-                powerState       : cloudItem.VirtualMachineState == RUNNING ? ComputeServer.PowerState.on : ComputeServer.PowerState.off,
+                powerState       : cloudItem.VirtualMachineState == RUNNING ?
+                        ComputeServer.PowerState.on : ComputeServer.PowerState.off,
         ]
         vmConfig
     }
@@ -636,17 +674,21 @@ class VirtualMachineSync {
             def maxStorage = 0
 
             def existingVolumes = server.volumes
-            def masterItems = externalVolumes?.findAll{ item -> item != null}
+            def masterItems = externalVolumes?.findAll { item -> item != null }
 
             def existingItems = Observable.fromIterable(existingVolumes)
             def diskNumber = masterItems.size()
 
-            SyncTask<StorageVolumeIdentityProjection, Map, StorageVolume> syncTask = new SyncTask<>(existingItems, masterItems as Collection<Map>)
+            SyncTask<StorageVolumeIdentityProjection, Map, StorageVolume> syncTask =
+                    new SyncTask<>(existingItems, masterItems as Collection<Map>)
 
             syncTask.addMatchFunction { StorageVolumeIdentityProjection storageVolume, Map masterItem ->
                 storageVolume.externalId == masterItem.ID
-            }.withLoadObjectDetailsFromFinder { List<SyncTask.UpdateItemDto<StorageVolumeIdentityProjection, StorageVolume>> updateItems ->
-                context.async.storageVolume.listById(updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
+            }.withLoadObjectDetailsFromFinder {
+                List<SyncTask.UpdateItemDto<StorageVolumeIdentityProjection, StorageVolume>> updateItems ->
+                context.async.storageVolume.listById(updateItems.collect { updateItem ->
+                    updateItem.existingItem.id
+                } as List<Long>)
             }.onAdd { itemsToAdd ->
                 addMissingStorageVolumes(itemsToAdd, server, diskNumber, maxStorage)
             }.onUpdate { List<SyncTask.UpdateItem<StorageVolume, Map>> updateItems ->
@@ -668,7 +710,7 @@ class VirtualMachineSync {
     }
 
     def addMissingStorageVolumes(List itemsToAdd, ComputeServer server, int diskNumber, Long maxStorage) {
-        def serverVolumeNames = server.volumes.collect{ volume -> volume.name }
+        def serverVolumeNames = server.volumes*.name
         def currentDiskNumber = diskNumber
 
         itemsToAdd?.eachWithIndex { diskData, index ->
@@ -686,7 +728,8 @@ class VirtualMachineSync {
         context.async.computeServer.bulkSave([server]).blockingGet()
     }
 
-    protected Map createVolumeConfig(Map diskData, ComputeServer server, List serverVolumeNames, int index, int diskNumber) {
+    protected Map createVolumeConfig(Map diskData, ComputeServer server, List serverVolumeNames, int index,
+                                      int diskNumber) {
         def datastore = resolveDatastore(diskData)
         def deviceName = resolveDeviceName(diskData, diskNumber)
         def volumeName = resolveVolumeName(serverVolumeNames, diskData, server, index)
@@ -698,7 +741,8 @@ class VirtualMachineSync {
                 deviceName: deviceName,
                 externalId: diskData.ID,
                 internalId: diskData.Name,
-                storageType: getStorageVolumeType("scvmm-${diskData?.VHDType}-${diskData?.VHDFormat}".toLowerCase()),
+                storageType: getStorageVolumeType(
+                        "scvmm-${diskData?.VHDType}-${diskData?.VHDFormat}".toLowerCase()),
         ]
 
         if (datastore) {
@@ -708,7 +752,7 @@ class VirtualMachineSync {
         volumeConfig
     }
 
-    protected def resolveDatastore(Map diskData) {
+    protected resolveDatastore(Map diskData) {
         return diskData.datastore ?:
                 loadDatastoreForVolume(diskData.HostVolumeId, diskData.FileShareId, diskData.PartitionUniqueId)
     }
@@ -906,11 +950,13 @@ class VirtualMachineSync {
     def loadDatastoreForVolume(String hostVolumeId = null, String fileShareId = null, String partitionUniqueId = null) {
         log.debug "loadDatastoreForVolume: ${hostVolumeId}, ${fileShareId}"
         if (hostVolumeId) {
-            StorageVolume storageVolume = context.services.storageVolume.find(new DataQuery().withFilter('internalId', hostVolumeId)
+            StorageVolume storageVolume = context.services.storageVolume.find(new DataQuery()
+                    .withFilter('internalId', hostVolumeId)
                     .withFilter(DATASTORE_REF_TYPE, COMPUTE_ZONE).withFilter(DATASTORE_REF_ID, cloud.id))
             def ds = storageVolume?.datastore
             if (!ds && partitionUniqueId) {
-                storageVolume = context.services.storageVolume.find(new DataQuery().withFilter(EXTERNAL_ID, partitionUniqueId)
+                storageVolume = context.services.storageVolume.find(new DataQuery()
+                        .withFilter(EXTERNAL_ID, partitionUniqueId)
                         .withFilter(DATASTORE_REF_TYPE, COMPUTE_ZONE).withFilter(DATASTORE_REF_ID, cloud.id))
                 ds = storageVolume?.datastore
             }
@@ -927,7 +973,8 @@ class VirtualMachineSync {
 
     def getStorageVolumeType(String storageVolumeTypeCode) {
         log.debug("getStorageVolumeTypeId - Looking up volumeTypeCode ${storageVolumeTypeCode}")
-        def storageVolumeType = context.async.storageVolume.storageVolumeType.find(new DataQuery().withFilter(CODE, storageVolumeTypeCode ?: STANDARD)).blockingGet()
+        def storageVolumeType = context.async.storageVolume.storageVolumeType.find(
+                new DataQuery().withFilter(CODE, storageVolumeTypeCode ?: STANDARD)).blockingGet()
         storageVolumeType.id
     }
 
