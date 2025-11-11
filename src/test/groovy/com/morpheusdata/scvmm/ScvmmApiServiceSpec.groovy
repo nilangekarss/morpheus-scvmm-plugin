@@ -2932,7 +2932,7 @@ class ScvmmApiServiceSpec extends Specification {
 
         when:
 
-        def result = apiService.insertContainerImage1(opts)
+        def result = apiService.insertContainerImage(opts)
 
         then:
 

@@ -275,11 +275,6 @@ class ScvmmApiService {
             createData = wrapExecuteCommand(generateCommandString(launchCommand), opts)
             log.debug "run server: ${createData}"
 
-            /* if (removeTemplateCommands) {
-                def command = removeTemplateCommands.join(';')
-                command += "@()"
-                wrapExecuteCommand(generateCommandString(command), opts)
-            } */
 
             if (createData.success != true) {
                 if (createData.error?.contains('which includes generation 2')) {
@@ -337,7 +332,7 @@ class ScvmmApiService {
                                 vhdType  : null,  // Use Default
                                 vhdFormat: null, // Use Default
                                 vhdPath  : null,
-                                sizeMb   : (int) (diskConfig.diskSize.toLong()).div(ComputeUtility.ONE_MEGABYTE),
+                                sizeMb   : (int) (diskConfig.diskSize.toLong()) / (ComputeUtility.ONE_MEGABYTE),
                         ]
                         // Create the additional disks the user requests on the template
                         // Now the Powershell automatically discovers next available bus/lun
@@ -1760,29 +1755,7 @@ foreach (\$network in \$networks) {
                     log.debug "serverStatus: ${serverDetail.server?.Status}," +
                             " opts.dataDisks: ${opts.dataDisks?.size()}," +
                             " additionalTemplateDisks: ${opts.additionalTemplateDisks?.size()}"
-
-                    if (serverDetail.server?.Status != 'UnderCreation' &&
-                            serverDetail.server?.VirtualDiskDrives?.size() == 1 +
-                            ((opts.dataDisks?.size() ?: 0) - (opts.additionalTemplateDisks?.size() ?: 0))) {
-                        // additionalTemplateDisks are created after VM creation
-                        // data disks are created and attached after vm creation
-
-                        // if(serverDetail.server?.Status != 'UnderCreation' &&
-                        // serverDetail.server?.VirtualDiskDrives?.size() ==
-                        // 1 - (opts.additionalTemplateDisks?.size() ?: 0)) {
-                        // additionalTemplateDisks are created after VM creation
-                        rtn.success = true
-                        rtn.server = serverDetail.server
-                        pending = false
-
-                        if (serverDetail.server?.Status == 'Saved') {
-                            // Discard saved state... can't modify it if so
-                            discardSavedState(opts, vmId)
-                        }
-                    } else if (serverDetail.server?.Status == CREATION_FAILED) {
-                        rtn.success = false
-                        pending = false
-                    }
+                    pending = !processServerStatus(serverDetail, opts, vmId, rtn)
                 }
                 attempts++
                 if (attempts > 600) {
@@ -1794,6 +1767,30 @@ foreach (\$network in \$networks) {
         }
         return rtn
     }
+
+    protected boolean processServerStatus(Map serverDetail, Map opts, String vmId, Map rtn) {
+        def status = serverDetail.server?.Status
+        def diskCount = serverDetail.server?.VirtualDiskDrives?.size()
+        def expectedCount = 1 + ((opts.dataDisks?.size() ?: 0) - (opts.additionalTemplateDisks?.size() ?: 0))
+
+        if (status != 'UnderCreation' && diskCount == expectedCount) {
+            // additionalTemplateDisks are created after VM creation
+            // data disks are created and attached after vm creation
+            // additionalTemplateDisks are created after VM creation
+            rtn.success = true
+            rtn.server = serverDetail.server
+            if (status == 'Saved') {
+                // Discard saved state... can't modify it if so
+                discardSavedState(opts, vmId)
+            }
+            return true // done
+        } else if (status == CREATION_FAILED) {
+            rtn.success = false
+            return true // done
+        }
+        return false // keep pending
+    }
+
 
     Map waitForJobToComplete(Map opts, String jobId) {
         def rtn = DEFAULT_RESULT.clone()
