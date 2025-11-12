@@ -1939,61 +1939,41 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return volumePath
     }
 
-    List getHostAndDatastore(Cloud cloud, Account account, String clusterId, String hostId, Datastore datastore,
-                             Object datastoreOption, Long size, Long siteId = null, Long maxMemory) {
-        log.debug "clusterId: ${clusterId}, hostId: ${hostId}, datastore: ${datastore}," +
-                " datastoreOption: ${datastoreOption}, size: ${size}, siteId: ${siteId}, maxMemory ${maxMemory}"
-        ComputeServer node
-        def volumePath
-        def highlyAvailable = false
-
-        // If clusterId (resourcePool) is not specified AND host not specified AND datastore is 'auto',
-        // then we are just deploying to the cloud (so... can not select the datastore, nor host)
-        def tempClusterId = clusterId && clusterId != 'null' ? clusterId : null
-        def tempHostId = hostId && hostId.toString().trim() != EMPTY_STRING ? hostId : null
-        def zoneHasCloud = cloud.regionCode != null && cloud.regionCode != EMPTY_STRING
-        if (zoneHasCloud && !tempClusterId && !tempHostId && !datastore &&
-                (datastoreOption == 'auto' || !datastoreOption)) {
-            return [node, datastore, volumePath, highlyAvailable]
+    // Helper to select datastore
+    protected Datastore selectDatastore(Cloud cloud, Account account, String clusterId, Integer hostId,
+                                        Datastore datastore, Long size, Long siteId) {
+        if (datastore) {
+            return datastore
         }
-        // If host specified by the user, then use it
-        node = tempHostId ? context.services.computeServer.get(tempHostId.toLong()) : null
-        if (!datastore) {
-            def datastoreIds =
-                    context.services.resourcePermission.listAccessibleResources(account.id,
-                            ResourcePermission.ResourceType.Datastore, siteId, null)
-            def hasFilteredDatastores = false
-            // If hostId specifed.. gather all the datastoreIds for the host via storage volumes
-            if (tempHostId) {
-                hasFilteredDatastores = true
-                def scopedDatastoreIds = context.services.computeServer
-                        .list(new DataQuery().withFilter(HOST_ID_FIELD, tempHostId.toLong())
-                                .withJoin('volumes.datastore'))
-                        .collect { cs -> cs.volumes.collect { vol ->  vol.datastore?.id } }
-                        .flatten()
-                        .unique()
-                datastoreIds = scopedDatastoreIds
-            }
-
-            def query = new DataQuery()
-                    .withFilter(REF_TYPE_FIELD, COMPUTE_ZONE_REF_TYPE)
-                    .withFilter(REF_ID_FIELD, cloud.id)
-                    .withFilter('type', 'generic')
-                    .withFilter('online', true)
-                    .withFilter('active', true)
-                    .withFilter(FREE_SPACE_FIELD, '>', size)
-            def dsList
-            def dsQuery
-            if (hasFilteredDatastores) {
-                dsQuery = query.withFilters(
+        // If hostId specifed.. gather all the datastoreIds for the host via storage volumes
+        def datastoreIds = context.services.resourcePermission.listAccessibleResources(account.id,
+                ResourcePermission.ResourceType.Datastore, siteId, null)
+        def hasFilteredDatastores = false
+        if (hostId) {
+            hasFilteredDatastores = true
+            def scopedDatastoreIds = context.services.computeServer
+                    .list(new DataQuery().withFilter(HOST_ID_FIELD, hostId.toLong()).withJoin('volumes.datastore'))
+                    .collect { cs -> cs.volumes.collect { vol -> vol.datastore?.id } }
+                    .flatten()
+                    .unique()
+            datastoreIds = scopedDatastoreIds
+        }
+        def query = new DataQuery()
+                .withFilter(REF_TYPE_FIELD, COMPUTE_ZONE_REF_TYPE)
+                .withFilter(REF_ID_FIELD, cloud.id)
+                .withFilter('type', 'generic')
+                .withFilter('online', true)
+                .withFilter('active', true)
+                .withFilter(FREE_SPACE_FIELD, '>', size)
+        def dsQuery = hasFilteredDatastores ?
+                query.withFilters(
                         new DataFilter(ID_FIELD, IN_OPERATOR, datastoreIds),
                         new DataOrFilter(
                                 new DataFilter(VISIBILITY_FIELD, PUBLIC_VISIBILITY),
                                 new DataFilter(OWNER_ID_FIELD, account.id)
                         )
-                )
-            } else {
-                dsQuery = query.withFilters(
+                ) :
+                query.withFilters(
                         new DataOrFilter(
                                 new DataFilter(ID_FIELD, IN_OPERATOR, datastoreIds),
                                 new DataOrFilter(
@@ -2002,24 +1982,26 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                                 )
                         )
                 )
-            }
-            if (tempClusterId) {
-                if (tempClusterId.toString().isNumber()) {
-                    dsQuery = dsQuery.withFilter('zonePool.id', tempClusterId.toLong())
-                } else {
-                    dsQuery = dsQuery.withFilter('zonePool.externalId', tempClusterId)
-                }
-            }
-            dsList = context.services.cloud.datastore.list(dsQuery.withSort(FREE_SPACE_FIELD,
-                    DataQuery.SortOrder.desc))
-
-            // Return the first one
-            if (dsList.size() > 0) {
-                datastore = dsList[0]
+        if (clusterId) {
+            if (clusterId.toString().isNumber()) {
+                dsQuery = dsQuery.withFilter('zonePool.id', clusterId.toLong())
+            } else {
+                dsQuery = dsQuery.withFilter('zonePool.externalId', clusterId)
             }
         }
+        def dsList = context.services.cloud.datastore.list(dsQuery.withSort(FREE_SPACE_FIELD,
+                DataQuery.SortOrder.desc))
+        // Return the first one
+        return dsList?.size() > 0 ? dsList[0] : null
+    }
 
-        if (!node && datastore) {
+    // Helper to select host
+    protected ComputeServer selectHost(Cloud cloud, Integer hostId, Datastore datastore, Long maxMemory) {
+        // If host specified by the user, then use it
+        if (hostId) {
+            return context.services.computeServer.get(hostId.toLong())
+        }
+        if (datastore) {
             // We've grabbed a datastore.. now pick a host that has this datastore
             def nodes = context.services.computeServer.list(new DataQuery()
                     .withFilter(CLOUD_ID_FIELD, cloud.id)
@@ -2032,25 +2014,48 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             }?.sort { compServ ->
                 -(compServ.capacityInfo?.maxMemory - compServ.capacityInfo?.usedMemory)
             }
-            node = nodes?.size() > 0 ? nodes.first() : null
+            return nodes?.size() > 0 ? nodes.first() : null
         }
+        return null
+    }
 
-        if (!zoneHasCloud && (!node || !datastore)) {
+    // Helper to get volume path
+    protected String getVolumePath(Datastore datastore) {
+        return getVolumePathForDatastore(datastore)
+    }
+
+    // Helper to check highly available
+    protected boolean isHighlyAvailable(String clusterId, Datastore datastore) {
+        return clusterId && datastore?.zonePool
+    }
+
+    // Refactored getHostAndDatastore
+    List getHostAndDatastore(Cloud cloud, Account account, String clusterId, Integer hostId, Datastore datastore,
+                             String datastoreOption, Long size, Long siteId = null, Long maxMemory) {
+        log.debug "clusterId: ${clusterId}, hostId: ${hostId}, datastore: ${datastore}," +
+                " datastoreOption: ${datastoreOption}, size: ${size}, siteId: ${siteId}, maxMemory ${maxMemory}"
+        // If clusterId (resourcePool) is not specified AND host not specified AND datastore is 'auto',
+        // then we are just deploying to the cloud (so... can not select the datastore, nor host)
+        def tempClusterId = clusterId && clusterId != 'null' ? clusterId : null
+        def tempHostId = hostId && hostId.toString().trim() != EMPTY_STRING ? hostId : null
+        def zoneHasCloud = cloud.regionCode != null && cloud.regionCode != EMPTY_STRING
+        if (zoneHasCloud && !tempClusterId && !tempHostId && !datastore &&
+                (datastoreOption == 'auto' || !datastoreOption)) {
+            return [null, null, null, false]
+        }
+        def selectedDatastore = selectDatastore(cloud, account, tempClusterId, tempHostId,
+                datastore, size, siteId)
+        def selectedHost = selectHost(cloud, tempHostId, selectedDatastore, maxMemory)
+        if (!zoneHasCloud && (!selectedHost || !selectedDatastore)) {
             // Need a node and a datastore for non-cloud scoped zones
             throw new IllegalStateException('Unable to obtain datastore and host for options selected')
         }
-
         // Get the volumePath (used during provisioning to tell SCVMM where to place the disks)
-        volumePath = getVolumePathForDatastore(datastore)
-
+        def volumePath = getVolumePath(selectedDatastore)
         // Highly Available (in the Failover Cluster Manager) if we are in a cluster and
         // the datastore is a shared volume
-        if (tempClusterId && datastore?.zonePool) {
-            // datastore found above MUST be part of a shared volume because it has a zonepool
-            highlyAvailable = true
-        }
-
-        return [node, datastore, volumePath, highlyAvailable]
+        def highlyAvailable = isHighlyAvailable(tempClusterId, selectedDatastore)
+        return [selectedHost, selectedDatastore, volumePath, highlyAvailable]
     }
 
     @SuppressWarnings('MethodReturnTypeRequired')
@@ -2321,7 +2326,9 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     // Helper to find existing interface
     protected ComputeServerInterface findNetworkInterface(ComputeServer server, String privateIp, Integer index) {
         def iface = server.interfaces?.find { csi -> csi.ipAddress == privateIp }
-        if (iface) return iface
+        if (iface) {
+            return iface
+        }
         if (index == 0) {
             return server.interfaces?.find { csi -> csi.primaryInterface == true }
         }
@@ -2740,7 +2747,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         }
         return rtn
     }
-
 
     StorageVolume buildStorageVolume(ComputeServer computeServer, Map volumeAdd, Integer newCounter) {
         def newVolume = new StorageVolume(
