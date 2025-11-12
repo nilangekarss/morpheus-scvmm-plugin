@@ -1140,7 +1140,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         }
     }
 
-
     Map getUserAddedVolumes(Workload workload) {
         def configs = workload.configs
         if (configs instanceof String) {
@@ -1441,7 +1440,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     }
 
     protected String getPlatform(Workload container) {
-        (container.server.serverOs?.platform == WINDOWS_PLATFORM ||
+        return (container.server.serverOs?.platform == WINDOWS_PLATFORM ||
                 container.server.osType == WINDOWS_PLATFORM) ? WINDOWS_PLATFORM : LINUX_PLATFORM
     }
 
@@ -1450,7 +1449,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 ? null
                 : containerConfig.scvmmCapabilityProfile
     }
-
 
     Map getAllScvmmOpts(Workload workload) {
         def controllerNode = pickScvmmController(workload.server.cloud)
@@ -2348,7 +2346,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     }
 
     // Refactored saveAndGetNetworkInterface
-    protected Map saveAndGetNetworkInterface(ComputeServer server, String privateIp, String publicIp, Integer index, String macAddress) {
+    protected Map saveAndGetNetworkInterface(ComputeServer server, String privateIp, String publicIp,
+                                             Integer index, String macAddress) {
         log.debug("applyComputeServerNetworkIp: ${privateIp}")
         def rtn = [:]
         ComputeServerInterface netInterface
@@ -2361,11 +2360,13 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 
             netInterface = findNetworkInterface(server, privateIp, index)
             def newInterface = false
-            if (!netInterface) {
+            if (netInterface) {
+                // Update existing interface
+                netInterface.ipAddress = privateIp
+            } else {
+                // Create new interface
                 netInterface = createNetworkInterface(server, privateIp)
                 newInterface = true
-            } else {
-                netInterface.ipAddress = privateIp
             }
             if (publicIp) {
                 publicIp = publicIp?.toString()?.replace(NEWLINE, "")
@@ -2487,10 +2488,130 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return resizeWorkloadAndServer(null, server, resizeRequest, opts, false)
     }
 
+    // Helper for memory and core resize
+    protected boolean handleMemoryAndCoreResize(ComputeServer computeServer, Map resizeConfig,
+                                                Map scvmmOpts, String vmId, Boolean isWorkload, Workload workload) {
+        if (resizeConfig.neededMemory != 0 || resizeConfig.neededCores != 0 ||
+                resizeConfig.minDynamicMemory || resizeConfig.maxDynamicMemory) {
+            def resizeResults = apiService.updateServer(scvmmOpts, vmId, [
+                    maxMemory: resizeConfig.requestedMemory,
+                    maxCores: resizeConfig.requestedCores,
+                    minDynamicMemory: resizeConfig.minDynamicMemory,
+                    maxDynamicMemory: resizeConfig.maxDynamicMemory,
+            ])
+            log.debug("resize results: ${resizeResults}")
+            if (resizeResults.success == true) {
+                computeServer.setConfigProperty(MAX_MEMORY_FIELD, resizeConfig.requestedMemory)
+                computeServer.setConfigProperty(MAX_CORES_FIELD, (resizeConfig.requestedCores ?: 1))
+                computeServer.maxCores = (resizeConfig.requestedCores ?: 1).toLong()
+                computeServer.maxMemory = resizeConfig.requestedMemory.toLong()
+                computeServer = saveAndGet(computeServer)
+                if (isWorkload) {
+                    workload.setConfigProperty(MAX_MEMORY_FIELD, resizeConfig.requestedMemory)
+                    workload.maxMemory = resizeConfig.requestedMemory.toLong()
+                    workload.setConfigProperty(MAX_CORES_FIELD, (resizeConfig.requestedCores ?: 1))
+                    workload.maxCores = (resizeConfig.requestedCores ?: 1).toLong()
+                    workload = context.services.workload.save(workload)
+                    workload.server = computeServer
+                }
+                return true
+            }
+            log.error(resizeResults.error ?: 'Failed to resize container')
+            return false
+        }
+        return true
+    }
+
+    // Update existing volumes
+    protected void updateVolumes(List volumesUpdate, ComputeServer computeServer, Map scvmmOpts, ServiceResponse rtn) {
+        volumesUpdate?.each { volumeUpdate ->
+            log.debug("resizing vm storage: ${volumeUpdate}")
+            StorageVolume existing = volumeUpdate.existingModel
+            Map updateProps = volumeUpdate.updateProps
+            if (updateProps.maxStorage > existing.maxStorage) {
+                def volumeId = existing.externalId
+                def diskSize = ComputeUtility.parseGigabytesToBytes(updateProps.size?.toLong())
+                def resizeResults = apiService.resizeDisk(scvmmOpts, volumeId, diskSize)
+                if (resizeResults.success == true) {
+                    def existingVolume = context.services.storageVolume.get(existing.id)
+                    existingVolume.maxStorage = diskSize
+                    context.services.storageVolume.save(existingVolume)
+                } else {
+                    log.error "Error in resizing volume: ${resizeResults}"
+                    rtn.error = resizeResults.error ?: "Error in resizing volume"
+                }
+            }
+        }
+    }
+
+    // Add new volumes
+    protected void addVolumes(List volumesAdd, ComputeServer computeServer, Map scvmmOpts, ServiceResponse rtn) {
+        def diskCounter = computeServer.volumes?.size()
+        volumesAdd?.each { volumeAdd ->
+            def diskSize = ComputeUtility.parseGigabytesToBytes(volumeAdd.size?.toLong()) / ComputeUtility.ONE_MEGABYTE
+            def volumePath = getVolumePathForDatastore(volumeAdd.datastore)
+            def diskSpec = [
+                    vhdName: "data-${UUID.randomUUID().toString()}",
+                    vhdType: null,
+                    vhdFormat: null,
+                    vhdPath: null,
+                    sizeMb: diskSize,
+            ]
+            log.info("resizeContainer - volumePath: ${volumePath} - diskSpec: ${diskSpec}")
+            def diskResults = apiService.createAndAttachDisk(scvmmOpts, diskSpec, true)
+            log.info("create disk: ${diskResults.success}")
+            if (diskResults.success == true) {
+                def newVolume = buildStorageVolume(computeServer, volumeAdd, diskCounter)
+                if (volumePath) {
+                    newVolume.volumePath = volumePath
+                }
+                newVolume.internalId = diskResults.disk.VhdLocation
+                newVolume.maxStorage = volumeAdd.size.toInteger() * ComputeUtility.ONE_GIGABYTE
+                newVolume.externalId = diskResults.disk.VhdID
+                def updatedDatastore = loadDatastoreForVolume(computeServer.cloud,
+                        diskResults.disk.HostVolumeId, diskResults.disk.FileShareId,
+                        diskResults.disk.PartitionUniqueId) ?: null
+                if (updatedDatastore && newVolume.datastore != updatedDatastore) {
+                    newVolume.datastore = updatedDatastore
+                }
+                context.async.storageVolume.create([newVolume], computeServer).blockingGet()
+                computeServer = getMorpheusServer(computeServer.id)
+                diskCounter++
+            } else {
+                log.error "Error in creating the volume: ${diskResults}"
+                rtn.error = "Error in creating the volume"
+            }
+        }
+    }
+
+    // Delete removed volumes
+    protected void deleteVolumes(List volumesDelete, ComputeServer computeServer, Map scvmmOpts) {
+        volumesDelete?.each { volume ->
+            log.debug "Deleting volume : ${volume.externalId}"
+            def detachResults = apiService.removeDisk(scvmmOpts, volume.externalId)
+            log.debug("detachResults.success: ${detachResults.data}")
+            if (detachResults.success == true) {
+                context.async.storageVolume.remove([volume], computeServer, true).blockingGet()
+                computeServer = getMorpheusServer(computeServer.id)
+            }
+        }
+    }
+
+    // helper for volume operations
+    protected boolean handleVolumeOperations(Map opts, ResizeRequest resizeRequest, ComputeServer computeServer,
+                                             Map scvmmOpts, ServiceResponse rtn) {
+        if (opts.volumes && !rtn.error) {
+            updateVolumes(resizeRequest.volumesUpdate, computeServer, scvmmOpts, rtn)
+            addVolumes(resizeRequest.volumesAdd, computeServer, scvmmOpts, rtn)
+            deleteVolumes(resizeRequest.volumesDelete, computeServer, scvmmOpts)
+        }
+        return  rtn.error ? false : true
+    }
+
+    // Refactored resizeWorkloadAndServer
     protected ServiceResponse resizeWorkloadAndServer(Workload workload, ComputeServer server,
                                                       ResizeRequest resizeRequest, Map opts, Boolean isWorkload) {
         log.debug("resizeWorkloadAndServer workload.id: ${workload?.id} - opts: ${opts}")
-
         ServiceResponse rtn = ServiceResponse.success()
         ComputeServer computeServer = isWorkload ? getMorpheusServer(workload.server?.id) : getMorpheusServer(server.id)
         try {
@@ -2500,125 +2621,26 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             def scvmmOpts = isWorkload
                     ? getAllScvmmOpts(workload)
                     : getAllScvmmServerOpts(computeServer)
-
-            // Memory and core changes
             def resizeConfig = isWorkload ?
                     getResizeConfig(workload, null, workload.instance.plan, opts, resizeRequest) :
                     getResizeConfig(null, computeServer, computeServer.plan, opts, resizeRequest)
             log.debug("resizeConfig: ${resizeConfig}")
-            def requestedMemory = resizeConfig.requestedMemory
-            def requestedCores = resizeConfig.requestedCores
-            def neededMemory = resizeConfig.neededMemory
-            def neededCores = resizeConfig.neededCores
-            def minDynamicMemory = resizeConfig.minDynamicMemory
-            def maxDynamicMemory = resizeConfig.maxDynamicMemory
             def stopRequired = !resizeConfig.hotResize
-
-            // Only stop if needed
             def stopResults
             if (stopRequired) {
                 stopResults = isWorkload ? stopWorkload(workload) : stopServer(computeServer)
             }
             log.debug("stopResults?.success: ${stopResults?.success}")
             if (!stopRequired || stopResults?.success == true) {
-                if (neededMemory != 0 || neededCores != 0 || minDynamicMemory || maxDynamicMemory) {
-                    def resizeResults = apiService.updateServer(scvmmOpts, vmId,
-                            [maxMemory       : requestedMemory, maxCores: requestedCores,
-                             minDynamicMemory: minDynamicMemory,
-                             maxDynamicMemory: maxDynamicMemory,])
-                    log.debug("resize results: ${resizeResults}")
-                    if (resizeResults.success == true) {
-                        computeServer.setConfigProperty(MAX_MEMORY_FIELD, requestedMemory)
-                        computeServer.setConfigProperty(MAX_CORES_FIELD, (requestedCores ?: 1))
-                        computeServer.maxCores = (requestedCores ?: 1).toLong()
-                        computeServer.maxMemory = requestedMemory.toLong()
-                        computeServer = saveAndGet(computeServer)
-                        if (isWorkload) {
-                            workload.setConfigProperty(MAX_MEMORY_FIELD, requestedMemory)
-                            workload.maxMemory = requestedMemory.toLong()
-                            workload.setConfigProperty(MAX_CORES_FIELD, (requestedCores ?: 1))
-                            workload.maxCores = (requestedCores ?: 1).toLong()
-                            workload = context.services.workload.save(workload)
-                            workload.server = computeServer
-                        }
-                    } else {
-                        rtn.error = resizeResults.error ?: 'Failed to resize container'
+                boolean resizeSuccess = handleMemoryAndCoreResize(computeServer, resizeConfig, scvmmOpts,
+                        vmId, isWorkload, workload)
+                if (resizeSuccess) {
+                    boolean volumeSuccess = handleVolumeOperations(opts, resizeRequest, computeServer, scvmmOpts, rtn)
+                    if (!volumeSuccess) {
+                        rtn.error = 'Failed to handle volume operations'
                     }
-                }
-                // Handle all the volumes
-                if (opts.volumes && !rtn.error) {
-                    def diskCounter = computeServer.volumes?.size()
-                    resizeRequest.volumesUpdate?.each { volumeUpdate ->
-                        log.debug("resizing vm storage: count: ${diskCounter} ${volumeUpdate}")
-                        StorageVolume existing = volumeUpdate.existingModel
-                        Map updateProps = volumeUpdate.updateProps
-                        // existing disk - resize it
-                        if (updateProps.maxStorage > existing.maxStorage) {
-                            def volumeId = existing.externalId
-                            def diskSize = ComputeUtility.parseGigabytesToBytes(updateProps.size?.toLong())
-                            def resizeResults = apiService.resizeDisk(scvmmOpts, volumeId, diskSize)
-                            if (resizeResults.success == true) {
-                                def existingVolume = context.services.storageVolume.get(existing.id)
-                                existingVolume.maxStorage = diskSize
-                                context.services.storageVolume.save(existingVolume)
-                            } else {
-                                log.error "Error in resizing volume: ${resizeResults}"
-                                rtn.error = resizeResults.error ?: "Error in resizing volume"
-                            }
-                        }
-                    }
-                    // new disk add it
-                    resizeRequest.volumesAdd.each { volumeAdd ->
-                        def diskSize = ComputeUtility.parseGigabytesToBytes(
-                                volumeAdd.size?.toLong()
-                        ) / ComputeUtility.ONE_MEGABYTE
-                        def busNumber = ZERO_STRING
-                        def volumePath = getVolumePathForDatastore(volumeAdd.datastore)
-                        // Create the new diskSpec
-                        def diskSpec = [
-                                vhdName  : "data-${UUID.randomUUID().toString()}",
-                                vhdType  : null,  // Use Default as determined from existing VM
-                                vhdFormat: null, // Use Default  as determined from existing VM
-                                vhdPath  : null, // Place with the VM?? or should this be volumePath?
-                                sizeMb   : diskSize,
-                        ]
-                        log.info("resizeContainer - volumePath: ${volumePath} - diskSpec: ${diskSpec}")
-                        def diskResults = apiService.createAndAttachDisk(scvmmOpts, diskSpec, true)
-                        log.info("create disk: ${diskResults.success}")
-                        if (diskResults.success == true) {
-                            def newVolume = buildStorageVolume(computeServer, volumeAdd, diskCounter)
-                            if (volumePath) {
-                                newVolume.volumePath = volumePath
-                            }
-                            // internalId can now be set to the location of the VirtualHardDisk (VhdLocation)
-                            newVolume.internalId = diskResults.disk.VhdLocation
-                            newVolume.maxStorage = volumeAdd.size.toInteger() * ComputeUtility.ONE_GIGABYTE
-                            newVolume.externalId = diskResults.disk.VhdID
-
-                            def updatedDatastore = loadDatastoreForVolume(computeServer.cloud,
-                                    diskResults.disk.HostVolumeId, diskResults.disk.FileShareId,
-                                    diskResults.disk.PartitionUniqueId) ?: null
-                            if (updatedDatastore && newVolume.datastore != updatedDatastore) {
-                                newVolume.datastore = updatedDatastore
-                            }
-                            context.async.storageVolume.create([newVolume], computeServer).blockingGet()
-                            computeServer = getMorpheusServer(computeServer.id)
-                            diskCounter++
-                        } else {
-                            log.error "Error in creating the volume: ${diskResults}"
-                            rtn.error = "Error in creating the volume"
-                        }
-                    }
-                    // Delete any removed volumes
-                    resizeRequest.volumesDelete.each { volume ->
-                        log.debug "Deleting volume : ${volume.externalId}"
-                        def detachResults = apiService.removeDisk(scvmmOpts, volume.externalId)
-                        log.debug("detachResults.success: ${detachResults.data}")
-                        if (detachResults.success == true) {
-                            context.async.storageVolume.remove([volume], computeServer, true).blockingGet()
-                            computeServer = getMorpheusServer(computeServer.id)
-                        }
-                    }
+                } else {
+                    rtn.error = 'Failed to resize memory/cores'
                 }
                 computeServer = getMorpheusServer(computeServer.id)
                 rtn.success = true
