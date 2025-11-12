@@ -2320,69 +2320,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         }
     }
 
-//    protected Map saveAndGetNetworkInterface(ComputeServer server, String privateIp, String publicIp, Integer index,
-//                                             String macAddress) {
-//        log.debug("applyComputeServerNetworkIp: ${privateIp}")
-//        def rtn = [:]
-//        ComputeServerInterface netInterface
-//        if (privateIp) {
-//            privateIp = privateIp?.toString()?.contains(NEWLINE) ?
-//                    privateIp.toString().replace(NEWLINE, "") :
-//                    privateIp.toString()
-//            def newInterface = false
-//            server.internalIp = privateIp
-//            server.sshHost = privateIp
-//            server.macAddress = macAddress
-//            log.debug("Setting private ip on server:${server.sshHost}")
-//            netInterface = server.interfaces?.find { csi -> csi.ipAddress == privateIp }
-//
-//            if (netInterface == null) {
-//                switch (index) {
-//                    case 0:
-//                        netInterface = server.interfaces?.find { csi -> csi.primaryInterface == true }
-//                        break
-//                    default:
-//                        netInterface = server.interfaces?.find { dis -> dis.displayOrder == index }
-//                        if (netInterface == null) {
-//                            netInterface = server.interfaces?.size() > index ? server.interfaces[index] : null
-//                        }
-//                        break
-//                }
-//            }
-//
-//            if (netInterface == null) {
-//                def interfaceName = server.sourceImage?.interfaceName ?: 'eth0'
-//                netInterface = new ComputeServerInterface(
-//                        name: interfaceName,
-//                        ipAddress: privateIp,
-//                        primaryInterface: true,
-//                        displayOrder: (server.interfaces?.size() ?: 0) + 1
-//                )
-//                netInterface.addresses += new NetAddress(type: NetAddress.AddressType.IPV4, address: privateIp)
-//                newInterface = true
-//            } else {
-//                netInterface.ipAddress = privateIp
-//            }
-//            if (publicIp) {
-//                publicIp = publicIp?.toString().contains(NEWLINE)
-//                        ? publicIp.toString().replace(NEWLINE, "")
-//                        : publicIp.toString()
-//                netInterface.publicIpAddress = publicIp
-//                server.externalIp = publicIp
-//            }
-//            netInterface.macAddress = macAddress
-//            if (newInterface == true) {
-//                context.async.computeServer.computeServerInterface.create([netInterface], server).blockingGet()
-//            } else {
-//                context.async.computeServer.computeServerInterface.save([netInterface]).blockingGet()
-//            }
-//        }
-//        def savedServer = saveAndGetMorpheusServer(server, true)
-//        rtn.netInterface = netInterface
-//        rtn.server = savedServer
-//        return rtn
-//    }
-
     // Helper to find existing interface
     protected ComputeServerInterface findNetworkInterface(ComputeServer server, String privateIp, Integer index) {
         def iface = server.interfaces?.find { csi -> csi.ipAddress == privateIp }
@@ -2709,6 +2646,62 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return rtn
     }
 
+    // Helper for memory and core calculation
+    protected void populateMemoryAndCoreConfig(Map rtn, Workload workload,
+                                               ComputeServer server, ServicePlan plan, ResizeRequest resizeRequest) {
+        rtn.requestedMemory = resizeRequest.maxMemory
+        rtn.requestedCores = resizeRequest?.maxCores
+        def currentMemory = resolveCurrentMemory(server, workload)
+        def currentCores = resolveCurrentCores(server, workload)
+        rtn.neededMemory = rtn.requestedMemory - currentMemory
+        rtn.neededCores = (rtn.requestedCores ?: 1) - (currentCores ?: 1)
+        setDynamicMemory(rtn, plan)
+        rtn.hotResize = false
+    }
+
+    // Helper
+    protected Long resolveCurrentMemory(ComputeServer server, Workload workload) {
+        return server?.maxMemory
+                ?: workload?.server?.maxMemory
+                ?: workload?.maxMemory
+                ?: workload?.getConfigProperty(MAX_MEMORY_FIELD)?.toLong()
+    }
+
+    // Helper
+    protected Integer resolveCurrentCores(ComputeServer server, Workload workload) {
+        return server?.maxCores ?: workload?.maxCores ?: 1
+    }
+
+    // Helper for disk update logic
+    protected void handleDiskUpdates(Map rtn, Map opts, ResizeRequest resizeRequest) {
+        if (opts.volumes) {
+            resizeRequest.volumesUpdate?.each { volumeUpdate ->
+                if (volumeUpdate.existingModel) {
+                    def volumeCode = volumeUpdate.existingModel.type?.code ?: STANDARD_VALUE
+                    if (volumeUpdate.updateProps.maxStorage > volumeUpdate.existingModel.maxStorage) {
+                        if (volumeCode.contains("differencing")) {
+                            log.warn("getResizeConfig - Resize is not supported on " +
+                                    "Differencing Disks  - volume type ${volumeCode}")
+                            rtn.allowed = false
+                        } else {
+                            log.info("getResizeConfig - volumeCode: ${volumeCode}. Volume Resize requested. " +
+                                    "Current: ${volumeUpdate.existingModel.maxStorage} - requested " +
+                                    ": ${volumeUpdate.updateProps.maxStorage}")
+                            rtn.allowed = true
+                        }
+                        if (volumeUpdate.existingModel.rootVolume) {
+                            rtn.hotResize = false
+                        }
+                    }
+                } else {
+                    log.info("getResizeConfig - Adding new volume ${volumeUpdate.volume}")
+                    rtn.allowed = true
+                }
+            }
+        }
+    }
+
+    // Refactored getResizeConfig
     protected Map getResizeConfig(Workload workload = null, ComputeServer server = null, ServicePlan plan,
                                   Map opts = [:], ResizeRequest resizeRequest) {
         log.debug("getResizeConfig: ${resizeRequest}")
@@ -2718,53 +2711,14 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 maxDynamicMemory: null,
         ]
         try {
-            // Memory and core changes
-            rtn.requestedMemory = resizeRequest.maxMemory
-            rtn.requestedCores = resizeRequest?.maxCores
-            def currentMemory = server?.maxMemory
-                    ?: workload?.server?.maxMemory
-                    ?: workload?.maxMemory
-                    ?: workload?.getConfigProperty(MAX_MEMORY_FIELD)?.toLong()
-            def currentCores = server?.maxCores ?: workload?.maxCores ?: 1
-            rtn.neededMemory = rtn.requestedMemory - currentMemory
-            rtn.neededCores = (rtn.requestedCores ?: 1) - (currentCores ?: 1)
-            setDynamicMemory(rtn, plan)
-
-            rtn.hotResize = false
-
-            // Disk changes.. see if stop is required
-            if (opts.volumes) {
-                resizeRequest.volumesUpdate?.each { volumeUpdate ->
-                    if (volumeUpdate.existingModel) {
-                        // existing disk - resize it
-                        def volumeCode = volumeUpdate.existingModel.type?.code ?: STANDARD_VALUE
-                        if (volumeUpdate.updateProps.maxStorage > volumeUpdate.existingModel.maxStorage) {
-                            if (volumeCode.contains("differencing")) {
-                                log.warn("getResizeConfig - Resize is not supported on Differencing" +
-                                        " Disks  - volume type ${volumeCode}")
-                                rtn.allowed = false
-                            } else {
-                                log.info("getResizeConfig - volumeCode: ${volumeCode}. Volume Resize requested." +
-                                        " Current: ${volumeUpdate.existingModel.maxStorage} - requested" +
-                                        " : ${volumeUpdate.updateProps.maxStorage}")
-                                rtn.allowed = true
-                            }
-                            if (volumeUpdate.existingModel.rootVolume) {
-                                rtn.hotResize = false
-                            }
-                        }
-                    } else {
-                        // new disk - add it
-                        log.info("getResizeConfig - Adding new volume ${volumeUpdate.volume}")
-                        rtn.allowed = true
-                    }
-                }
-            }
+            populateMemoryAndCoreConfig(rtn, workload, server, plan, resizeRequest)
+            handleDiskUpdates(rtn, opts, resizeRequest)
         } catch (e) {
             log.error("getResizeConfig error - ${e}", e)
         }
         return rtn
     }
+
 
     StorageVolume buildStorageVolume(ComputeServer computeServer, Map volumeAdd, Integer newCounter) {
         def newVolume = new StorageVolume(
