@@ -24,6 +24,7 @@ import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
 import groovy.json.JsonSlurper
 
+@SuppressWarnings('CompileStatic')
 class ScvmmProvisionProvider extends AbstractProvisionProvider implements WorkloadProvisionProvider,
         HostProvisionProvider, ProvisionProvider.HypervisorProvisionFacet, HostProvisionProvider.ResizeFacet,
         WorkloadProvisionProvider.ResizeFacet, ProvisionProvider.BlockDeviceNameFacet {
@@ -852,8 +853,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 opts.installAgent = (virtualImage ? virtualImage.installAgent : true) &&
                         !workloadRequest.cloudConfigOpts?.noAgent
                 // If the image is an ISO or VMTools not installed, we need to skip network wait
-                opts.skipNetworkWait = virtualImage?.imageType == 'iso' ||
-                        !virtualImage?.vmToolsInstalled ? true : false
+                opts.skipNetworkWait = virtualImage?.imageType == 'iso' || !virtualImage?.vmToolsInstalled
                 // user config
                 def userGroups = workload.instance.userGroups?.toList() ?: []
                 if (workload.instance.userGroup && userGroups.contains(workload.instance.userGroup) == false) {
@@ -1085,55 +1085,61 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return this.context
     }
 
+    // Refactored cloneParentCleanup
     protected void cloneParentCleanup(Map<String, Object> scvmmOpts, ServiceResponse rtn) {
         if (scvmmOpts.cloneVMId && scvmmOpts.cloneContainerId) {
             try {
-                // Start the parent VM if needed
-                if (scvmmOpts.startClonedVM) {
-                    log.debug "Handling startup of the original VM: ${scvmmOpts.cloneVMId}"
-                    def startServerOpts = [async: true]
-                    if (scvmmOpts.cloneBaseOpts?.clonedScvmmOpts) {
-                        startServerOpts += scvmmOpts.cloneBaseOpts.clonedScvmmOpts
-                    }
-                    def startResults = apiService.startServer(startServerOpts, scvmmOpts.cloneVMId)
-                    if (!startResults.success) {
-                        log.error "Failed to start the parent VM ${scvmmOpts.cloneVMId}: ${startResults.msg}"
-                    }
-                    Workload savedContainer =
-                            context.services.workload.find(new DataQuery().withFilter(ID_FIELD,
-                                    scvmmOpts.cloneContainerId.toLong()))
-                    if (savedContainer) {
-                        savedContainer.userStatus = Workload.Status.running.toString()
-                        savedContainer.status = Workload.Status.running
-                        context.services.workload.save(savedContainer)
-                    }
-                    ComputeServer savedServer = context.services.computeServer.get(savedContainer.server?.id)
-                    if (savedServer) {
-                        context.async.computeServer.updatePowerState(savedServer.id, ComputeServer.PowerState.on)
-                    }
-                }
-
-                // Always check for DVD/ISO cleanup on the parent VM
-                if (scvmmOpts.cloneBaseOpts?.clonedScvmmOpts) {
-                    log.debug "Checking for DVD/ISO cleanup on parent VM: ${scvmmOpts.cloneVMId}"
-                    def setCdromResults = apiService.setCdrom(scvmmOpts.cloneBaseOpts.clonedScvmmOpts)
-                    if (!setCdromResults.success) {
-                        log.error "Failed to unmount DVD of parent VM. Please unmount manually as this may cause" +
-                                " issues for further clone operations."
-                    }
-                    if (scvmmOpts.deleteDvdOnComplete?.deleteIso) {
-                        log.debug "Deleting ISO of parent VM: ${scvmmOpts.deleteDvdOnComplete.deleteIso}"
-                        apiService.deleteIso(scvmmOpts.cloneBaseOpts.clonedScvmmOpts,
-                                scvmmOpts.deleteDvdOnComplete.deleteIso)
-                    }
-                }
-            } catch (RuntimeException ex) {
+                handleParentVmStartup(scvmmOpts)
+                handleDvdIsoCleanup(scvmmOpts)
+            } catch (Exception ex) {
                 log.error("Error during parent VM cleanup for ${scvmmOpts.cloneVMId}: ${ex.message}", ex)
                 rtn.warning = true
                 rtn.msg = "Error during parent VM cleanup for ${scvmmOpts.cloneVMId}: ${ex.message}"
             }
         }
     }
+
+    protected void handleParentVmStartup(Map<String, Object> scvmmOpts) {
+        if (scvmmOpts.startClonedVM) {
+            log.debug "Handling startup of the original VM: ${scvmmOpts.cloneVMId}"
+            def startServerOpts = [async: true]
+            if (scvmmOpts.cloneBaseOpts?.clonedScvmmOpts) {
+                startServerOpts += scvmmOpts.cloneBaseOpts.clonedScvmmOpts
+            }
+            def startResults = apiService.startServer(startServerOpts, scvmmOpts.cloneVMId)
+            if (!startResults.success) {
+                log.error "Failed to start the parent VM ${scvmmOpts.cloneVMId}: ${startResults.msg}"
+            }
+            Workload savedContainer = context.services.workload.find(
+                    new DataQuery().withFilter(ID_FIELD, scvmmOpts.cloneContainerId.toLong()))
+            if (savedContainer) {
+                savedContainer.userStatus = Workload.Status.running.toString()
+                savedContainer.status = Workload.Status.running
+                context.services.workload.save(savedContainer)
+            }
+            ComputeServer savedServer = context.services.computeServer.get(savedContainer.server?.id)
+            if (savedServer) {
+                context.async.computeServer.updatePowerState(savedServer.id, ComputeServer.PowerState.on)
+            }
+        }
+    }
+
+    protected void handleDvdIsoCleanup(Map<String, Object> scvmmOpts) {
+        if (scvmmOpts.cloneBaseOpts?.clonedScvmmOpts) {
+            log.debug "Checking for DVD/ISO cleanup on parent VM: ${scvmmOpts.cloneVMId}"
+            def setCdromResults = apiService.setCdrom(scvmmOpts.cloneBaseOpts.clonedScvmmOpts)
+            if (!setCdromResults.success) {
+                log.error "Failed to unmount DVD of parent VM. Please unmount manually as this may cause" +
+                        " issues for further clone operations."
+            }
+            if (scvmmOpts.deleteDvdOnComplete?.deleteIso) {
+                log.debug "Deleting ISO of parent VM: ${scvmmOpts.deleteDvdOnComplete.deleteIso}"
+                apiService.deleteIso(scvmmOpts.cloneBaseOpts.clonedScvmmOpts,
+                        scvmmOpts.deleteDvdOnComplete.deleteIso)
+            }
+        }
+    }
+
 
     Map getUserAddedVolumes(Workload workload) {
         def configs = workload.configs
@@ -1370,38 +1376,81 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return rtn
     }
 
+    // Refactored getScvmmContainerOpts
     Map getScvmmContainerOpts(Workload container) {
         def serverConfig = container.server.configMap
         def containerConfig = container.configMap
-        def network = context.services.cloud.network.get(containerConfig.networkId?.toLong())
+        def network = getNetwork(containerConfig)
         def serverFolder = "morpheus\\morpheus_server_${container.server.id}"
-        def maxMemory = container.maxMemory ?: container.instance.plan.maxMemory
-        def maxCpu = container.maxCpu ?: container.instance.plan?.maxCpu ?: 1
-        def maxCores = container.maxCores ?: container.instance.plan.maxCores ?: 1
+        def maxMemory = getMaxMemory(container)
+        def maxCpu = getMaxCpu(container)
+        def maxCores = getMaxCores(container)
         def maxStorage = getContainerRootSize(container)
         def maxTotalStorage = getContainerVolumeSize(container)
         def dataDisks = getContainerDataDiskList(container)
-        def resourcePool = container.server?.resourcePool ? container.server?.resourcePool : null
-        def platform = (container.server.serverOs?.platform == WINDOWS_PLATFORM ||
-                container.server.osType == WINDOWS_PLATFORM) ? WINDOWS_PLATFORM : LINUX_PLATFORM
-        return [config                : serverConfig, vmId: container.server.externalId,
-                name                  : container.server.externalId, server: container.server,
+        def resourcePool = getResourcePool(container)
+        def platform = getPlatform(container)
+        def scvmmCapabilityProfile = getScvmmCapabilityProfile(containerConfig)
+        def accountId = container.account?.id
+
+        return [
+                config                : serverConfig,
+                vmId                  : container.server.externalId,
+                name                  : container.server.externalId,
+                server                : container.server,
                 serverId              : container.server?.id,
-                memory                : maxMemory, maxCpu: maxCpu, maxCores: maxCores, serverFolder: serverFolder,
+                memory                : maxMemory,
+                maxCpu                : maxCpu,
+                maxCores              : maxCores,
+                serverFolder          : serverFolder,
                 hostname              : container.hostname,
-                network               : network, networkId: network?.id, platform: platform,
-                externalId            : container.server.externalId, networkType: containerConfig.networkType,
-                containerConfig       : containerConfig, resourcePool: resourcePool?.externalId,
+                network               : network,
+                networkId             : network?.id,
+                platform              : platform,
+                externalId            : container.server.externalId,
+                networkType           : containerConfig.networkType,
+                containerConfig       : containerConfig,
+                resourcePool          : resourcePool?.externalId,
                 hostId                : containerConfig.hostId,
-                osDiskSize            : maxStorage, maxTotalStorage: maxTotalStorage, dataDisks: dataDisks,
-                scvmmCapabilityProfile: (
-                        containerConfig.scvmmCapabilityProfile?.toString() == DEFAULT_CAPABILITY_PROFILE
-                                ? null
-                                : containerConfig.scvmmCapabilityProfile
-                ),
-                accountId             : container.account?.id,
+                osDiskSize            : maxStorage,
+                maxTotalStorage       : maxTotalStorage,
+                dataDisks             : dataDisks,
+                scvmmCapabilityProfile: scvmmCapabilityProfile,
+                accountId             : accountId,
         ]
     }
+
+    protected Network getNetwork(Map containerConfig) {
+        return context.services.cloud.network.get(containerConfig.networkId?.toLong())
+    }
+
+    protected Long getMaxMemory(Workload container) {
+        return container.maxMemory ?: container.instance.plan.maxMemory
+    }
+
+    protected Long getMaxCpu(Workload container) {
+        return container.maxCpu ?: container.instance.plan?.maxCpu ?: 1
+    }
+
+    protected Long getMaxCores(Workload container) {
+        return container.maxCores ?: container.instance.plan.maxCores ?: 1
+    }
+
+    protected CloudPool getResourcePool(Workload container) {
+        return container.server?.resourcePool ?: null
+    }
+
+    protected String getPlatform(Workload container) {
+        (container.server.serverOs?.platform == WINDOWS_PLATFORM ||
+                container.server.osType == WINDOWS_PLATFORM) ? WINDOWS_PLATFORM : LINUX_PLATFORM
+    }
+
+    protected def getScvmmCapabilityProfile(Map containerConfig) {
+        return containerConfig.scvmmCapabilityProfile?.toString() == DEFAULT_CAPABILITY_PROFILE
+                ? null
+                : containerConfig.scvmmCapabilityProfile
+    }
+
 
     Map getAllScvmmOpts(Workload workload) {
         def controllerNode = pickScvmmController(workload.server.cloud)
@@ -1582,9 +1631,9 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 maxCpu                : maxCpu, maxCores: maxCores, serverFolder: serverFolder,
                 hostname              : server.externalHostname, network: network, networkId: network?.id,
                 maxTotalStorage       : maxTotalStorage, dataDisks: dataDisks,
-                scvmmCapabilityProfile: (serverConfig.scvmmCapabilityProfile?.toString() !=
+                scvmmCapabilityProfile: (serverConfig.scvmmCapabilityProfile?.toString() ==
                         DEFAULT_CAPABILITY_PROFILE) ?
-                        serverConfig.scvmmCapabilityProfile : null,
+                        null : serverConfig.scvmmCapabilityProfile,
                 accountId             : server.account?.id]
     }
 
@@ -2271,55 +2320,123 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         }
     }
 
-    protected Map saveAndGetNetworkInterface(ComputeServer server, String privateIp, String publicIp, Integer index,
-                                             String macAddress) {
+//    protected Map saveAndGetNetworkInterface(ComputeServer server, String privateIp, String publicIp, Integer index,
+//                                             String macAddress) {
+//        log.debug("applyComputeServerNetworkIp: ${privateIp}")
+//        def rtn = [:]
+//        ComputeServerInterface netInterface
+//        if (privateIp) {
+//            privateIp = privateIp?.toString()?.contains(NEWLINE) ?
+//                    privateIp.toString().replace(NEWLINE, "") :
+//                    privateIp.toString()
+//            def newInterface = false
+//            server.internalIp = privateIp
+//            server.sshHost = privateIp
+//            server.macAddress = macAddress
+//            log.debug("Setting private ip on server:${server.sshHost}")
+//            netInterface = server.interfaces?.find { csi -> csi.ipAddress == privateIp }
+//
+//            if (netInterface == null) {
+//                switch (index) {
+//                    case 0:
+//                        netInterface = server.interfaces?.find { csi -> csi.primaryInterface == true }
+//                        break
+//                    default:
+//                        netInterface = server.interfaces?.find { dis -> dis.displayOrder == index }
+//                        if (netInterface == null) {
+//                            netInterface = server.interfaces?.size() > index ? server.interfaces[index] : null
+//                        }
+//                        break
+//                }
+//            }
+//
+//            if (netInterface == null) {
+//                def interfaceName = server.sourceImage?.interfaceName ?: 'eth0'
+//                netInterface = new ComputeServerInterface(
+//                        name: interfaceName,
+//                        ipAddress: privateIp,
+//                        primaryInterface: true,
+//                        displayOrder: (server.interfaces?.size() ?: 0) + 1
+//                )
+//                netInterface.addresses += new NetAddress(type: NetAddress.AddressType.IPV4, address: privateIp)
+//                newInterface = true
+//            } else {
+//                netInterface.ipAddress = privateIp
+//            }
+//            if (publicIp) {
+//                publicIp = publicIp?.toString().contains(NEWLINE)
+//                        ? publicIp.toString().replace(NEWLINE, "")
+//                        : publicIp.toString()
+//                netInterface.publicIpAddress = publicIp
+//                server.externalIp = publicIp
+//            }
+//            netInterface.macAddress = macAddress
+//            if (newInterface == true) {
+//                context.async.computeServer.computeServerInterface.create([netInterface], server).blockingGet()
+//            } else {
+//                context.async.computeServer.computeServerInterface.save([netInterface]).blockingGet()
+//            }
+//        }
+//        def savedServer = saveAndGetMorpheusServer(server, true)
+//        rtn.netInterface = netInterface
+//        rtn.server = savedServer
+//        return rtn
+//    }
+
+    // Helper to find existing interface
+    protected ComputeServerInterface findNetworkInterface(ComputeServer server, String privateIp, Integer index) {
+        def iface = server.interfaces?.find { csi -> csi.ipAddress == privateIp }
+        if (iface) return iface
+        if (index == 0) {
+            return server.interfaces?.find { csi -> csi.primaryInterface == true }
+        }
+        iface = server.interfaces?.find { dis -> dis.displayOrder == index }
+        if (!iface && server.interfaces?.size() > index) {
+            iface = server.interfaces[index]
+        }
+        return iface
+    }
+
+    // Helper to create new interface
+    protected ComputeServerInterface createNetworkInterface(ComputeServer server, String privateIp) {
+        def interfaceName = server.sourceImage?.interfaceName ?: 'eth0'
+        def netInterface = new ComputeServerInterface(
+                name: interfaceName,
+                ipAddress: privateIp,
+                primaryInterface: true,
+                displayOrder: (server.interfaces?.size() ?: 0) + 1
+        )
+        netInterface.addresses += new NetAddress(type: NetAddress.AddressType.IPV4, address: privateIp)
+        return netInterface
+    }
+
+    // Refactored saveAndGetNetworkInterface
+    protected Map saveAndGetNetworkInterface(ComputeServer server, String privateIp, String publicIp, Integer index, String macAddress) {
         log.debug("applyComputeServerNetworkIp: ${privateIp}")
         def rtn = [:]
         ComputeServerInterface netInterface
         if (privateIp) {
-            privateIp = privateIp?.toString()?.contains(NEWLINE) ?
-                    privateIp.toString().replace(NEWLINE, "") :
-                    privateIp.toString()
-            def newInterface = false
+            privateIp = privateIp?.toString()?.replace(NEWLINE, "")
             server.internalIp = privateIp
             server.sshHost = privateIp
             server.macAddress = macAddress
             log.debug("Setting private ip on server:${server.sshHost}")
-            netInterface = server.interfaces?.find { csi -> csi.ipAddress == privateIp }
 
-            if (netInterface == null) {
-                if (index == 0) {
-                    netInterface = server.interfaces?.find { pi -> pi.primaryInterface == true }
-                }
-                if (netInterface == null) {
-                    netInterface = server.interfaces?.find { dis -> dis.displayOrder == index }
-                }
-                if (netInterface == null) {
-                    netInterface = server.interfaces?.size() > index ? server.interfaces[index] : null
-                }
-            }
-            if (netInterface == null) {
-                def interfaceName = server.sourceImage?.interfaceName ?: 'eth0'
-                netInterface = new ComputeServerInterface(
-                        name: interfaceName,
-                        ipAddress: privateIp,
-                        primaryInterface: true,
-                        displayOrder: (server.interfaces?.size() ?: 0) + 1
-                )
-                netInterface.addresses += new NetAddress(type: NetAddress.AddressType.IPV4, address: privateIp)
+            netInterface = findNetworkInterface(server, privateIp, index)
+            def newInterface = false
+            if (!netInterface) {
+                netInterface = createNetworkInterface(server, privateIp)
                 newInterface = true
             } else {
                 netInterface.ipAddress = privateIp
             }
             if (publicIp) {
-                publicIp = publicIp?.toString().contains(NEWLINE)
-                        ? publicIp.toString().replace(NEWLINE, "")
-                        : publicIp.toString()
+                publicIp = publicIp?.toString()?.replace(NEWLINE, "")
                 netInterface.publicIpAddress = publicIp
                 server.externalIp = publicIp
             }
             netInterface.macAddress = macAddress
-            if (newInterface == true) {
+            if (newInterface) {
                 context.async.computeServer.computeServerInterface.create([netInterface], server).blockingGet()
             } else {
                 context.async.computeServer.computeServerInterface.save([netInterface]).blockingGet()

@@ -11,6 +11,7 @@ import com.morpheusdata.model.Cloud
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
 
+@SuppressWarnings('CompileStatic')
 class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
     // Added constants to remove duplicate string literals
     private static final String CRED_LOCAL = 'local'

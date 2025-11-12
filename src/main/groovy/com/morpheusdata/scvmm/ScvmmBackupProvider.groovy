@@ -4,6 +4,7 @@ import com.morpheusdata.core.MorpheusContext
 import com.morpheusdata.core.backup.BackupJobProvider
 import com.morpheusdata.core.backup.MorpheusBackupProvider
 
+@SuppressWarnings('CompileStatic')
 class ScvmmBackupProvider extends MorpheusBackupProvider {
     BackupJobProvider backupJobProvider
 

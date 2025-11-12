@@ -5,7 +5,6 @@ import com.morpheusdata.model.OptionType
 import com.morpheusdata.model.PlatformType
 
 class ComputeServerTypeHelper {
-
     // Constants for ComputeServerType
     private static final String CONFIG_CONTEXT = 'config'
     private static final String SCVMM_SOURCE_TYPE = 'scvmm'
@@ -156,7 +155,6 @@ class ComputeServerTypeHelper {
                 containerEngine: DOCKER_ENGINE, provisionTypeCode: SCVMM_PROVISION_TYPE,
                 computeTypeCode: KUBE_WORKER_NODE, optionTypes: [hostOptionType]
         )
-
         return serverTypes
     }
 }
