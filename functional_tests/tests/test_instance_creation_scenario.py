@@ -294,8 +294,9 @@ class TestSCVMMPlugin:
         cloud_id = TestSCVMMPlugin.cloud_id
         group_id = TestSCVMMPlugin.group_id
         plan_name = "1 Core, 4GB Memory"
+        cluster_name = DateTimeGenUtils.name_with_datetime("scvmm-clus", "%Y%m%d-%H%M%S")
 
-        cluster_id = SCVMMUtils.create_scvmm_cluster(morpheus_session, cloud_id, group_id, plan_name)
+        cluster_id = SCVMMUtils.create_scvmm_cluster(morpheus_session, cloud_id, group_id, plan_name, cluster_name)
         assert cluster_id, "Cluster creation failed! No cluster ID returned."
 
         cluster_details = morpheus_session.clusters.get_cluster(cluster_id=cluster_id).json().get("cluster", {})
@@ -303,6 +304,11 @@ class TestSCVMMPlugin:
         assert cluster_details.get(
             "status") == "ok", f"Cluster creation failed, current status: {cluster_details.get('status')}"
         assert cluster_details.get("layout", {}).get("id"), "Layout ID missing in cluster details"
+        host_details = morpheus_session.hosts.list_hosts(name= cluster_name).json().get("servers", [])
+        agent_installed= host_details[0].get("agentInstalled") if host_details else False
+        agent_version= host_details[0].get("agentVersion") if host_details else "N/A"
+        log.info(f"Agent version: {agent_version} on cluster host")
+        assert agent_installed, "Agent installation failed on cluster host!"
         log.info(f"Cluster {cluster_id} verified successfully with status ok")
 
         # Delete cluster

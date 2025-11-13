@@ -110,10 +110,14 @@ class SCVMMUtils:
 
         assert zone_type_id is not None, "SCVMM zone type not found!"
 
+        api_proxy_id= CommonUtils.get_network_proxy(morpheus_session)
+        provisioning_proxy= api_proxy_id
+
         # 2. Build payload
         cloud_payload = SCVMMpayloads.get_create_cloud_payload(
-            cloud_name=cloud_name, group_id=group_id, zone_type_id=zone_type_id
+            cloud_name=cloud_name, group_id=group_id, zone_type_id=zone_type_id, api_proxy_id= api_proxy_id, provisioning_proxy= provisioning_proxy
         )
+        log.info(f"Cloud Payload: {json.dumps(cloud_payload, indent=2)}")
 
         # 3. Create cloud
         cloud_response = morpheus_session.clouds.add_clouds(cloud_payload)
@@ -132,9 +136,8 @@ class SCVMMUtils:
         return cloud_id
 
     @staticmethod
-    def create_scvmm_cluster(morpheus_session, cloud_id, group_id, plan_name):
+    def create_scvmm_cluster(morpheus_session, cloud_id, group_id, plan_name, cluster_name):
         """ function to create scvmm cluster and wait until it's active"""
-        cluster_name = DateTimeGenUtils.name_with_datetime("scvmm-clus", "%Y%m%d-%H%M%S")
 
         # Fetching cluster-type ID for SCVMM
         cluster_type_response = morpheus_session.clusters.list_cluster_types()
@@ -418,7 +421,7 @@ class SCVMMUtils:
         return last_result
 
     @staticmethod
-    def verify_delete_resource(morpheus_session, resource_type, list_func, resource_id, key, retries=5, delay=3):
+    def verify_delete_resource(morpheus_session, resource_type, list_func, resource_id, key, retries=20, delay=5):
         """
         Verify that a resource is deleted by polling the list API.
         """
