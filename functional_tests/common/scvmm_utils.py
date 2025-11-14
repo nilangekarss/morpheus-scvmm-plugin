@@ -140,9 +140,12 @@ class SCVMMUtils:
         """ function to create scvmm cluster and wait until it's active"""
 
         # Fetching cluster-type ID for SCVMM
+        log.info("Fetching cluster types...")
         cluster_type_response = morpheus_session.clusters.list_cluster_types()
         assert (cluster_type_response.status_code == 200), "Failed to retrieve cluster types!"
         cluster_types = cluster_type_response.json().get("clusterTypes", [])
+
+        log.info("Searching for SCVMM cluster type...")
         cluster_type_id = None
         for cluster in cluster_types:
             if cluster.get("code") == os.getenv("CLUSTER_TYPE"):
@@ -152,6 +155,7 @@ class SCVMMUtils:
         log.info(f"Cluster type ID: {cluster_type_id}")
 
         # Fetching layout ID for SCVMM
+        log.info("Fetching cluster layouts...")
         layout_response = morpheus_session.cluster_layouts.list_cluster_layouts(phrase= os.getenv("CLUSTER_LAYOUT_NAME"))
         assert (layout_response.status_code == 200), "Failed to retrieve cluster layouts!"
         layouts = layout_response.json().get("layouts", [])
@@ -163,9 +167,11 @@ class SCVMMUtils:
         assert layout_id is not None, "SCVMM cluster layout not found!"
 
         #fetch plan_id
+        log.info("Fetching plan ID...")
         plan_id= CommonUtils.get_plan_id(morpheus_session, plan_name= plan_name, zone_id=cloud_id, group_id=group_id)
 
         cluster_payload= SCVMMpayloads.get_create_cluster_payload(morpheus_session,cluster_name, group_id, cloud_id, layout_id, cluster_type_id, plan_id)
+        log.info(f"Cluster Payload: {json.dumps(cluster_payload, indent=2)}")
 
         cluster_response = morpheus_session.session.post(
             f"{morpheus_session.base_url}/api/clusters",
