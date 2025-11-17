@@ -68,6 +68,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
         return rtn
     }
 
+    @SuppressWarnings('MethodParameterTypeRequired')
     private Cloud loadCloudFromZoneId(params, config, password) {
         Cloud cloud = morpheusContext.services.cloud.get(params.zoneId.toLong())
         if (params.credential?.type != CRED_LOCAL) {
@@ -87,6 +88,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
         return cloud
     }
 
+    @SuppressWarnings('MethodParameterTypeRequired')
     private Cloud createNewCloud(params, config, password) {
         Cloud cloud = new Cloud()
         if (params.credential && params.credential?.type != CRED_LOCAL) {
@@ -100,6 +102,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
         return cloud
     }
 
+    @SuppressWarnings(['MethodParameterTypeRequired', 'ParameterReassignment'])
     private Map extractConfigAndPassword(params) {
         params = params instanceof Object[] ? params[(0)] : params
         def config = [
@@ -111,6 +114,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
         return [config: config, password: password, params: params]
     }
 
+    @SuppressWarnings(['MethodParameterTypeRequired', 'ParameterReassignment', 'UnnecessarySetter'])
     Cloud setupCloudConfig(params) {
         def extracted = extractConfigAndPassword(params)
         def config = extracted.config
@@ -131,6 +135,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
         return cloud
     }
 
+    @SuppressWarnings('MethodParameterTypeRequired')
     List<Map> scvmmCloud(params) {
         def cloud = setupCloudConfig(params)
         def apiConfig = getApiConfig(cloud)
@@ -149,6 +154,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
         return optionList
     }
 
+    @SuppressWarnings('MethodParameterTypeRequired')
     List<Map> scvmmHostGroup(params) {
         log.debug("scvmmHostGroup: ${params}")
         def cloud = setupCloudConfig(params)
@@ -168,6 +174,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
         return optionList
     }
 
+    @SuppressWarnings('MethodParameterTypeRequired')
     List<Map> scvmmCluster(params) {
         log.debug("scvmmCluster: ${params}")
         def cloud = setupCloudConfig(params)
@@ -187,6 +194,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
         return optionList
     }
 
+    @SuppressWarnings(['MethodParameterTypeRequired', 'UnnecessaryGetter'])
     List<Map> scvmmLibraryShares(params) {
         log.debug("scvmmLibraryShares: ${params}")
         def cloud = setupCloudConfig(params)
@@ -204,6 +212,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
         return [[name: "No Library Shares found", value: ""]]
     }
 
+    @SuppressWarnings(['MethodParameterTypeRequired', 'ParameterReassignment'])
     List<Map> scvmmSharedControllers(params) {
         params = params instanceof Object[] ? params[(0)] : params
         log.debug("scvmmSharedControllers: ${params}")
@@ -224,6 +233,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
         return sharedControllers?.collect { controller -> [name: controller.name, value: controller.id] }
     }
 
+    @SuppressWarnings(['MethodParameterTypeRequired', 'ParameterReassignment'])
     List<Map> scvmmCapabilityProfile(params) {
         params = params instanceof Object[] ? params[(0)] : params
         def tmpZone = params.zoneId ? morpheusContext.services.cloud.get(params.zoneId?.toLong()) : null
@@ -241,6 +251,8 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
         return profiles
     }
 
+    @SuppressWarnings(['MethodParameterTypeRequired', 'ParameterReassignment',
+            'UnnecessaryGetter', 'ConfusingTernary'])
     List<Map> scvmmHost(params) {
         params = params instanceof Object[] ? params[(0)] : params
         log.debug("scvmmHost: ${params}")
@@ -251,9 +263,9 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
             return [[name: 'Auto', value: '']]
         }
 
-        def resourcePoolId = params.resourcePoolId?.toString()?.isNumber() ? params.resourcePoolId.toLong() :
+        def resourcePoolId = params.resourcePoolId?.toString()?.number ? params.resourcePoolId.toLong() :
                 (params.config?.resourcePool != 'null' ?
-                        (params.config?.resourcePool?.toString()?.isNumber() ?
+                        (params.config?.resourcePool?.toString()?.number ?
                                 params.config.resourcePool?.toLong() : null) : null)
 
         def query = new DataQuery()
@@ -278,6 +290,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
         return results.collect { host -> [name: host.name, value: host.id] }
     }
 
+    @SuppressWarnings(['MethodParameterTypeRequired', 'ParameterReassignment'])
     List<Map> scvmmVirtualImages(Object params) {
         // note
         params = params instanceof Object[] ? params[(0)] : params
