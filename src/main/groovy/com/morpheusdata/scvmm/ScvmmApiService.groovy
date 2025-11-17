@@ -11,6 +11,7 @@ import com.morpheusdata.scvmm.logging.LogWrapper
 import groovy.json.JsonOutput
 import com.bertramlabs.plugins.karman.CloudFile
 
+@SuppressWarnings(['CompileStatic', 'MethodCount', 'ClassSize'])
 class ScvmmApiService {
 // At the top of ScvmmApiService.groovy
 
@@ -111,6 +112,7 @@ class ScvmmApiService {
     static final Map DEFAULT_HOST_GROUP_RESULT = [success: false, hostGroups: []]
     static final Map DEFAULT_DATASTORE_RESULT = [success: false, datastores: []]
     static final Map DEFAULT_NETWORK_RESULT = [success: true, networks: []]
+    static final Map DEFAULT_IMAGE_RESULT = [success: false, imageExists: false]
 
     MorpheusContext morpheusContext
     private final LogInterface log = LogWrapper.instance
@@ -140,12 +142,12 @@ class ScvmmApiService {
         // FormatEnumeration causes lists to show ALL items
         // width value prevents wrapping
         // TODO make sure command does NOT end in a newline otherwise this fails
-        "\$FormatEnumerationLimit =-1; ${command} | ConvertTo-Json -Depth 3"
+        return "\$FormatEnumerationLimit =-1; ${command} | ConvertTo-Json -Depth 3"
     }
 
     Map insertContainerImage(Map opts) {
         log.debug "insertContainerImage: ${opts}"
-        def rtn = [success: false, imageExists: false]
+        def rtn = DEFAULT_IMAGE_RESULT.clone()
         def image = opts.image
         def imageName = image.name
         // def imageType = image.imageType
@@ -173,8 +175,8 @@ class ScvmmApiService {
         return out.data ?: []
     }
 
-    protected Map handleImageUploadAndImport(Map opts, image, imageName, tgtFolder) {
-        def rtn = [success: false, imageExists: false]
+    protected Map handleImageUploadAndImport(Map opts, Map image, String imageName, String tgtFolder) {
+        def rtn = DEFAULT_IMAGE_RESULT.clone()
         def match = findImage(opts, imageName)
         log.info("findImage: ${match}")
         if (match.imageExists == false) {
@@ -217,18 +219,236 @@ class ScvmmApiService {
         def copyCommands = [
                 "\$ignore = Copy-Item \"$sourcePath\" \"$tgtFolder\"",
                 "\$ignore = Get-SCLibraryShare -VMMServer localhost | Read-SCLibraryShare",
-                "Get-SCVirtualHardDisk | where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID"
+                "Get-SCVirtualHardDisk | where {\$_.SharePath -like \"${tgtFolder}\\*\"} | Select ID",
         ]
         def copyResult = wrapExecuteCommand(generateCommandString(copyCommands.join(CMD_SEPARATOR)), opts)
         if (copyResult.error != null) {
             log.error("Error in Copy-Item: ${copyResult.error}")
             return false
-        } else {
-            rtn.imageId = copyResult.data?.getAt(0)?.ID
-            return true
         }
+        rtn.imageId = copyResult.data?.getAt(0)?.ID
+        return true
     }
 
+//    Map createServer(Map opts) {
+//        log.debug("createServer: ${opts}")
+//        def rtn = DEFAULT_RESULT.clone()
+//        try {
+//            def createCommands
+//            def launchCommand
+//            def createData
+//            def cloudInitIsoPath
+//            def removeTemplateCommands = []
+//
+//            // these classes are not supposed to know our domain model or touch gorm -
+//            // this needs to be out in the calling service
+//            ComputeServer server
+//            opts.network = morpheusContext.services.network.get(opts.networkId)
+//            opts.zone = morpheusContext.services.cloud.get(opts.zoneId)
+//            loadControllerServer(opts)
+//
+//            def diskRoot = opts.diskRoot
+//            def imageFolderName = opts.serverFolder
+//            def diskFolder = "${diskRoot}\\${imageFolderName}"
+//            if (opts.isSysprep) {
+//                // loadControllerServer(opts)
+//                opts.unattendPath = importScript(opts.cloudConfigUser, diskFolder,
+//                        imageFolderName, [fileName: 'Unattend.xml'] + opts)
+//            }
+//
+//            createCommands = buildCreateServerCommands(opts)
+//
+//            if (createCommands.hardwareProfileName) {
+//                removeTemplateCommands << "\$HWProfile = Get-SCHardwareProfile -VMMServer localhost |" +
+//                        " where { \$_.Name -eq \"${createCommands.hardwareProfileName}\"} ;" +
+//                        " \$ignore = Remove-SCHardwareProfile -HardwareProfile \$HWProfile;"
+//            }
+//            if (createCommands.templateName) {
+//                removeTemplateCommands << "\$template = Get-SCVMTemplate -VMMServer localhost" +
+//                        " -Name \"${createCommands.templateName}\";" +
+//                        "  \$ignore = Remove-SCVMTemplate -VMTemplate \$template -RunAsynchronously;"
+//            }
+//
+//            launchCommand = createCommands.launchCommand
+//            log.info("launchCommand: ${launchCommand}")
+//            // throw new Exception('blah')
+//            createData = wrapExecuteCommand(generateCommandString(launchCommand), opts)
+//            log.debug "run server: ${createData}"
+//
+//            if (createData.success != true) {
+//                if (createData.error?.contains('which includes generation 2')) {
+//                    rtn.errorMsg = 'The virtual hard disk selected is not compatible with the template which ' +
+//                            'include generation 2 virtual machine functionality.'
+//                } else if (createData.error?.contains('which includes generation 1')) {
+//                    rtn.errorMsg = 'The virtual hard disk selected is not compatible with the template which' +
+//                            ' include generation 1 virtual machine functionality.'
+//                }
+//                throw new IllegalStateException("Error in launching VM: ${createData}")
+//            }
+//
+//            server = morpheusContext.services.computeServer.get(opts.serverId) // ComputeServer.get(opts.serverId)
+//            log.info "Create results: ${createData}"
+//
+//            def newServerExternalId = createData.data && createData.data.size() ==
+//                    1 && createData.data[0].ObjectType?.toString() == OBJECT_TYPE_1 ? createData.data[0].ID : null
+//            if (!newServerExternalId) {
+//                throw new IllegalStateException(
+//                        "Failed to create VM with command: ${launchCommand}: ${createData.error}")
+//            }
+//            opts.externalId = newServerExternalId
+//            // Make sure we save the externalId ASAP
+//            server.externalId = newServerExternalId
+//            server = morpheusContext.services.computeServer.save(server)
+//
+//            // Find the newly assigned VM information
+//            def serverCreated = checkServerCreated(opts, opts.externalId)
+//            log.debug "Servercreated: ${serverCreated}"
+//
+//            // Server Created - Remove Temporary templates and profiles
+//            if (removeTemplateCommands) {
+//                log.info("createServer - removing Temporary Templates and Hardware Profiles")
+//                def command = removeTemplateCommands.join(CMD_SEPARATOR)
+//                command += ARRAY_INIT
+//                wrapExecuteCommand(generateCommandString(command), opts)
+//            }
+//
+//            if (serverCreated.success == true) {
+//                // We have an SCVMM VM
+//                loadControllerServer(opts)
+//                // Get the created VM Disk configuration for new server with id opts.externalId
+//                // expect Map [success:true/false, disks: []]
+//                def vmDisk = listVirtualDiskDrives(opts, opts.externalId)
+//                if (vmDisk.success) {
+//                    log.info("createServer - received current Disk configuration for VM ${opts.externalId}")
+//                    log.info("createServer - additional volumes - " +
+//                            "opts.additionalTemplateDisks: ${opts.additionalTemplateDisks}")
+//                    // TODO We could use diskSpec to provide more meaningful choices for
+//                    //  additional disks like the type and format
+//                    opts.additionalTemplateDisks?.each { diskConfig ->
+//                        def diskSpec = [
+//                                // TODO should vhdName come from the UI?
+//                                vhdName  : "data-${UUID.randomUUID().toString()}",
+//                                vhdType  : null,  // Use Default
+//                                vhdFormat: null, // Use Default
+//                                vhdPath  : null,
+//                                sizeMb   : (int) (diskConfig.diskSize.toLong()) / (ComputeUtility.ONE_MEGABYTE),
+//                        ]
+//                        // Create the additional disks the user requests on the template
+//                        // Now the Powershell automatically discovers next available bus/lun
+//                        def result = createAndAttachDisk(opts, diskSpec)
+//                        log.debug("createServer - add disk result ${result}")
+//                    }
+//                    log.debug "createServer - finished with adding additionalDisks: ${opts.additionalTemplateDisks}"
+//                }
+//
+//                // Special stuff for cloned VMs
+//                if (opts.cloneVMId) {
+//                    // Update the VolumeType for the root disk (SCVMM doesn't preserve the VolumeType :( )
+//                    changeVolumeTypeForClonedBootDisk(opts, opts.cloneVMId, opts.externalId)
+//                    // Need to re-create the ISO for the original cloned box and mount the ISO
+//                    if (opts.cloneBaseOpts && opts.cloneBaseOpts.cloudInitIsoNeeded) {
+//                        rtn.cloneBaseResults = [
+//                                cloudInitIsoPath: importAndMountIso(
+//                                        opts.cloneBaseOpts.cloudConfigBytes,
+//                                        opts.cloneBaseOpts.diskFolder,
+//                                        opts.cloneBaseOpts.imageFolderName,
+//                                        opts.cloneBaseOpts.clonedScvmmOpts,
+//                                )
+//                        ]
+//                    }
+//                }
+//                // Fetch the disks to create a mapping
+//                def disks = [osDisk   : [externalId: ''],
+//                             dataDisks: opts.dataDisks?.collect { disk -> [id: disk.id] }, diskMetaData: [:],]
+//                def diskDrives = listVirtualDiskDrives(opts, opts.externalId)
+//                def bookDiskIndex = findBootDiskIndex(diskDrives)
+//                // add property VhdLocation to diskMetaData property Location -
+//                // this will set the StorageVolume.internalId
+//                diskDrives.disks?.eachWithIndex { disk, diskIndex ->
+//                    if (diskIndex == bookDiskIndex) {
+//                        disks.osDisk.externalId = disk.ID
+//                        disks.diskMetaData[disk.ID] = [HostVolumeId     : disk.HostVolumeId,
+//                                                       FileShareId      : disk.FileShareId,
+//                                                       VhdID            : disk.VhdID, Location: disk.VhdLocation,
+//                                                       PartitionUniqueId: disk.PartitionUniqueId]
+//                    } else {
+//                        disks.dataDisks[diskIndex - 1].externalId = disk.ID
+//                        disks.diskMetaData[disk.ID] = [HostVolumeId     : disk.HostVolumeId,
+//                                                       FileShareId      : disk.FileShareId, dataDisk: true,
+//                                                       VhdID            : disk.VhdID, Location: disk.VhdLocation,
+//                                                       PartitionUniqueId: disk.PartitionUniqueId]
+//                    }
+//
+//                    log.debug("createServer - instance volume metadata (disks) : ${disks}")
+//                    // resize disk
+//                    log.debug ".. about to resize disk ${opts.osDiskSize}"
+//                    diskRoot = opts.diskRoot
+//                    imageFolderName = opts.serverFolder
+//                    diskFolder = "${diskRoot}\\${imageFolderName}"
+//                    // resizeResponse [success: true/false, errOut: message]
+//                    def resizeResponse
+//                    if (opts.osDiskSize) {
+//                        def osDiskVhdID = disks.diskMetaData[disks.osDisk?.externalId]?.VhdID
+//                        resizeResponse = resizeDisk(opts, osDiskVhdID, opts.osDiskSize)
+//                        log.debug("createServer - resizeDisk Response ${resizeResponse}")
+//                    }
+//
+//                    // Resize the data disks if template
+//                    if (opts.isTemplate && opts.templateId && opts.dataDisks) {
+//                        disks.diskMetaData?.each { externalId, map ->
+//                            def storageVolume = opts.dataDisks.find { d -> d.externalId == externalId }
+//                            if (storageVolume) {
+//                                def diskVhdID = disks.diskMetaData[externalId]?.VhdID
+//                                resizeResponse = resizeDisk(opts, diskVhdID, storageVolume.maxStorage)
+//                                log.debug("createServer - resizeDisk Response ${resizeResponse}")
+//                            }
+//                        }
+//                    }
+//                }
+//
+//                // cloud init
+//                if (opts.cloudConfigBytes && !opts.isSysprep) {
+//                    createDVD(opts)
+//                    cloudInitIsoPath = importAndMountIso(opts.cloudConfigBytes, diskFolder, imageFolderName, opts)
+//                }
+//
+//                // start it
+//                log.info("Starting Server  ${opts.name}")
+//                startServer(opts, opts.externalId)
+//                // get details
+//                log.info("SCVMM Check for Server Ready ${opts.name}")
+//                def serverDetail = checkServerReady(opts, opts.externalId)
+//                if (serverDetail.success == true) {
+//                    rtn.server = [name     : opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId,
+//                                  ipAddress: serverDetail.server?.ipAddress, disks: disks]
+//                    rtn.success = true
+//                } else {
+//                    rtn.server = [name     : opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId,
+//                                  ipAddress: serverDetail.server?.ipAddress, disks: disks]
+//                }
+//            }
+//
+//            if (cloudInitIsoPath) {
+//                // Unset the DVD
+//                rtn.deleteDvdOnComplete = [removeIsoFromDvd: true, deleteIso: cloudInitIsoPath]
+//            }
+//            if (opts.unattendPath) {
+//                deleteUnattend(opts, opts.unattendPath)
+//            }
+//
+//            // Perform the remove again... in case they were locked above
+//            if (removeTemplateCommands) {
+//                def command = removeTemplateCommands.join(CMD_SEPARATOR)
+//                command += ARRAY_INIT
+//                wrapExecuteCommand(generateCommandString(command), opts)
+//            }
+//        } catch (e) {
+//            log.error("createServer error: ${e}", e)
+//        }
+//        return rtn
+//    }
+
+// groovy/com/morpheusdata/scvmm/ScvmmApiService.groovy
 
     Map createServer(Map opts) {
         log.debug("createServer: ${opts}")
@@ -240,213 +460,225 @@ class ScvmmApiService {
             def cloudInitIsoPath
             def removeTemplateCommands = []
 
-            // these classes are not supposed to know our domain model or touch gorm -
-            // this needs to be out in the calling service
             ComputeServer server
-            opts.network = morpheusContext.services.network.get(opts.networkId)
-            opts.zone = morpheusContext.services.cloud.get(opts.zoneId)
-            loadControllerServer(opts)
-
+            initializeServerOptions(opts)
             def diskRoot = opts.diskRoot
             def imageFolderName = opts.serverFolder
             def diskFolder = "${diskRoot}\\${imageFolderName}"
+
             if (opts.isSysprep) {
-                // loadControllerServer(opts)
                 opts.unattendPath = importScript(opts.cloudConfigUser, diskFolder,
                         imageFolderName, [fileName: 'Unattend.xml'] + opts)
             }
 
             createCommands = buildCreateServerCommands(opts)
-
-            if (createCommands.hardwareProfileName) {
-                removeTemplateCommands << "\$HWProfile = Get-SCHardwareProfile -VMMServer localhost |" +
-                        " where { \$_.Name -eq \"${createCommands.hardwareProfileName}\"} ;" +
-                        " \$ignore = Remove-SCHardwareProfile -HardwareProfile \$HWProfile;"
-            }
-            if (createCommands.templateName) {
-                removeTemplateCommands << "\$template = Get-SCVMTemplate -VMMServer localhost" +
-                        " -Name \"${createCommands.templateName}\";" +
-                        "  \$ignore = Remove-SCVMTemplate -VMTemplate \$template -RunAsynchronously;"
-            }
-
+            removeTemplateCommands = buildRemoveTemplateCommands(createCommands)
             launchCommand = createCommands.launchCommand
+
             log.info("launchCommand: ${launchCommand}")
-            // throw new Exception('blah')
             createData = wrapExecuteCommand(generateCommandString(launchCommand), opts)
             log.debug "run server: ${createData}"
 
+            handleCreateDataErrors(createData, rtn)
 
-            if (createData.success != true) {
-                if (createData.error?.contains('which includes generation 2')) {
-                    rtn.errorMsg = 'The virtual hard disk selected is not compatible with the template which ' +
-                            'include generation 2 virtual machine functionality.'
-                } else if (createData.error?.contains('which includes generation 1')) {
-                    rtn.errorMsg = 'The virtual hard disk selected is not compatible with the template which' +
-                            ' include generation 1 virtual machine functionality.'
-                }
-                throw new IllegalStateException("Error in launching VM: ${createData}")
-            }
-
-            server = morpheusContext.services.computeServer.get(opts.serverId) // ComputeServer.get(opts.serverId)
+            server = morpheusContext.services.computeServer.get(opts.serverId)
             log.info "Create results: ${createData}"
 
-            def newServerExternalId = createData.data && createData.data.size() ==
-                    1 && createData.data[0].ObjectType?.toString() == OBJECT_TYPE_1 ? createData.data[0].ID : null
+            def newServerExternalId = extractServerExternalId(createData)
             if (!newServerExternalId) {
                 throw new IllegalStateException(
                         "Failed to create VM with command: ${launchCommand}: ${createData.error}")
             }
             opts.externalId = newServerExternalId
-            // Make sure we save the externalId ASAP
             server.externalId = newServerExternalId
             server = morpheusContext.services.computeServer.save(server)
 
-            // Find the newly assigned VM information
             def serverCreated = checkServerCreated(opts, opts.externalId)
             log.debug "Servercreated: ${serverCreated}"
 
-            // Server Created - Remove Temporary templates and profiles
-            if (removeTemplateCommands) {
-                log.info("createServer - removing Temporary Templates and Hardware Profiles")
-                def command = removeTemplateCommands.join(CMD_SEPARATOR)
-                command += ARRAY_INIT
-                wrapExecuteCommand(generateCommandString(command), opts)
-            }
+            removeTemporaryTemplatesAndProfiles(removeTemplateCommands, opts)
 
             if (serverCreated.success == true) {
-                // We have an SCVMM VM
                 loadControllerServer(opts)
-                // Get the created VM Disk configuration for new server with id opts.externalId
-                // expect Map [success:true/false, disks: []]
-                def vmDisk = listVirtualDiskDrives(opts, opts.externalId)
-                if (vmDisk.success) {
-                    log.info("createServer - received current Disk configuration for VM ${opts.externalId}")
-                    log.info("createServer - additional volumes - " +
-                            "opts.additionalTemplateDisks: ${opts.additionalTemplateDisks}")
-                    // TODO We could use diskSpec to provide more meaningful choices for
-                    //  additional disks like the type and format
-                    opts.additionalTemplateDisks?.each { diskConfig ->
-                        def diskSpec = [
-                                // TODO should vhdName come from the UI?
-                                vhdName  : "data-${UUID.randomUUID().toString()}",
-                                vhdType  : null,  // Use Default
-                                vhdFormat: null, // Use Default
-                                vhdPath  : null,
-                                sizeMb   : (int) (diskConfig.diskSize.toLong()) / (ComputeUtility.ONE_MEGABYTE),
-                        ]
-                        // Create the additional disks the user requests on the template
-                        // Now the Powershell automatically discovers next available bus/lun
-                        def result = createAndAttachDisk(opts, diskSpec)
-                        log.debug("createServer - add disk result ${result}")
-                    }
-                    log.debug "createServer - finished with adding additionalDisks: ${opts.additionalTemplateDisks}"
-                }
-
-                // Special stuff for cloned VMs
-                if (opts.cloneVMId) {
-                    // Update the VolumeType for the root disk (SCVMM doesn't preserve the VolumeType :( )
-                    changeVolumeTypeForClonedBootDisk(opts, opts.cloneVMId, opts.externalId)
-                    // Need to re-create the ISO for the original cloned box and mount the ISO
-                    if (opts.cloneBaseOpts && opts.cloneBaseOpts.cloudInitIsoNeeded) {
-                        rtn.cloneBaseResults = [
-                                cloudInitIsoPath: importAndMountIso(
-                                        opts.cloneBaseOpts.cloudConfigBytes,
-                                        opts.cloneBaseOpts.diskFolder,
-                                        opts.cloneBaseOpts.imageFolderName,
-                                        opts.cloneBaseOpts.clonedScvmmOpts,
-                                )
-                        ]
-                    }
-                }
-                // Fetch the disks to create a mapping
-                def disks = [osDisk   : [externalId: ''],
-                             dataDisks: opts.dataDisks?.collect { disk -> [id: disk.id] }, diskMetaData: [:],]
-                def diskDrives = listVirtualDiskDrives(opts, opts.externalId)
-                def bookDiskIndex = findBootDiskIndex(diskDrives)
-                // add property VhdLocation to diskMetaData property Location -
-                // this will set the StorageVolume.internalId
-                diskDrives.disks?.eachWithIndex { disk, diskIndex ->
-                    if (diskIndex == bookDiskIndex) {
-                        disks.osDisk.externalId = disk.ID
-                        disks.diskMetaData[disk.ID] = [HostVolumeId     : disk.HostVolumeId,
-                                                       FileShareId      : disk.FileShareId,
-                                                       VhdID            : disk.VhdID, Location: disk.VhdLocation,
-                                                       PartitionUniqueId: disk.PartitionUniqueId]
-                    } else {
-                        disks.dataDisks[diskIndex - 1].externalId = disk.ID
-                        disks.diskMetaData[disk.ID] = [HostVolumeId     : disk.HostVolumeId,
-                                                       FileShareId      : disk.FileShareId, dataDisk: true,
-                                                       VhdID            : disk.VhdID, Location: disk.VhdLocation,
-                                                       PartitionUniqueId: disk.PartitionUniqueId]
-                    }
-
-                    log.debug("createServer - instance volume metadata (disks) : ${disks}")
-                    // resize disk
-                    log.debug ".. about to resize disk ${opts.osDiskSize}"
-                    diskRoot = opts.diskRoot
-                    imageFolderName = opts.serverFolder
-                    diskFolder = "${diskRoot}\\${imageFolderName}"
-                    // resizeResponse [success: true/false, errOut: message]
-                    def resizeResponse
-                    if (opts.osDiskSize) {
-                        def osDiskVhdID = disks.diskMetaData[disks.osDisk?.externalId]?.VhdID
-                        resizeResponse = resizeDisk(opts, osDiskVhdID, opts.osDiskSize)
-                        log.debug("createServer - resizeDisk Response ${resizeResponse}")
-                    }
-
-                    // Resize the data disks if template
-                    if (opts.isTemplate && opts.templateId && opts.dataDisks) {
-                        disks.diskMetaData?.each { externalId, map ->
-                            def storageVolume = opts.dataDisks.find { d -> d.externalId == externalId }
-                            if (storageVolume) {
-                                def diskVhdID = disks.diskMetaData[externalId]?.VhdID
-                                resizeResponse = resizeDisk(opts, diskVhdID, storageVolume.maxStorage)
-                                log.debug("createServer - resizeDisk Response ${resizeResponse}")
-                            }
-                        }
-                    }
-                }
-
-                // cloud init
-                if (opts.cloudConfigBytes && !opts.isSysprep) {
-                    createDVD(opts)
-                    cloudInitIsoPath = importAndMountIso(opts.cloudConfigBytes, diskFolder, imageFolderName, opts)
-                }
-
-                // start it
-                log.info("Starting Server  ${opts.name}")
-                startServer(opts, opts.externalId)
-                // get details
-                log.info("SCVMM Check for Server Ready ${opts.name}")
-                def serverDetail = checkServerReady(opts, opts.externalId)
-                if (serverDetail.success == true) {
-                    rtn.server = [name     : opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId,
-                                  ipAddress: serverDetail.server?.ipAddress, disks: disks]
-                    rtn.success = true
-                } else {
-                    rtn.server = [name     : opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId,
-                                  ipAddress: serverDetail.server?.ipAddress, disks: disks]
-                }
+                handleAdditionalDisks(opts)
+                handleClonedVM(opts, rtn)
+                def disks = buildDiskMapping(opts)
+                resizeDisks(opts, disks)
+                cloudInitIsoPath = handleCloudInit(opts, diskFolder, imageFolderName)
+                startAndCheckServer(opts, disks, rtn)
             }
 
             if (cloudInitIsoPath) {
-                // Unset the DVD
                 rtn.deleteDvdOnComplete = [removeIsoFromDvd: true, deleteIso: cloudInitIsoPath]
             }
             if (opts.unattendPath) {
                 deleteUnattend(opts, opts.unattendPath)
             }
-
-            // Perform the remove again... in case they were locked above
-            if (removeTemplateCommands) {
-                def command = removeTemplateCommands.join(CMD_SEPARATOR)
-                command += ARRAY_INIT
-                wrapExecuteCommand(generateCommandString(command), opts)
-            }
+            removeTemporaryTemplatesAndProfiles(removeTemplateCommands, opts)
         } catch (e) {
             log.error("createServer error: ${e}", e)
         }
         return rtn
+    }
+
+// --- Helper Methods ---
+
+    protected void initializeServerOptions(Map opts) {
+        opts.network = morpheusContext.services.network.get(opts.networkId)
+        opts.zone = morpheusContext.services.cloud.get(opts.zoneId)
+        loadControllerServer(opts)
+    }
+
+    protected List buildRemoveTemplateCommands(Map createCommands) {
+        def removeTemplateCommands = []
+        if (createCommands.hardwareProfileName) {
+            removeTemplateCommands << "\$HWProfile = Get-SCHardwareProfile -VMMServer localhost |" +
+                    " where { \$_.Name -eq \"${createCommands.hardwareProfileName}\"} ;" +
+                    " \$ignore = Remove-SCHardwareProfile -HardwareProfile \$HWProfile;"
+        }
+        if (createCommands.templateName) {
+            removeTemplateCommands << "\$template = Get-SCVMTemplate -VMMServer localhost" +
+                    " -Name \"${createCommands.templateName}\";" +
+                    "  \$ignore = Remove-SCVMTemplate -VMTemplate \$template -RunAsynchronously;"
+        }
+        return removeTemplateCommands
+    }
+
+    protected void handleCreateDataErrors(TaskResult createData, Map rtn) {
+        if (createData.success != true) {
+            if (createData.error?.contains('which includes generation 2')) {
+                rtn.errorMsg = 'The virtual hard disk selected is not compatible with the template which' +
+                        ' include generation 2 virtual machine functionality.'
+            } else if (createData.error?.contains('which includes generation 1')) {
+                rtn.errorMsg = 'The virtual hard disk selected is not compatible with the template which include ' +
+                        'generation 1 virtual machine functionality.'
+            }
+            throw new IllegalStateException("Error in launching VM: ${createData}")
+        }
+    }
+
+    protected String extractServerExternalId(TaskResult createData) {
+        return createData.data && createData.data.size() == 1 &&
+                createData.data[0].ObjectType?.toString() == OBJECT_TYPE_1 ? createData.data[0].ID : null
+    }
+
+    protected void removeTemporaryTemplatesAndProfiles(List removeTemplateCommands, Map opts) {
+        if (removeTemplateCommands) {
+            log.info("createServer - removing Temporary Templates and Hardware Profiles")
+            def command = removeTemplateCommands.join(CMD_SEPARATOR)
+            command += ARRAY_INIT
+            wrapExecuteCommand(generateCommandString(command), opts)
+        }
+    }
+
+    @SuppressWarnings('UnnecessaryToString')
+    protected void handleAdditionalDisks(Map opts) {
+        def vmDisk = listVirtualDiskDrives(opts, opts.externalId)
+        if (vmDisk.success) {
+            log.info("createServer - received current Disk configuration for VM ${opts.externalId}")
+            log.info("createServer - additional volumes - " +
+                    "opts.additionalTemplateDisks: ${opts.additionalTemplateDisks}")
+            opts.additionalTemplateDisks?.each { diskConfig ->
+                def diskSpec = [
+                        vhdName  : "data-${UUID.randomUUID().toString()}",
+                        vhdType  : null,
+                        vhdFormat: null,
+                        vhdPath  : null,
+                        sizeMb   : (int) (diskConfig.diskSize.toLong()) / (ComputeUtility.ONE_MEGABYTE),
+                ]
+                def result = createAndAttachDisk(opts, diskSpec)
+                log.debug("createServer - add disk result ${result}")
+            }
+            log.debug "createServer - finished with adding additionalDisks: ${opts.additionalTemplateDisks}"
+        }
+    }
+
+    protected void handleClonedVM(Map opts, Map rtn) {
+        if (opts.cloneVMId) {
+            changeVolumeTypeForClonedBootDisk(opts, opts.cloneVMId, opts.externalId)
+            if (opts.cloneBaseOpts && opts.cloneBaseOpts.cloudInitIsoNeeded) {
+                rtn.cloneBaseResults = [
+                        cloudInitIsoPath: importAndMountIso(
+                                opts.cloneBaseOpts.cloudConfigBytes,
+                                opts.cloneBaseOpts.diskFolder,
+                                opts.cloneBaseOpts.imageFolderName,
+                                opts.cloneBaseOpts.clonedScvmmOpts,
+                        )
+                ]
+            }
+        }
+    }
+
+    protected Map buildDiskMapping(Map opts) {
+        def disks = [osDisk: [externalId: ''],
+                     dataDisks: opts.dataDisks?.collect { disk -> [id: disk.id] }, diskMetaData: [:]]
+        def diskDrives = listVirtualDiskDrives(opts, opts.externalId)
+        def bookDiskIndex = findBootDiskIndex(diskDrives)
+        diskDrives.disks?.eachWithIndex { disk, diskIndex ->
+            if (diskIndex == bookDiskIndex) {
+                disks.osDisk.externalId = disk.ID
+                disks.diskMetaData[disk.ID] = [HostVolumeId: disk.HostVolumeId, FileShareId: disk.FileShareId,
+                                               VhdID: disk.VhdID, Location: disk.VhdLocation,
+                                               PartitionUniqueId: disk.PartitionUniqueId]
+            } else {
+                disks.dataDisks[diskIndex - 1].externalId = disk.ID
+                disks.diskMetaData[disk.ID] = [HostVolumeId: disk.HostVolumeId, FileShareId: disk.FileShareId,
+                                               dataDisk: true, VhdID: disk.VhdID, Location: disk.VhdLocation,
+                                               PartitionUniqueId: disk.PartitionUniqueId]
+            }
+            log.debug("createServer - instance volume metadata (disks) : ${disks}")
+        }
+        return disks
+    }
+
+    protected void resizeDisks(Map opts, Map disks) {
+        // def diskRoot = opts.diskRoot
+        // def imageFolderName = opts.serverFolder
+        // def diskFolder = "${diskRoot}\\${imageFolderName}"
+        def resizeResponse
+        log.debug ".. about to resize disk ${opts.osDiskSize}"
+        if (opts.osDiskSize) {
+            def osDiskVhdID = disks.diskMetaData[disks.osDisk?.externalId]?.VhdID
+            resizeResponse = resizeDisk(opts, osDiskVhdID, opts.osDiskSize)
+            log.debug("createServer - resizeDisk Response ${resizeResponse}")
+        }
+        resizeDataDisksIfTemplate(opts, disks)
+    }
+
+    protected void resizeDataDisksIfTemplate(Map opts, Map disks) {
+        if (opts.isTemplate && opts.templateId && opts.dataDisks) {
+            disks.diskMetaData?.each { externalId, map ->
+                def storageVolume = opts.dataDisks.find { d -> d.externalId == externalId }
+                if (storageVolume) {
+                    def diskVhdID = disks.diskMetaData[externalId]?.VhdID
+                    def resizeResponse = resizeDisk(opts, diskVhdID, storageVolume.maxStorage)
+                    log.debug("createServer - resizeDisk Response ${resizeResponse}")
+                }
+            }
+        }
+    }
+
+    protected String handleCloudInit(Map opts, String diskFolder, String imageFolderName) {
+        if (opts.cloudConfigBytes && !opts.isSysprep) {
+            createDVD(opts)
+            return importAndMountIso(opts.cloudConfigBytes, diskFolder, imageFolderName, opts)
+        }
+        return null
+    }
+
+    protected void startAndCheckServer(Map opts, Map disks, Map rtn) {
+        log.info("Starting Server  ${opts.name}")
+        startServer(opts, opts.externalId)
+        log.info("SCVMM Check for Server Ready ${opts.name}")
+        def serverDetail = checkServerReady(opts, opts.externalId)
+        if (serverDetail.success == true) {
+            rtn.server = [name: opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId,
+                          ipAddress: serverDetail.server?.ipAddress, disks: disks]
+            rtn.success = true
+        } else {
+            rtn.server = [name: opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId,
+                          ipAddress: serverDetail.server?.ipAddress, disks: disks]
+        }
     }
 
     Map getServerDetails(Map opts, String externalId) {
@@ -575,7 +807,7 @@ if(\$vm) {
         return rtn
     }
 
-    @SuppressWarnings('LineLength')
+    @SuppressWarnings(['LineLength', 'NoTabCharacter'])
     Map getCloud(Map opts) {
         def rtn = [success: false, cloud: null]
         def command = generateCommandString("""\$cloud = Get-SCCloud -VMMServer localhost | where { \$_.ID -eq \'${opts.zone.regionCode}\' }
@@ -628,7 +860,7 @@ if(\$cloud) {
         return rtn
     }
 
-    @SuppressWarnings('LineLength')
+    @SuppressWarnings(['LineLength', 'TrailingWhitespace', 'InvertedIfElse', 'MethodSize'])
     Map listVirtualMachines(Map opts) {
         def rtn = [success: false, virtualMachines: []]
         def hostGroup = opts.zoneConfig?.hostGroup
@@ -876,6 +1108,7 @@ foreach (\$VHDconf in \$Disks) {
         return rtn
     }
 
+    @SuppressWarnings('TrailingWhitespace')
     Map listLibraryShares(Map opts) {
         def rtn = [success: false, libraryShares: []]
         def command = """\$report = @()
@@ -898,6 +1131,7 @@ foreach(\$share in \$shares) {
         return rtn
     }
 
+    @SuppressWarnings('CouldBeElvis')
     Map listHostGroups(Map opts) {
         def rtn = DEFAULT_HOST_GROUP_RESULT.clone()
         if (opts.zone.regionCode) {
@@ -940,7 +1174,7 @@ foreach (\$cloud in \$clouds) {
         return rtn
     }
 
-    @SuppressWarnings('LineLength')
+    @SuppressWarnings(['LineLength', 'TrailingWhitespace'])
     Map listHosts(Map opts) {
         def rtn = [success: false, hosts: []]
 
@@ -1016,7 +1250,7 @@ foreach (\$cloud in \$clouds) {
         return rtn
     }
 
-    @SuppressWarnings('LineLength')
+    @SuppressWarnings(['LineLength', 'TrailingWhitespace'])
     Map listDatastores(Map opts) {
         def rtn = DEFAULT_DATASTORE_RESULT.clone()
 
@@ -1073,7 +1307,7 @@ foreach (\$cloud in \$clouds) {
         return rtn
     }
 
-    @SuppressWarnings('LineLength')
+    @SuppressWarnings(['LineLength', 'TrailingWhitespace'])
     Map listRegisteredFileShares(Map opts) {
         def rtn = DEFAULT_DATASTORE_RESULT.clone()
 
@@ -1139,7 +1373,7 @@ foreach (\$FileShare in \$FileShares){
         return rtn
     }
 
-    @SuppressWarnings('LineLength')
+    @SuppressWarnings(['LineLength', 'NestedBlockDepth'])
     Map listAllNetworks(Map opts) {
         def rtn = DEFAULT_NETWORK_RESULT.clone()
         try {
@@ -1202,7 +1436,7 @@ foreach (\$network in \$networks) {
         }
     }
 
-    @SuppressWarnings('LineLength')
+    @SuppressWarnings(['LineLength', 'TrailingWhitespace', 'NestedBlockDepth'])
     Map listNetworks(Map opts) {
         def rtn = DEFAULT_NETWORK_RESULT.clone()
         try {
@@ -1286,7 +1520,7 @@ foreach (\$network in \$networks) {
         return rtn
     }
 
-    @SuppressWarnings('LineLength')
+    @SuppressWarnings(['LineLength', 'NestedBlockDepth'])
     Map listNoIsolationVLans(Map opts) {
         def rtn = DEFAULT_NETWORK_RESULT.clone()
         try {
@@ -1368,7 +1602,7 @@ foreach (\$logicalNetwork in \$logicalNetworks) {
         return rtn
     }
 
-    @SuppressWarnings('LineLength')
+    @SuppressWarnings(['LineLength', 'TrailingWhitespace'])
     Map listNetworkIPPools(Map opts) {
         def rtn = [success: true, ipPools: [], networkMapping: []]
         try {
@@ -1484,6 +1718,7 @@ foreach (\$network in \$networks) {
         return rtn
     }
 
+    @SuppressWarnings('TrailingWhitespace')
     Map listVirtualDiskDrives(Map opts, String externalId, String name = null) {
         log.info("listVirtualDiskDrives - Getting Virtual Disk info for VMId :${externalId}")
         def rtn = [success: false, disks: []]
@@ -1536,6 +1771,7 @@ foreach (\$network in \$networks) {
         return rtn
     }
 
+    @SuppressWarnings('TrailingWhitespace')
     Map resizeDisk(Map opts, String diskId, Long diskSizeBytes) {
         log.info("resizeDisk - ${diskId} ${diskSizeBytes}")
         String templateCmd = """\$vmId = "<%vmid%>"
@@ -1596,7 +1832,7 @@ foreach (\$network in \$networks) {
         return [success: false, errOut: "resizeDisk - did not receive expected response from rpc"]
     }
 
-    @SuppressWarnings('TrailingWhitespace')
+    @SuppressWarnings(['TrailingWhitespace', 'UnnecessaryToString', 'MethodSize'])
     Map createAndAttachDisk(Map opts, Map diskSpec, Boolean returnDiskDrives = true) {
         LogWrapper.instance.info("createAndAttachDisk - Adding new Virtual SCSI Disk VHDType:${diskSpec}")
         String templateCmd = '''
@@ -1791,7 +2027,6 @@ foreach (\$network in \$networks) {
         return false // keep pending
     }
 
-
     Map waitForJobToComplete(Map opts, String jobId) {
         def rtn = DEFAULT_RESULT.clone()
         try {
@@ -1803,7 +2038,6 @@ foreach (\$network in \$networks) {
                 log.debug "waitForJobToComplete: ${jobId}"
                 def getJobResults = getJob(opts, jobId)
                 if (getJobResults.success == true && getJobResults.jobDetail) {
-
                     def status = getJobResults.jobDetail?.Status?.toLowerCase()
                     if ([JOB_STATUS_COMPLETED, 'failed', JOB_STATUS_SUCCEED_WITH_INFO]
                             .indexOf(status) > INDEX_NOT_FOUND) {
@@ -1851,6 +2085,74 @@ Status=\$job.Status.toString()
         return rtn
     }
 
+//    Map checkServerReady(Map opts, String vmId) {
+//        def rtn = DEFAULT_RESULT.clone()
+//        try {
+//            log.debug "checkServerReady: ${opts} ${vmId}"
+//            def pending = true
+//            def attempts = 0
+//            def notFoundAttempts = 0
+//            def serverId = opts.server.id
+//            def waitForIp = opts.waitForIp
+//            while (pending) {
+//                sleep(SLEEP_MILLISECONDS * SLEEP_SECONDS)
+//                log.debug "checkServerReady: ${vmId}"
+//                ComputeServer server = morpheusContext.services.computeServer.get(serverId)
+//                opts.server = server
+//                // Refresh the VM in SCVMM (seems to be needed for it to get the IP for windows)
+//                refreshVM(opts, vmId)
+//                def serverDetail = getServerDetails(opts, vmId)
+//                if (serverDetail.success == true && serverDetail.server) {
+//                    def ipAddress = serverDetail.server?.internalIp ?: server?.externalIp
+//                    log.debug "ipAddress found: ${ipAddress}"
+//                    if (ipAddress) {
+//                        server.internalIp = ipAddress
+//                    }
+//
+//                    if (waitForIp && !ipAddress) {
+//                        log.debug("Waiting for IP address assignment...")
+//                        // Keep waiting
+//                    } else {
+//                        // Most likely, server gets its IP from cloud-init calling back to
+//                        // cloudconfigcontroller/ipaddress... wait for that to happen
+//                        // Or... if the desire is to NOT install the agent, then we are not expecting an IP address
+//                        if (serverDetail.server?.VirtualMachineState == VM_STATE_RUNNING) {
+//                            rtn.success = true
+//                            rtn.server = serverDetail.server
+//                            rtn.server.ipAddress = ipAddress ?: server?.internalIp
+//                            pending = false
+//                        } else if (serverDetail.server?.Status == CREATION_FAILED) {
+//                            rtn.success = false
+//                            rtn.server = serverDetail.server
+//                            rtn.server.ipAddress = ipAddress ?: server?.internalIp
+//                            pending = false
+//                        } else {
+//                            log.debug("check server loading server: ip: ${server.internalIp}")
+//                            if (server.internalIp) {
+//                                rtn.success = true
+//                                rtn.server = serverDetail.server
+//                                rtn.server.ipAddress = ipAddress ?: server.internalIp
+//                                pending = false
+//                            }
+//                        }
+//                    }
+//                } else {
+//                    if (serverDetail.error == 'VM_NOT_FOUND') {
+//                        notFoundAttempts++
+//                    }
+//                }
+//
+//                attempts++
+//                if (attempts > 300 || notFoundAttempts > MAX_NOT_FOUND_ATTEMPTS) {
+//                    pending = false
+//                }
+//            }
+//        } catch (e) {
+//            log.error(EXCEPTION_MSG, e)
+//        }
+//        return rtn
+//    }
+
     Map checkServerReady(Map opts, String vmId) {
         def rtn = DEFAULT_RESULT.clone()
         try {
@@ -1869,54 +2171,72 @@ Status=\$job.Status.toString()
                 refreshVM(opts, vmId)
                 def serverDetail = getServerDetails(opts, vmId)
                 if (serverDetail.success == true && serverDetail.server) {
-                    def ipAddress = serverDetail.server?.internalIp ?: server?.externalIp
-                    log.debug "ipAddress found: ${ipAddress}"
-                    if (ipAddress) {
-                        server.internalIp = ipAddress
-                    }
-
+                    def ipAddress = assignIpAddress(serverDetail, server)
                     if (waitForIp && !ipAddress) {
                         log.debug("Waiting for IP address assignment...")
-                        // Keep waiting
                     } else {
                         // Most likely, server gets its IP from cloud-init calling back to
                         // cloudconfigcontroller/ipaddress... wait for that to happen
                         // Or... if the desire is to NOT install the agent, then we are not expecting an IP address
-                        if (serverDetail.server?.VirtualMachineState == VM_STATE_RUNNING) {
-                            rtn.success = true
-                            rtn.server = serverDetail.server
-                            rtn.server.ipAddress = ipAddress ?: server?.internalIp
-                            pending = false
-                        } else if (serverDetail.server?.Status == CREATION_FAILED) {
-                            rtn.success = false
-                            rtn.server = serverDetail.server
-                            rtn.server.ipAddress = ipAddress ?: server?.internalIp
-                            pending = false
-                        } else {
-                            log.debug("check server loading server: ip: ${server.internalIp}")
-                            if (server.internalIp) {
-                                rtn.success = true
-                                rtn.server = serverDetail.server
-                                rtn.server.ipAddress = ipAddress ?: server.internalIp
-                                pending = false
-                            }
-                        }
+                        pending = !processServerState(serverDetail, server, ipAddress, rtn)
                     }
                 } else {
-                    if (serverDetail.error == 'VM_NOT_FOUND') {
-                        notFoundAttempts++
-                    }
+                    notFoundAttempts = updateNotFoundAttempts(serverDetail, notFoundAttempts)
                 }
-
                 attempts++
-                if (attempts > 300 || notFoundAttempts > MAX_NOT_FOUND_ATTEMPTS) {
-                    pending = false
-                }
+                pending = shouldContinuePending(attempts, notFoundAttempts, pending)
             }
         } catch (e) {
             log.error(EXCEPTION_MSG, e)
         }
         return rtn
+    }
+
+// --- Helper Methods ---
+
+    protected String assignIpAddress(Map serverDetail, ComputeServer server) {
+        def ipAddress = serverDetail.server?.internalIp ?: server?.externalIp
+        log.debug "ipAddress found: ${ipAddress}"
+        if (ipAddress) {
+            server.internalIp = ipAddress
+        }
+        return ipAddress
+    }
+
+    protected boolean processServerState(Map serverDetail, ComputeServer server, String ipAddress, Map rtn) {
+        if (serverDetail.server?.VirtualMachineState == VM_STATE_RUNNING) {
+            rtn.success = true
+            rtn.server = serverDetail.server
+            rtn.server.ipAddress = ipAddress ?: server?.internalIp
+            return true
+        } else if (serverDetail.server?.Status == CREATION_FAILED) {
+            rtn.success = false
+            rtn.server = serverDetail.server
+            rtn.server.ipAddress = ipAddress ?: server?.internalIp
+            return true
+        }
+        log.debug("check server loading server: ip: ${server.internalIp}")
+        if (server.internalIp) {
+            rtn.success = true
+            rtn.server = serverDetail.server
+            rtn.server.ipAddress = ipAddress ?: server.internalIp
+            return true
+        }
+        return false
+    }
+
+    protected int updateNotFoundAttempts(Map serverDetail, int notFoundAttempts) {
+        if (serverDetail.error == 'VM_NOT_FOUND') {
+            return notFoundAttempts + 1
+        }
+        return notFoundAttempts
+    }
+
+    protected boolean shouldContinuePending(int attempts, int notFoundAttempts, boolean pending) {
+        if (attempts > 300 || notFoundAttempts > MAX_NOT_FOUND_ATTEMPTS) {
+            return false
+        }
+        return pending
     }
 
     @SuppressWarnings('LineLength')
@@ -1940,6 +2260,7 @@ Status=\$job.Status.toString()
         return rtn
     }
 
+    @SuppressWarnings('TrailingWhitespace')
     Map stopServer(Map opts, String vmId) {
         def rtn = DEFAULT_RESULT.clone()
         try {
@@ -1955,6 +2276,7 @@ if(\$VM.Status -ne 'PowerOff') {
         return rtn
     }
 
+    @SuppressWarnings('TrailingWhitespace')
     Map deleteServer(Map opts, String vmId) {
         def rtn = DEFAULT_RESULT.clone()
         try {
@@ -2016,7 +2338,7 @@ if(\$VM) {
         return rtn
     }
 
-    @SuppressWarnings('DuplicateStringLiteral')
+    @SuppressWarnings(['DuplicateStringLiteral', 'TrailingWhitespace'])
     String getRootSharePath(Map opts) {
         def command = """\$report = @()
 \$shares = Get-SCLibraryShare -VMMServer localhost 
@@ -2071,6 +2393,7 @@ foreach(\$share in \$shares) {
         return wrapExecuteCommand(generateCommandString(commands.join(CMD_SEPARATOR)), opts)
     }
 
+    @SuppressWarnings('UnnecessaryGetter')
     String importScript(String content, String diskFolder, String imageFolderName, Map opts) {
         log.debug "importScript: ${diskFolder}, ${imageFolderName}, ${opts}"
         def scriptPath
@@ -2155,9 +2478,64 @@ For (\$i=0; \$i -le 10; \$i++) {
         return cloudInitIsoPath
     }
 
+    @SuppressWarnings(['MethodParameterTypeRequired', 'MethodReturnTypeRequired'])
     def toList(value) {
         [value].flatten()
     }
+
+//    Map validateServerConfig(Map opts = [:]) {
+//        log.debug("validateServerConfig: ${opts}")
+//        def rtn = [success: false, errors: []]
+//        try {
+//            if (!opts.scvmmCapabilityProfile) {
+//                rtn.errors += [field: 'scvmmCapabilityProfile', msg: 'You must select a capability profile']
+//            }
+//            // if(!opts.networkId && opts.networkInterfaces?.size() == 0) {
+//            // 	rtn.errors += [field: 'networkInterface', msg: 'You must choose a network']
+//            // }
+//            if (opts.networkId) {
+//                log.debug("validateServerConfig networkId: ${opts.networkId}")
+//                // great
+//            } else if (opts?.networkInterfaces) {
+//                // JSON (or Map from parseNetworks)
+//                log.debug("validateServerConfig networkInterfaces: ${opts?.networkInterfaces}")
+//                opts?.networkInterfaces?.eachWithIndex { nic, index ->
+//                    def networkId = nic.network?.id ?: nic.network.group
+//                    log.debug("network.id: ${networkId}")
+//                    if (!networkId) {
+//                        rtn.errors << [field: FIELD_NETWORK_INTERFACE, msg: MSG_NETWORK_REQUIRED]
+//                    }
+//                    if (nic.ipMode == IP_MODE_STATIC && !nic.ipAddress) {
+//                        rtn.errors = [field: FIELD_NETWORK_INTERFACE, msg: MSG_ENTER_IP]
+//                    }
+//                }
+//            } else if (opts?.networkInterface) {
+//                // UI params
+//                log.debug("validateServerConfig networkInterface: ${opts.networkInterface}")
+//                toList(opts?.networkInterface?.network?.id)?.eachWithIndex { networkId, index ->
+//                    log.debug("network.id: ${networkId}")
+//                    if (networkId?.length() < 1) {
+//                        rtn.errors << [field: FIELD_NETWORK_INTERFACE, msg: MSG_NETWORK_REQUIRED]
+//                    }
+//                    if (networkInterface[index].ipMode == IP_MODE_STATIC && !networkInterface[index].ipAddress) {
+//                        rtn.errors = [field: FIELD_NETWORK_INTERFACE, msg: MSG_ENTER_IP]
+//                    }
+//                }
+//            } else {
+//                rtn.errors << [field: FIELD_NETWORK_ID, msg: MSG_NETWORK_REQUIRED]
+//            }
+//            if (opts.containsKey(FIELD_NODE_COUNT) && opts.nodeCount == '') {
+//                rtn.errors += [field: FIELD_NODE_COUNT, msg: 'You must indicate number of hosts']
+//            }
+//            rtn.success = (rtn.errors.size() == 0)
+//            log.debug "validateServer results: ${rtn}"
+//        } catch (e) {
+//            log.error "error in validateServerConfig: ${e}", e
+//        }
+//        return rtn
+//    }
+
+// In `groovy/com/morpheusdata/scvmm/ScvmmApiService.groovy`
 
     Map validateServerConfig(Map opts = [:]) {
         log.debug("validateServerConfig: ${opts}")
@@ -2166,40 +2544,7 @@ For (\$i=0; \$i -le 10; \$i++) {
             if (!opts.scvmmCapabilityProfile) {
                 rtn.errors += [field: 'scvmmCapabilityProfile', msg: 'You must select a capability profile']
             }
-            // if(!opts.networkId && opts.networkInterfaces?.size() == 0) {
-            // 	rtn.errors += [field: 'networkInterface', msg: 'You must choose a network']
-            // }
-            if (opts.networkId) {
-                log.debug("validateServerConfig networkId: ${opts.networkId}")
-                // great
-            } else if (opts?.networkInterfaces) {
-                // JSON (or Map from parseNetworks)
-                log.debug("validateServerConfig networkInterfaces: ${opts?.networkInterfaces}")
-                opts?.networkInterfaces?.eachWithIndex { nic, index ->
-                    def networkId = nic.network?.id ?: nic.network.group
-                    log.debug("network.id: ${networkId}")
-                    if (!networkId) {
-                        rtn.errors << [field: FIELD_NETWORK_INTERFACE, msg: MSG_NETWORK_REQUIRED]
-                    }
-                    if (nic.ipMode == IP_MODE_STATIC && !nic.ipAddress) {
-                        rtn.errors = [field: FIELD_NETWORK_INTERFACE, msg: MSG_ENTER_IP]
-                    }
-                }
-            } else if (opts?.networkInterface) {
-                // UI params
-                log.debug("validateServerConfig networkInterface: ${opts.networkInterface}")
-                toList(opts?.networkInterface?.network?.id)?.eachWithIndex { networkId, index ->
-                    log.debug("network.id: ${networkId}")
-                    if (networkId?.length() < 1) {
-                        rtn.errors << [field: FIELD_NETWORK_INTERFACE, msg: MSG_NETWORK_REQUIRED]
-                    }
-                    if (networkInterface[index].ipMode == IP_MODE_STATIC && !networkInterface[index].ipAddress) {
-                        rtn.errors = [field: FIELD_NETWORK_INTERFACE, msg: MSG_ENTER_IP]
-                    }
-                }
-            } else {
-                rtn.errors << [field: FIELD_NETWORK_ID, msg: MSG_NETWORK_REQUIRED]
-            }
+            validateNetworkConfig(opts, rtn)
             if (opts.containsKey(FIELD_NODE_COUNT) && opts.nodeCount == '') {
                 rtn.errors += [field: FIELD_NODE_COUNT, msg: 'You must indicate number of hosts']
             }
@@ -2211,6 +2556,50 @@ For (\$i=0; \$i -le 10; \$i++) {
         return rtn
     }
 
+    protected void validateNetworkConfig(Map opts, Map rtn) {
+        if (opts.networkId) {
+            log.debug("validateServerConfig networkId: ${opts.networkId}")
+            return
+        }
+        if (opts?.networkInterfaces) {
+            validateNetworkInterfaces(opts.networkInterfaces, rtn)
+            return
+        }
+        if (opts?.networkInterface) {
+            validateNetworkInterface(opts.networkInterface, rtn)
+            return
+        }
+        rtn.errors << [field: FIELD_NETWORK_ID, msg: MSG_NETWORK_REQUIRED]
+    }
+
+    protected void validateNetworkInterfaces(List networkInterfaces, Map rtn) {
+        log.debug("validateServerConfig networkInterfaces: ${networkInterfaces}")
+        networkInterfaces.eachWithIndex { nic, index ->
+            def networkId = nic.network?.id ?: nic.network.group
+            log.debug("network.id: ${networkId}")
+            if (!networkId) {
+                rtn.errors << [field: FIELD_NETWORK_INTERFACE, msg: MSG_NETWORK_REQUIRED]
+            }
+            if (nic.ipMode == IP_MODE_STATIC && !nic.ipAddress) {
+                rtn.errors = [field: FIELD_NETWORK_INTERFACE, msg: MSG_ENTER_IP]
+            }
+        }
+    }
+
+    @SuppressWarnings('MethodParameterTypeRequired')
+    protected void validateNetworkInterface(def networkInterface, Map rtn) {
+        log.debug("validateServerConfig networkInterface: ${networkInterface}")
+        toList(networkInterface?.network?.id)?.eachWithIndex { networkId, index ->
+            log.debug("network.id: ${networkId}")
+            if (networkId?.length() < 1) {
+                rtn.errors << [field: FIELD_NETWORK_INTERFACE, msg: MSG_NETWORK_REQUIRED]
+            }
+            if (networkInterface[index].ipMode == IP_MODE_STATIC && !networkInterface[index].ipAddress) {
+                rtn.errors = [field: FIELD_NETWORK_INTERFACE, msg: MSG_ENTER_IP]
+            }
+        }
+    }
+
     Map updateServer(Map opts, String vmId, Map updates = [:]) {
         log.debug("updateServer: vmId: ${vmId}, updates: ${updates}")
         def rtn = DEFAULT_RESULT.clone()
@@ -2219,7 +2608,7 @@ For (\$i=0; \$i -le 10; \$i++) {
                     ? (int) (updates.minDynamicMemory / ComputeUtility.ONE_MEGABYTE)
                     : null
             def maxDynamicMemory = updates.maxDynamicMemory
-                    ? (int) (updates.maxDynamicMemory /ComputeUtility.ONE_MEGABYTE)
+                    ? (int) (updates.maxDynamicMemory / ComputeUtility.ONE_MEGABYTE)
                     : null
 
             if (updates.maxMemory || updates.maxCores || minDynamicMemory || maxDynamicMemory) {
@@ -2264,6 +2653,7 @@ For (\$i=0; \$i -le 10; \$i++) {
         return rtn
     }
 
+    @SuppressWarnings('MethodParameterTypeRequired')
     String cleanData(data, String ignoreString = null) {
         def rtn = ''
         if (data) {
@@ -2281,6 +2671,7 @@ For (\$i=0; \$i -le 10; \$i++) {
         return rtn
     }
 
+    @SuppressWarnings('MethodSize')
     String getMapScvmmOsType(String searchFor, Boolean findByKey = true, String defaultOsType = null) {
         def scvmmOsTypeMap = [
                 '64-bit edition of Windows 10'                       : 'windows.10.64',
@@ -2400,7 +2791,7 @@ For (\$i=0; \$i -le 10; \$i++) {
     }
 
     Map findImage(Map opts, String imageName) {
-        def rtn = [success: false, imageExists: false]
+        def rtn = DEFAULT_IMAGE_RESULT.clone()
         def zoneRoot = opts.zoneRoot ?: defaultRoot
         def imageFolder = formatImageFolder(imageName)
         def imageFolderPath = "${zoneRoot}\\images\\${imageFolder}"
@@ -2417,7 +2808,7 @@ For (\$i=0; \$i -le 10; \$i++) {
     }
 
     Map deleteImage(Map opts, String imageName) {
-        def rtn = [success: false, imageExists: false]
+        def rtn = DEFAULT_IMAGE_RESULT.clone()
         def zoneRoot = opts.zoneRoot ?: defaultRoot
         def imageFolder = formatImageFolder(imageName)
         def imageFolderPath = "${zoneRoot}\\images\\${imageFolder}"
@@ -2429,6 +2820,7 @@ For (\$i=0; \$i -le 10; \$i++) {
         return rtn
     }
 
+    @SuppressWarnings('UnnecessaryGetter')
     Map transferImage(Map opts, Collection<CloudFile> cloudFiles, String imageName) {
         def rtn = [success: false, results: []]
         CloudFile metadataFile = (CloudFile) cloudFiles?.find { cloudFile -> cloudFile.name == METADATA_JSON }
@@ -2540,11 +2932,12 @@ For (\$i=0; \$i -le 10; \$i++) {
         } catch (e) {
             log.error("changeVolumeTypeForClonedBootDisk error: ${e}")
         }
-
         return rtn
     }
 
     // TODO needs more error handling
+    @SuppressWarnings(['LineLength', 'InvertedIfElse', 'AbcMetric', 'MethodSize', 'CyclomaticComplexity',
+            'UnnecessaryToString', 'VariableName', 'UnusedVariable'])
     Map buildCreateServerCommands(Map opts) {
         log.debug "buildCreateServerCommands: ${opts}"
         def rtn = [launchCommand: null, hardwareProfileName: '', templateName: '']
@@ -2831,7 +3224,6 @@ For (\$i=0; \$i -le 10; \$i++) {
             commands << "\$cloud = Get-SCCloud -ID \"${zone.regionCode}\""
         }
 
-
         if (!cloneVMId) {
             if (isSysprep) {
                 commands << "\$OS = Get-SCOperatingSystem -VMMServer localhost | where {\$_.Name -eq \"$OSName\"}"
@@ -2987,10 +3379,8 @@ For (\$i=0; \$i -le 10; \$i++) {
                             "-VMHost \$vmHost -Path \"$volumePath\" -HardwareProfile \$HardwareProfile " +
                             "-StartAction TurnOnVMIfRunningWhenVSStopped -StopAction SaveVM"
                 }
-
                 newVMString = appendOSCustomization(newVMString, opts)
                 commands << newVMString
-
             } else {
                 def newVMString = "\$createdVm = New-SCVirtualMachine -VM \$VM " +
                         "-Name \"$vmId\" ${deployingToCloud ? "-Cloud \$cloud" : ""} " +
@@ -3006,17 +3396,18 @@ For (\$i=0; \$i -le 10; \$i++) {
         rtn.launchCommand = commands.join(NEWLINE_CHAR)
         rtn.hardwareProfileName = hardwareProfileName
         rtn.templateName = templateName
-        rtn
+        return rtn
     }
 
-    def findBootDiskIndex(diskDrives) {
+    @SuppressWarnings('MethodParameterTypeRequired')
+    Integer findBootDiskIndex(diskDrives) {
         def bookDiskIndex = 0
         diskDrives.disks?.eachWithIndex { disk, diskIndex ->
             if (disk.VolumeType == 'BootAndSystem') {
                 bookDiskIndex = diskIndex
             }
         }
-        bookDiskIndex
+        return bookDiskIndex
     }
 
     String appendOSCustomization(String sourceString, Map opts) {
@@ -3035,10 +3426,10 @@ For (\$i=0; \$i -le 10; \$i++) {
                 retString += " -OrganizationName \"${opts.license.orgName}\""
             }
         }
-
         return retString
     }
 
+    @SuppressWarnings(['ParameterCount', 'UnusedMethodParameter', 'UnnecessaryToString', 'MethodParameterTypeRequired'])
     Map generateDataDiskCommand(String busNumber = EXIT_CODE_SUCCESS, Integer dataDiskNumber,
                                 String diskJobGuid, int sizeMB,
                                 path = null, fromDisk = null, Boolean discoverAvailableLUN = false,
@@ -3088,11 +3479,11 @@ For (\$i=0; \$i -le 10; \$i++) {
                         "-FileName \"$fileName\" -VolumeType None"
             }
         }
-        rtn
+        return rtn
     }
 
     Map getScvmmZoneOpts(MorpheusContext context, Cloud cloud) {
-        def cloudConfig = cloud.getConfigMap()
+        def cloudConfig = cloud.configMap
         def keyPair = context.services.keyPair.find(
                 new DataQuery().withFilter(ACCOUNT_ID, cloud?.account?.id))
         return [
@@ -3102,15 +3493,15 @@ For (\$i=0; \$i -le 10; \$i++) {
                 zoneId       : cloud?.id,
                 publicKey    : keyPair?.publicKey,
                 privateKey   : keyPair?.privateKey,
-                //controllerServer       : controllerServer,
+                // controllerServer       : controllerServer,
                 rootSharePath: cloudConfig[LIBRARY_SHARE],
                 regionCode   : cloud.regionCode,
         ]
         // baseBoxProvisionService: scvmmProvisionService]
     }
 
-    Map getScvmmCloudOpts(MorpheusContext context, Cloud cloud, controllerServer) {
-        def cloudConfig = cloud.getConfigMap()
+    Map getScvmmCloudOpts(MorpheusContext context, Cloud cloud, ComputeServer controllerServer) {
+        def cloudConfig = cloud.configMap
         def keyPair = context.services.keyPair.find(new DataQuery().withFilter(
                 ACCOUNT_ID, cloud?.account?.id))
         return [
@@ -3126,9 +3517,10 @@ For (\$i=0; \$i -le 10; \$i++) {
         ]
     }
 
+    @SuppressWarnings('TernaryCouldBeElvis')
     Map getScvmmControllerOpts(Cloud cloud, ComputeServer hypervisor) {
-        def serverConfig = hypervisor.getConfigMap()
-        def zoneConfig = cloud.getConfigMap()
+        def serverConfig = hypervisor.configMap
+        def zoneConfig = cloud.configMap
         log.debug("scvmm hypervisor config:${serverConfig}")
         def configuredDiskPath = zoneConfig.diskPath?.length() > 0
                 ? zoneConfig.diskPath
@@ -3148,7 +3540,7 @@ For (\$i=0; \$i -le 10; \$i++) {
     }
 
     Map getScvmmZoneAndHypervisorOpts(MorpheusContext morpheusContext, Cloud cloud, ComputeServer hypervisor) {
-        getScvmmCloudOpts(morpheusContext, cloud, hypervisor) + getScvmmControllerOpts(cloud, hypervisor)
+        return getScvmmCloudOpts(morpheusContext, cloud, hypervisor) + getScvmmControllerOpts(cloud, hypervisor)
     }
 
     TaskResult wrapExecuteCommand(String command, Map opts = [:]) {
@@ -3168,7 +3560,7 @@ For (\$i=0; \$i -le 10; \$i++) {
             }
             out.data = new groovy.json.JsonSlurper().parseText(payload)
         }
-        out
+        return out
     }
 
     void loadControllerServer(Map opts) {
@@ -3212,7 +3604,7 @@ For (\$i=0; \$i -le 10; \$i++) {
     }
 
     Map getScvmmInitializationOpts(Cloud cloud) {
-        def cloudConfig = cloud.getConfigMap()
+        def cloudConfig = cloud.configMap
         def diskRoot = cloudConfig.diskPath?.length() > 0 ? cloudConfig.diskPath : defaultRoot + DISKS_FOLDER
         def cloudRoot = cloudConfig.workingPath?.length() > 0 ? cloudConfig.workingPath : defaultRoot
         return [sshHost    : cloudConfig.host, sshUsername: getUsername(cloud),
@@ -3221,7 +3613,7 @@ For (\$i=0; \$i -le 10; \$i++) {
     }
 
     protected String getUsername(Cloud cloud) {
-        (
+        return (
                 (cloud.accountCredentialLoaded && cloud.accountCredentialData)
                         ? cloud.accountCredentialData?.username
                         : cloud.getConfigProperty('username')
@@ -3229,7 +3621,7 @@ For (\$i=0; \$i -le 10; \$i++) {
     }
 
     protected String getPassword(Cloud cloud) {
-        (
+        return (
                 cloud.accountCredentialLoaded && cloud.accountCredentialData
         )
                 ? cloud.accountCredentialData?.password
