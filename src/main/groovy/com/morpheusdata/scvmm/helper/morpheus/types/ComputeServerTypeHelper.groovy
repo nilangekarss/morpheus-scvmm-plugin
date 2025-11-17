@@ -4,6 +4,7 @@ import com.morpheusdata.model.ComputeServerType
 import com.morpheusdata.model.OptionType
 import com.morpheusdata.model.PlatformType
 
+@SuppressWarnings('CompileStatic')
 class ComputeServerTypeHelper {
     // Constants for ComputeServerType
     private static final String CONFIG_CONTEXT = 'config'
@@ -47,6 +48,7 @@ class ComputeServerTypeHelper {
      * a sync or during a provision.
      * @return collection of ComputeServerType
      */
+    @SuppressWarnings('MethodSize')
     static Collection<ComputeServerType> getAllComputeServerTypes() {
         Collection<ComputeServerType> serverTypes = []
         Collection<OptionType> sshOptions = createSshOptions()

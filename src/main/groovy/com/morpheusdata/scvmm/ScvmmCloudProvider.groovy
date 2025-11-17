@@ -83,6 +83,7 @@ class ScvmmCloudProvider implements CloudProvider {
     private static final String TRUE_STRING = 'true'
     private static final String COMPUTE_SERVER_TYPE_JOIN = 'computeServerType'
     private static final String HOST_ONLINE_LOG_MSG = 'hostOnline: {}'
+    static final Map DEFAULT_FAILURE = [success: false]
 
     protected MorpheusContext context
     protected ScvmmPlugin plugin
@@ -305,7 +306,7 @@ class ScvmmCloudProvider implements CloudProvider {
 
     @SuppressWarnings('AbcMetric')
     Map initializeHypervisor(Cloud cloud) {
-        def rtn = [success: false]
+        def rtn = DEFAULT_FAILURE.clone()
         log.debug("cloud: ${cloud}")
         def sharedController = cloud.getConfigProperty(SHARED_CONTROLLER_ERROR_KEY)
         if (sharedController) {
@@ -706,7 +707,7 @@ class ScvmmCloudProvider implements CloudProvider {
     @Override
     ServiceResponse deleteServer(ComputeServer computeServer) {
         log.debug("deleteServer: ${computeServer}")
-        def rtn = [success: false]
+        def rtn = DEFAULT_FAILURE.clone()
         try {
             ScvmmProvisionProvider provisionProvider = new ScvmmProvisionProvider(plugin, context)
             def scvmmOpts = provisionProvider.getAllScvmmServerOpts(computeServer)
@@ -841,7 +842,7 @@ class ScvmmCloudProvider implements CloudProvider {
 
     Map removeOrphanedResourceLibraryItems(Cloud cloud, ComputeServer node) {
         log.debug("removeOrphanedResourceLibraryItems: {} {}", cloud, node)
-        def rtn = [success: false]
+        def rtn = DEFAULT_FAILURE.clone()
         try {
             def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(context, cloud, node)
             apiService.removeOrphanedResourceLibraryItems(scvmmOpts)

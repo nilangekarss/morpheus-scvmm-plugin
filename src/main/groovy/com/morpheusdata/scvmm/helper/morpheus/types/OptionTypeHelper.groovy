@@ -2,8 +2,8 @@ package com.morpheusdata.scvmm.helper.morpheus.types
 
 import com.morpheusdata.model.OptionType
 
+@SuppressWarnings('CompileStatic')
 class OptionTypeHelper {
-
     // Constants for duplicate string literals
     private static final String ZONE_TYPE_SCVMM = 'zoneType.scvmm'
     private static final String CONFIG_CONTEXT = 'config'
@@ -41,6 +41,7 @@ class OptionTypeHelper {
      * Gets all SCVMM Cloud Provider option types
      * @return Collection of OptionType
      */
+    @SuppressWarnings('MethodSize')
     static Collection<OptionType> getAllOptionTypes() {
         def displayOrder = 0
         Collection<OptionType> options = []
