@@ -1,6 +1,7 @@
-import org.gradle.api.publish.maven.MavenPublication
-
 // (C) Copyright 2025 Hewlett Packard Enterprise Development LP
+
+import org.gradle.api.publish.maven.MavenPublication
+import java.text.SimpleDateFormat
 
 buildscript {
     repositories {
@@ -12,34 +13,24 @@ buildscript {
         maven { url "https://nexus.bertramlabs.com/content/repositories/publicReleases" }
     }
     dependencies {
-        classpath "com.github.johnrengelman:shadow:8.1.1"
-//        classpath "com.morpheusdata:morpheus-plugin-gradle:$morpheusApiVersion"
         classpath "com.morpheusdata:morpheus-plugin-gradle:$morpheusGradleVersion"
         classpath "com.bertramlabs.plugins:asset-pipeline-gradle:$assetPipelineVersion"
+        // classpath "org.codehaus.groovy:groovy-xml:$groovyVersion"
     }
 }
 
 plugins {
     id 'java'
     id 'groovy'
+    id 'jvm-test-suite'
     id 'idea'
     id 'com.github.johnrengelman.shadow' version '8.1.1'
-    id 'com.bertramlabs.asset-pipeline' version "$assetPipelineVersion"
     id 'com.jfrog.artifactory' version "5.+"
     id 'maven-publish'
     id 'jacoco'
     id 'codenarc'
-}
-
-codenarc {
-    toolVersion = '3.5.0'
-    configFile = file('config/codenarc/codenarc.groovy')
-    reportFormat = 'html'
-    sourceSets = [sourceSets.main]
-    ignoreFailures = true  // This makes CodeNarc not fail the build
-    maxPriority1Violations = -1  // No limit on P1 violations
-    maxPriority2Violations = -1  // No limit on P2 violations
-    maxPriority3Violations = -1  // No limit on P3 violations
+    id 'org.sonarqube' version '5.1.0.4882'
+    id 'com.adarshr.test-logger' version '4.0.0'
 }
 
 // Include required files in the JAR
@@ -49,10 +40,24 @@ processResources {
     }
 }
 
+apply plugin: 'asset-pipeline'
 apply plugin: 'com.morpheusdata.morpheus-plugin-gradle'
 group = 'com.hpe.scvmm'
+ext {
+    baseVersion = project.version.toString()
+    if (baseVersion.endsWith("-SNAPSHOT")) {
+        def ts = new SimpleDateFormat("yyyyMMdd.HHmmss").format(new Date())
+        def commitHash = "git rev-parse --short HEAD".execute().text.trim()
+        def buildNum = System.getenv("GITHUB_RUN_NUMBER") ?: "1"
+        finalVersion = "${baseVersion.replace('-SNAPSHOT', '')}-${ts}-${buildNum}-${commitHash}"
+    } else {
+        finalVersion = baseVersion
+    }
+}
+version = finalVersion
 ext.isReleaseVersion = !version.endsWith("SNAPSHOT")
 
+ext.minLineCoverage = (project.findProperty('minLineCoverage') ?: 80).toString().toBigDecimal().scaleByPowerOfTen(-2)
 java {
     sourceCompatibility = JavaVersion.toVersion('1.11')
     targetCompatibility = JavaVersion.toVersion('1.11')
@@ -61,6 +66,7 @@ java {
 repositories {
     mavenLocal()
     mavenCentral()
+    maven { url "https://plugins.gradle.org/m2/" }
     maven { url "https://nexus.bertramlabs.com/content/repositories/snapshots" }
     maven { url "https://nexus.bertramlabs.com/content/repositories/releases" }
     maven { url "https://nexus.bertramlabs.com/content/repositories/publicReleases" }
@@ -72,7 +78,6 @@ configurations {
 
 dependencies {
     provided "com.morpheusdata:morpheus-plugin-api:$morpheusApiVersion"
-
     provided "org.codehaus.groovy:groovy-all:$groovyVersion"
     implementation 'commons-beanutils:commons-beanutils:1.11.0'
     implementation "org.slf4j:slf4j-api:$slf4jVersion"
@@ -83,6 +88,7 @@ dependencies {
     }
 
     // Include morpheus-core and it's dependencies
+    testImplementation "org.codehaus.groovy:groovy-all:$groovyVersion"
     testImplementation "com.morpheusdata:morpheus-plugin-api:$morpheusApiVersion"
     testImplementation 'io.reactivex.rxjava3:rxjava:3.1.7'
     testImplementation 'org.apache.httpcomponents:httpclient:4.5.13'
@@ -91,11 +97,10 @@ dependencies {
     // Add SLF4J implementation for tests to enable logging in coverage testing
     testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.9'
 
-    testImplementation "org.codehaus.groovy:groovy-all:$groovyVersion"
     testImplementation 'net.bytebuddy:byte-buddy:1.9.3'
     testImplementation 'org.objenesis:objenesis:2.6'
     testImplementation platform("org.spockframework:spock-bom:$spockVersion")
-    testImplementation "org.spockframework:spock-core"
+    testImplementation "org.spockframework:spock-core:$spockVersion"
     testImplementation "org.spockframework:spock-junit4"  // you can remove this if your code does not rely on old JUnit 4 rules
     testImplementation 'cglib:cglib-nodep:3.2.12'
     
@@ -116,88 +121,235 @@ sourceSets {
     }
 }
 
-final gitCommitId = providers.exec {
-    commandLine('git', 'rev-parse', 'HEAD')
-}.standardOutput.asText.get()
-
-final gitBranchName = providers.exec {
-    commandLine('git', 'rev-parse', '--abbrev-ref', 'HEAD')
-}.standardOutput.asText.get()
-
-def getEnvOrProperty(final String envVar, final String propertyKey) {
-    return System.getenv(envVar) ?: project.findProperty(propertyKey)
+// ===== STATIC ANALYSIS =====
+codenarc {
+    toolVersion = '3.5.0'
+    configFile = file('config/codenarc/codenarc.groovy')
+    reportFormat = 'html'
+    sourceSets = [sourceSets.main]
+    ignoreFailures = true  // This makes CodeNarc not fail the build
+    maxPriority1Violations = -1  // No limit on P1 violations (handled in our custom reporting)
+    maxPriority2Violations = -1  // No limit on P2 violations (handled in our custom reporting)
+    maxPriority3Violations = -1  // No limit on P3 violations (handled in our custom reporting)
 }
+
+codenarcMain {
+    reports {
+        html {
+            required = true
+            outputLocation = layout.buildDirectory.file('reports/codenarc/main.html')
+        }
+        xml {
+            required = true
+            outputLocation = layout.buildDirectory.file('reports/codenarc/main.xml')
+        }
+    }
+    ignoreFailures = true  // Also set at task level for extra safety
+    // source = sourceSets.main.allGroovy
+}
+
+// ===== ANSI COLOR CONSTANTS =====
+ext.colors = [
+        RESET: "\u001B[0m",
+        GREEN: "\u001B[32m",
+        RED: "\u001B[31m",
+        YELLOW: "\u001B[33m",
+        ORANGE: "\u001B[38;5;208m", // Using 256-color mode for orange
+        BOLD: "\u001B[1m"
+]
+
+// ===== UTILITY FUNCTIONS =====
+def calculatePassRate(passed, total) {
+    return total > 0 ? Math.round((passed * 100.0) / total * 10) / 10 : 0.0
+}
+def getTestStatus(failed, skipped) {
+    if (failed > 0) {
+       return "${colors.RED}FAILED${colors.RESET}"
+    } else if (skipped > 0) {
+       return "${colors.YELLOW}PASSED${colors.RESET} (${skipped} skipped)"
+    } else {
+       return "${colors.GREEN}PASSED${colors.RESET}"
+    }
+}
+def formatNumber(value, width) {
+    def numStr = value.toString()
+    def isBold = value > 0
+    if (isBold) {
+	def padding = Math.max(0, width - numStr.length())
+	return " " * padding + "${colors.BOLD}${numStr}${colors.RESET}"
+    } else {
+	return String.format("%${width}d", value)
+    }
+}
+
+def formatDecimal(value, width, decimals) {
+    def numStr = String.format("%.${decimals}f", value)
+    def isBold = value > 0
+    if (isBold) {
+	def padding = Math.max(0, width - numStr.length())
+	return " " * padding + "${colors.BOLD}${numStr}${colors.RESET}"
+    } else {
+	return String.format("%${width}.${decimals}f", value)
+    }
+}
+
+def formatPercentage(value, width) {
+    def numStr = String.format("%.1f%%", value)
+    def isBold = value > 0
+    if (isBold) {
+       def padding = Math.max(0, width - numStr.length())
+       return " " * padding + "${colors.BOLD}${numStr}${colors.RESET}"
+    } else {
+       return String.format("%${width}.1f%%", value)
+    }
+}
+
+def displayTestResultsSummary(unitTestResults, integrationTestResults) {
+    def totalTests = unitTestResults.total + integrationTestResults.total
+    def totalPassed = unitTestResults.passed + integrationTestResults.passed
+    def totalFailed = unitTestResults.failed + integrationTestResults.failed
+    def totalSkipped = unitTestResults.skipped + integrationTestResults.skipped
+    def totalTime = unitTestResults.time + integrationTestResults.time
+
+    if (totalTests > 0) {
+        def header = String.format("  %-22s | %8s | %8s | %8s | %8s | %8s | %12s | %8s | %-14s",
+	        "Test Type", "Classes", "Executed", "Passed", "Failed", "Skipped", "Time (s)", "Pass %", "Status")
+	        println header
+	        println "-" * 120
+
+        // Only show individual test types if there are multiple types
+        def showIndividualTypes = (unitTestResults.total > 0 && integrationTestResults.total > 0)
+
+        if (showIndividualTypes) {
+         // Unit Tests row
+            def unitPassRate = calculatePassRate(unitTestResults.passed, unitTestResults.total)
+            def unitStatus = getTestStatus(unitTestResults.failed, unitTestResults.skipped)
+            printf "  %-22s | %8d | %8d | %8d | %8d | %8d | %12.3f | %7.1f%% | %s\n",
+                "Unit Tests", unitTestResults.classes, unitTestResults.total, unitTestResults.passed,
+            unitTestResults.failed, unitTestResults.skipped, unitTestResults.time, unitPassRate, unitStatus
+
+            // Integration Tests row
+            def integrationPassRate = calculatePassRate(integrationTestResults.passed, integrationTestResults.total)
+            def integrationStatus = getTestStatus(integrationTestResults.failed, integrationTestResults.skipped)
+            printf "  %-22s | %8d | %8d | %8d | %8d | %8d | %12.3f | %7.1f%% | %s\n",
+                "Integration Tests", integrationTestResults.classes, integrationTestResults.total, integrationTestResults.passed,
+                integrationTestResults.failed, integrationTestResults.skipped, integrationTestResults.time, integrationPassRate, integrationStatus
+
+            println "-" * 120
+		}
+
+        def totalPassRate = calculatePassRate(totalPassed, totalTests)
+        def totalStatus
+		if (totalFailed > 0) {
+            totalStatus = "${colors.BOLD}${colors.RED}FAILED${colors.RESET}"
+        } else if (totalSkipped > 0) {
+			totalStatus = "${colors.BOLD}${colors.YELLOW}ALL PASSED${colors.RESET}"
+		} else {
+			totalStatus = "${colors.BOLD}${colors.GREEN}ALL PASSED${colors.RESET}"
+        }
+
+        def totalClasses = unitTestResults.classes + integrationTestResults.classes
+
+        printf "  ${colors.BOLD}%-22s${colors.RESET} | %s | %s | %s | %s | %s | %s | %s | %s\n",
+            "TOTAL",
+            formatNumber(totalClasses, 8),
+            formatNumber(totalTests, 8),
+            formatNumber(totalPassed, 8),
+            formatNumber(totalFailed, 8),
+            formatNumber(totalSkipped, 8),
+            formatDecimal(totalTime, 12, 3),
+            formatPercentage(totalPassRate, 8),
+            totalStatus
+
+        println "=" * 120
+        println ""
+    }
+
+    return [total: totalTests, passed: totalPassed, failed: totalFailed, skipped: totalSkipped, time: totalTime]
+}
+
+import groovy.util.XmlSlurper
+import org.gradle.api.GradleException
+import org.gradle.api.tasks.testing.Test
+import org.gradle.testing.jacoco.tasks.JacocoReport
+
+def configureXmlParser() {
+    def parser = new XmlSlurper()
+    parser.setFeature("http://apache.org/xml/features/disallow-doctype-decl", false)
+    parser.setFeature("http://xml.org/sax/features/external-general-entities", false)
+    parser.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+    parser.setFeature("http://apache.org/xml/features/nonvalidating/load-dtd-grammar", false)
+    parser.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+    parser.setProperty("http://javax.xml.XMLConstants/property/accessExternalDTD", "")
+    return parser
+}
+
 
 //Set plugin metadata information here that gets written into the jar
 jar {
     manifest {
         attributes(
-                'Plugin-Class': 'com.morpheusdata.scvmm.ScvmmPlugin',
-                'Plugin-Version': version,
-                'Morpheus-Name': 'SCVMM',
-                'Morpheus-Organization': 'morpheus',
-                'Morpheus-Code': 'morpheus-scvmm-plugin',
-                'Morpheus-Description': 'Plugin for System Center Virtual Machine Manager',
-                'Morpheus-Logo': 'assets/scvmm.svg',
-                'Morpheus-Logo-Dark': 'assets/scvmm-dark.svg',
-                'Morpheus-Labels': 'Plugin, Cloud',
-                'Morpheus-Repo': 'https://github.com/gomorpheus/morpheus-scvmm-plugin',
-                'Morpheus-Min-Appliance-Version': "8.0.3"
+            'Plugin-Class': 'com.morpheusdata.scvmm.ScvmmPlugin',
+            'Plugin-Version': version,
+            'Morpheus-Name': 'SCVMM',
+            'Morpheus-Organization': 'morpheus',
+            'Morpheus-Code': 'morpheus-scvmm-plugin',
+            'Morpheus-Description': 'Plugin for System Center Virtual Machine Manager',
+            'Morpheus-Logo': 'assets/scvmm.svg',
+            'Morpheus-Logo-Dark': 'assets/scvmm-dark.svg',
+            'Morpheus-Labels': 'Plugin, Cloud',
+            'Morpheus-Repo': 'https://github.com/HewlettPackard/morpheus-scvmm-plugin',
+            'Morpheus-Min-Appliance-Version': "8.0.3"
         )
     }
 }
 
-assets {
-    packagePlugin = false //leave this false for plugins
-}
-
-
-task(console, dependsOn: 'classes', type: JavaExec) {
-    main = 'groovy.ui.Console'
-    classpath = sourceSets.main.compileClasspath + sourceSets.main.runtimeClasspath
-}
-
-test {
-    useJUnitPlatform()
-    forkEvery = 1
-    testLogging {
-        exceptionFormat = 'full'
-        showStandardStreams = true
+sonarqube {
+    properties {
+        property "sonar.projectKey", "Morpheus-scvmm-Plugin"
+        property "sonar.projectName", "morpheus-scvmm-plugin"
+        property "sonar.sources", "src/main/groovy"
+        property "sonar.tests", "src/test/groovy"
+        property "sonar.java.binaries", "build/classes/groovy/main"
+        property "sonar.coverage.jacoco.xmlReportPaths", "build/reports/jacoco/test/jacocoTestReport.xml"
     }
 }
 
-test.finalizedBy jacocoTestReport
-
-jacocoTestReport.dependsOn test
+testing {
+    suites {
+        configureEach {
+            dependencies {
+                implementation "com.morpheusdata:morpheus-plugin-api:$morpheusApiVersion"
+                implementation "org.codehaus.groovy:groovy-all:$groovyVersion"
+                implementation 'com.fasterxml.jackson.core:jackson-core:2.15.0'
+            }
+        }
+        test(JvmTestSuite) {
+            useSpock()
+        }
+    }
+    test {
+        useJUnitPlatform()
+        forkEvery = 1
+        testLogging {
+            events "failed", "skipped"
+            exceptionFormat = 'full'
+            showStandardStreams = true
+        }
+        finalizedBy jacocoTestReport
+    }
+}
+tasks.register('console', JavaExec) {
+    dependsOn 'classes'
+    mainClass = 'groovy.ui.Console'
+    classpath = sourceSets.main.compileClasspath + sourceSets.main.runtimeClasspath
+}
 
 jacocoTestCoverageVerification {
     violationRules {
         rule {
             limit {
-                minimum = 0.60
-            }
-        }
-
-        rule {
-            element = 'PACKAGE'
-            limit {
-                minimum = 0.0
-            }
-        }
-
-        rule {
-            limit {
-                counter = 'BRANCH'
-                minimum = 0.0
-            }
-        }
-
-        rule {
-            element = 'METHOD'
-            limit {
-                counter = 'COMPLEXITY'
-                value = 'TOTALCOUNT'
-                maximum = 40
+                minimum = minLineCoverage / 100.0
             }
         }
     }
@@ -215,16 +367,34 @@ jacocoTestReport {
             fileTree(dir: it)
         }))
     }
+    doLast {
+	println "Comprehensive Jacoco report generated: ${reports.html.outputLocation.get()}"
+    }
 }
-
-jacocoTestCoverageVerification.dependsOn jacocoTestReport
-
-tasks.assemble.dependsOn tasks.shadowJar
 
 
 shadowJar {
     archiveClassifier.set('all')
 }
+
+assets {
+    packagePlugin = false //leave this false for plugins
+}
+
+final gitCommitId = providers.exec {
+    commandLine('git', 'rev-parse', 'HEAD')
+}.standardOutput.asText.get()
+
+final gitBranchName = providers.exec {
+    commandLine('git', 'rev-parse', '--abbrev-ref', 'HEAD')
+}.standardOutput.asText.get()
+
+def getEnvOrProperty(final String envVar, final String propertyKey) {
+    return System.getenv(envVar) ?: project.findProperty(propertyKey)
+}
+
+tasks.assemble.dependsOn tasks.shadowJar
+
 
 artifactory {
     publish {
@@ -233,7 +403,7 @@ artifactory {
         // Define the project repository to which the artifacts will be published
         repository {
             // Set the Artifactory repository key
-            repoKey = 'morpheus-plugins'
+            repoKey = 'morpheus-open-source-plugins'
             // Specify the publisher username
             username = getEnvOrProperty('ARTIFACTORY_USER', 'artifactory_user')
             // Provide the publisher password
@@ -244,17 +414,13 @@ artifactory {
         defaults {
             publications('mavenJava')
             publishArtifacts = true
-            properties = [
-                    'commit_id': gitCommitId,
-                    'branch'   : gitBranchName,
-            ]
             publishPom = true
-            //
-            // TODO - Enable once permissions to deploy to
-            //        artifactory-build-info is granted by DevOps.
             publishBuildInfo = false
+            properties = [
+                'commit_id': gitCommitId,
+                'branch'   : gitBranchName,
+            ]
         }
-
         artifacts {
             archives shadowJar
         }
@@ -264,32 +430,117 @@ artifactory {
 publishing {
     publications {
         mavenJava(MavenPublication) {
-            artifact(shadowJar.archiveFile) {
-                classifier = 'all'
-            }
+            artifact(tasks.named("shadowJar"))
+                pom {
+                    name.set("morpheus-scvmm-plugin")
+                    description.set("scvmm plugins for Morpheus")
+                    url.set("https://github.com/HewlettPackard/morpheus-scvmm-plugin")
+                }
         }
     }
 }
 
-codenarcMain {
-    reports {
-        html {
-            required = true
-            outputLocation = layout.buildDirectory.file('reports/codenarc/main.html')
-        }
-        xml {
-            required = true
-            outputLocation = layout.buildDirectory.file('reports/codenarc/main.xml')
+// Common method to parse coverage data from XML report
+def parseCoverageFromXml(xmlReport) {
+    def coverageData = [ line: null]
+
+    if (xmlReport.exists()) {
+        def parser = configureXmlParser()
+        def jacoco = parser.parse(xmlReport)
+        jacoco.counter.each { counter ->
+            def type = counter.@type.toString()
+            def missed = counter.@missed.toString() as Integer
+            def covered = counter.@covered.toString() as Integer
+            def total = missed + covered
+            def percentage = total > 0 ? Math.round((covered * 100.0) / total * 10) / 10 : 0.0
+
+            switch(type) {
+                case 'LINE':
+                    coverageData.line = percentage
+                break
+            }
         }
     }
-    ignoreFailures = true
-    source = sourceSets.main.allGroovy
+    return coverageData
+}
+
+// Common method to display coverage results
+def displayCoverageResults(buildDir, displayIfMissing = true) {
+    def xmlReport = file("${buildDir}/reports/jacoco/test/jacocoTestReport.xml")
+    def htmlReport = file("${buildDir}/reports/jacoco/test/html/index.html")
+    def coverageData = parseCoverageFromXml(xmlReport)
+
+    if (xmlReport.exists() || htmlReport.exists() || displayIfMissing) {
+        println "  Thresholds: Line ${minLineCoverage}%"
+
+        def formatCoverageMetric = { actual, threshold, label ->
+            def status = actual >= threshold ? "${colors.GREEN}✓${colors.RESET}" : "${colors.RED}✗${colors.RESET}"
+            return "  ${label}: ${actual}% ${status}"
+        }
+        if (coverageData.line != null) println formatCoverageMetric(coverageData.line, minLineCoverage, "Line Coverage       ")
+
+         println "=" * 120
+	 println ""
+    }
+
+    return coverageData
+}
+
+// Common method to display report locations
+def displayReportLocations(buildDir) {
+        println "Test Report Locations:"
+        println "----------------------------------------"
+
+    def codenarcHtml = file("${buildDir}/reports/codenarc/main.html")
+
+    if (codenarcHtml.exists()) {
+        println "  CodeNarc Report:         file://${codenarcHtml.absolutePath}"
+    }
+    def testHtml = file("${buildDir}/reports/tests/test/index.html")
+    def integrationHtml = file("${buildDir}/reports/tests/integrationTest/index.html")
+    def jacocoHtml = file("${buildDir}/reports/jacoco/test/html/index.html")
+
+    if (testHtml.exists()) {
+        println "  Unit Test Report:        file://${testHtml.absolutePath}"
+    }
+    if (integrationHtml.exists()) {
+        println "  Integration Test Report: file://${integrationHtml.absolutePath}"
+    }
+    if (jacocoHtml.exists()) {
+        println "  Coverage Report:         file://${jacocoHtml.absolutePath}"
+    }
+    println ""
+}
+
+def parseTestResultsFromDir(dirPath, testType) {
+    def testDir = file(dirPath)
+    def results = [total: 0, passed: 0, failed: 0, skipped: 0, time: 0.0, classes: 0]
+
+    if (testDir.exists()) {
+        testDir.listFiles().findAll { it.name.startsWith('TEST-') && it.name.endsWith('.xml') }.each { xmlFile ->
+            results.classes++
+            def testsuite = new XmlSlurper().parse(xmlFile)
+
+            def tests = (testsuite.@tests.toString() ?: "0") as Integer
+            def failures = (testsuite.@failures.toString() ?: "0") as Integer
+            def errors = (testsuite.@errors.toString() ?: "0") as Integer
+            def skipped = (testsuite.@skipped.toString() ?: "0") as Integer
+            def time = (testsuite.@time.toString() ?: "0.0") as Double
+
+            results.total += tests
+            results.failed += failures + errors
+            results.skipped += skipped
+            results.time += time
+        }
+        results.passed = results.total - results.failed - results.skipped
+    }
+    return results
 }
 
 tasks.register('testSummary') {
     description = 'Generate test summary from results (no test execution)'
     group = 'verification'
-    dependsOn codenarcMain
+    dependsOn clean, test, jacocoTestReport, codenarcMain
 
     doFirst {
         println "\n" + "=" * 120
@@ -300,21 +551,17 @@ tasks.register('testSummary') {
     doLast {
         def buildDir = layout.buildDirectory.asFile.get()
         println "DEBUG: Build Dir: ${layout.buildDirectory.asFile.get().absolutePath}"
-        println "DEBUG: main.html exists? " + file("${layout.buildDirectory.asFile.get()}/reports/codenarc/main.html").exists()
-        println "DEBUG: main.xml exists? " + file("${layout.buildDirectory.asFile.get()}/reports/codenarc/main.xml").exists()
-        /*
          // 1. FIRST: Show detailed test case results (consolidated table only)
-         println "\n1. TEST EXECUTION RESULTS"
-         println "=" * 120
-         def unitTestResults = parseTestResultsFromDir("${buildDir}/test-results/test", "Unit Tests")
-         def integrationTestResults = parseTestResultsFromDir("${buildDir}/test-results/integrationTest", "Integration Tests")
-         def totalResults = displayTestResultsSummary(unitTestResults, integrationTestResults)
+        println "\n1. TEST EXECUTION RESULTS"
+        println "=" * 120
+        def unitTestResults = parseTestResultsFromDir("${buildDir}/test-results/test", "Unit Tests")
+        def integrationTestResults = parseTestResultsFromDir("${buildDir}/test-results/integrationTest", "Integration Tests")
+        def totalResults = displayTestResultsSummary(unitTestResults, integrationTestResults)
 
-         // 2. SECOND: Show code coverage details
-         println "\n2. CODE COVERAGE ANALYSIS (JACOCO)"
-         println "=" * 120
-         def coverageData = displayCoverageResults(buildDir, false)
-        */
+        // 2. SECOND: Show code coverage details
+        println "\n2. CODE COVERAGE ANALYSIS (JACOCO)"
+        println "=" * 120
+        def coverageData = displayCoverageResults(buildDir, false)
 
         // 3. THIRD: Show CodeNarc static analysis
         println "\n3. STATIC CODE ANALYSIS (CODENARC)"
