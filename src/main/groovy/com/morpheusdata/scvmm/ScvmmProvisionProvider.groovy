@@ -1712,6 +1712,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     }
 
     // Refactored cloneParentCleanup
+    @SuppressWarnings('CatchException')
     protected void cloneParentCleanup(Map<String, Object> scvmmOpts, ServiceResponse rtn) {
         if (scvmmOpts.cloneVMId && scvmmOpts.cloneContainerId) {
             try {
@@ -2614,7 +2615,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     }
 
     // Helper to select datastore
-    @SuppressWarnings(['UseCollectMany', 'parameterCount'])
+    @SuppressWarnings(['UseCollectMany', 'ParameterCount'])
     protected Datastore selectDatastore(Cloud cloud, Account account, String clusterId, Integer hostId,
                                         Datastore datastore, Long size, Long siteId) {
         if (datastore) {
@@ -2766,229 +2767,291 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         null
     }
 
+//    @Override
+//    ServiceResponse<ProvisionResponse> runHost(ComputeServer server, HostRequest hostRequest, Map opts) {
+//        log.debug("runHost: ${server} ${hostRequest} ${opts}")
+//        ProvisionResponse provisionResponse = new ProvisionResponse()
+//        try {
+//            def config = server.configMap
+//            config.resourcePool = ""   // keep it blank else server creation failed
+//            Cloud cloud = server.cloud
+//            def account = server.account
+//            def layout = server.layout
+//            def typeSet = server.typeSet
+//            def controllerNode = pickScvmmController(cloud)
+//            def scvmmOpts = apiService.getScvmmCloudOpts(context, cloud, controllerNode)
+//            scvmmOpts.controllerServerId = controllerNode.id
+//            scvmmOpts.creatingDockerHost = true
+//            scvmmOpts.name = server.name
+//
+//            def imageType = config.templateTypeSelect ?: 'default'
+//            def virtualImage
+//            def clusterId
+//            if (config.resourcePool) {
+//                def pool = server.resourcePool
+//                if (pool) {
+//                    clusterId = pool.externalId
+//                }
+//            }
+//
+//            // host, datastore configuration
+//            ComputeServer node
+//            Datastore datastore
+//            def volumePath, nodeId, highlyAvailable
+//            def storageVolumes = server.volumes
+//            def rootVolume = getServerRootDisk(server)
+//            def maxStorage = getServerRootSize(server)
+//            def maxMemory = server.maxMemory ?: server.plan.maxMemory
+//            (node, datastore, volumePath, highlyAvailable) = getHostAndDatastore(cloud, account,
+//                    clusterId, config.hostId, rootVolume?.datastore, rootVolume?.datastoreOption, maxStorage,
+//                    server.provisionSiteId, maxMemory)
+//            nodeId = node?.id
+//            scvmmOpts.datastoreId = datastore?.externalId
+//            scvmmOpts.hostExternalId = node?.externalId
+//            scvmmOpts.volumePath = volumePath
+//            scvmmOpts.highlyAvailable = highlyAvailable
+//
+//            if (rootVolume) {
+//                rootVolume.datastore = datastore
+//                context.services.storageVolume.save(rootVolume)
+//            }
+//
+//            storageVolumes?.each { vol ->
+//                if (!vol.rootVolume) {
+//                    def tmpNode, tmpDatastore, tmpVolumePath, tmpHighlyAvailable
+//                    (tmpNode, tmpDatastore, tmpVolumePath, tmpHighlyAvailable) = getHostAndDatastore(cloud, account,
+//                            clusterId, config.hostId, vol?.datastore, vol?.datastoreOption, maxStorage,
+//                            server.provisionSiteId, maxMemory)
+//                    vol.datastore = tmpDatastore
+//                    context.services.storageVolume.save(vol)
+//                }
+//            }
+//
+//            scvmmOpts += apiService.getScvmmControllerOpts(cloud, controllerNode)
+//            def imageId
+//            if (layout && typeSet) {
+//                virtualImage = typeSet.workloadType.virtualImage
+//                imageId = virtualImage.externalId
+//            } else if (imageType == 'custom' && config.template) {
+//                def virtualImageId = config.template?.toLong()
+//                virtualImage = context.services.virtualImage.get(virtualImageId)
+//                imageId = virtualImage.externalId
+//            } else {
+//                virtualImage = new VirtualImage(code: 'scvmm.image.morpheus.ubuntu.22.04.20250218.amd64')
+//                // better this later
+//            }
+//
+//            if (!imageId) { // If its userUploaded and still needs uploaded
+//                def cloudFiles =
+//                        context.async.virtualImage.getVirtualImageFiles(virtualImage).blockingGet()
+//                def imageFile = cloudFiles?.find { cloudFile ->
+//                    def name = cloudFile.name.toLowerCase()
+//                    name.endsWith(".vhd") || name.endsWith(".vhdx") ||
+//                            name.endsWith(".vmdk") || name.endsWith(".vhd.tar.gz")
+//                }
+//
+//                def containerImage = [
+//                        name          : virtualImage.name,
+//                        minDisk       : INTEGER_FIVE,
+//                        minRam        : FIVE_TWELVE_LONG * ComputeUtility.ONE_MEGABYTE,
+//                        virtualImageId: virtualImage.id,
+//                        tags          : MORPHEUS_UBUNTU_TAGS,
+//                        imageType     : virtualImage.imageType,
+//                        containerType : VHD_CONTAINER_TYPE,
+//                        imageFile     : imageFile,
+//                        cloudFiles    : cloudFiles,
+//                ]
+//
+//                scvmmOpts.image = containerImage
+//                scvmmOpts.userId = server.createdBy?.id
+//                log.debug("scvmmOpts: {}", scvmmOpts)
+//
+//                def imageResults = apiService.insertContainerImage(scvmmOpts)
+//                if (imageResults.success == true) {
+//                    imageId = imageResults.imageId
+//                }
+//            }
+//
+//            if (imageId) {
+//                server.sourceImage = virtualImage
+//                server.externalId = scvmmOpts.name
+//                server.serverOs = server.serverOs ?: virtualImage.osType
+//                def osplatform = virtualImage?.osType?.platform?.toString()?.toLowerCase()
+//                        ?: virtualImage?.platform?.toString()?.toLowerCase()
+//                server.osType = [WINDOWS_PLATFORM, OSX_PLATFORM].contains(osplatform) ? osplatform : LINUX_PLATFORM
+//                server.parentServer = node
+//                scvmmOpts.secureBoot = virtualImage?.uefi ?: false
+//                scvmmOpts.imageId = imageId
+//                scvmmOpts.scvmmGeneration =
+//                        virtualImage?.getConfigProperty(GENERATION_FIELD) ?: SCVMM_GENERATION1_VALUE
+//                scvmmOpts.diskMap = context.services.virtualImage.getImageDiskMap(virtualImage)
+//                server = saveAndGetMorpheusServer(server, true)
+//                scvmmOpts += getScvmmServerOpts(server)
+//
+//                scvmmOpts.networkConfig = hostRequest.networkConfiguration
+//                scvmmOpts.cloudConfigUser = hostRequest.cloudConfigUser
+//                scvmmOpts.cloudConfigMeta = hostRequest.cloudConfigMeta
+//                scvmmOpts.cloudConfigNetwork = hostRequest.cloudConfigNetwork
+//                scvmmOpts.isSysprep = virtualImage?.isSysprep
+//
+//                def isoBuffer = context.services.provision.buildIsoOutputStream(
+//                        scvmmOpts.isSysprep, PlatformType.valueOf(server.osType),
+//                        scvmmOpts.cloudConfigMeta, scvmmOpts.cloudConfigUser, scvmmOpts.cloudConfigNetwork)
+//
+//                scvmmOpts.cloudConfigBytes = isoBuffer
+//                server.cloudConfigUser = scvmmOpts.cloudConfigUser
+//                server.cloudConfigMeta = scvmmOpts.cloudConfigMeta
+//                server.cloudConfigNetwork = scvmmOpts.cloudConfigNetwork
+//
+//                // save the server
+//                server = saveAndGetMorpheusServer(server, true)
+//                log.debug("create server:${scvmmOpts}")
+//
+//                // create it in scvmm
+//                def createResults = apiService.createServer(scvmmOpts)
+//                log.debug "create server results:${createResults}"
+//                if (createResults.success == true) {
+//                    def instance = createResults.server
+//                    if (instance) {
+//                        node = context.services.computeServer.get(nodeId)
+//                        server.externalId = instance.id
+//                        server.parentServer = node
+//                        def serverDisks = createResults.server.disks
+//                        if (serverDisks) {
+//                            storageVolumes = server.volumes
+//                            rootVolume = storageVolumes.find { sv -> sv.rootVolume == true }
+//                            rootVolume.externalId = serverDisks.diskMetaData[serverDisks.osDisk?.externalId]?.VhdID
+//                            // Fix up the externalId.. initially set to the VirtualDiskDrive ID..
+//                            // now setting to VirtualHardDisk ID
+//                            rootVolume.datastore = loadDatastoreForVolume(
+//                                    cloud,
+//                                    serverDisks.diskMetaData[rootVolume.externalId]?.HostVolumeId,
+//                                    serverDisks.diskMetaData[rootVolume.externalId]?.FileShareId,
+//                                    serverDisks.diskMetaData[rootVolume.externalId]?.PartitionUniqueId
+//                            ) ?: rootVolume.datastore
+//                            storageVolumes.each { storageVolume ->
+//                                def dataDisk = serverDisks.dataDisks.find { sd -> sd.id == storageVolume.id }
+//                                if (dataDisk) {
+//                                    def newExternalId = serverDisks.diskMetaData[dataDisk.externalId]?.VhdID
+//                                    if (newExternalId) {
+//                                        storageVolume.externalId = newExternalId
+//                                    }
+//
+//                                    // Ensure the datastore is set
+//                                    storageVolume.datastore = loadDatastoreForVolume(
+//                                            cloud,
+//                                            serverDisks.diskMetaData[storageVolume.externalId]?.HostVolumeId,
+//                                            serverDisks.diskMetaData[storageVolume.externalId]?.FileShareId,
+//                                            serverDisks.diskMetaData[storageVolume.externalId]?.PartitionUniqueId
+//                                    ) ?: storageVolume.datastore
+//                                }
+//                            }
+//                        }
+//
+//                        def serverDetails = apiService.getServerDetails(scvmmOpts, server.externalId)
+//                        if (serverDetails.success == true) {
+//                            // fill in ip address.
+//                            def newIpAddress = serverDetails.server?.ipAddress ?: createResults.server?.ipAddress
+//                            def macAddress = serverDetails.server?.macAddress
+//                            applyComputeServerNetworkIp(server, newIpAddress, newIpAddress, 0, macAddress)
+//                            server.osDevice = DEV_SDA_PATH
+//                            server.dataDevice = DEV_SDA_PATH
+//                            server.sshHost = server.internalIp
+//                            server.managed = true
+//                            server.with {
+//                                status = PROVISIONED_STATUS
+//                                capacityInfo = new ComputeCapacityInfo(maxCores: scvmmOpts.maxCores,
+//                                        maxMemory: scvmmOpts.memory, maxStorage: scvmmOpts.maxTotalStorage)
+//                            }
+//                            context.async.computeServer.save(server).blockingGet()
+//                            provisionResponse.success = true
+//                            log.debug("provisionResponse.success: ${provisionResponse.success}")
+//                        } else {
+//                            server.statusMessage = FAILED_TO_RUN_SERVER_MSG
+//                            context.async.computeServer.save(server).blockingGet()
+//                            provisionResponse.success = false
+//                        }
+//                    } else {
+//                        // no reservation
+//                        server.statusMessage = 'Error loading created server'
+//                    }
+//                } else {
+//                    if (createResults.server?.id) {
+//                        // we did create a vm though so we need to bind it to the server
+//                        server.externalId = createResults.server.id
+//                        context.async.computeServer.save(server).blockingGet()
+//                    }
+//                    server.statusMessage = ERROR_CREATING_SERVER_MSG
+//                    // tell someone :)
+//                }
+//            } else {
+//                server.statusMessage = ERROR_CREATING_SERVER_MSG
+//            }
+//            if (provisionResponse.success != true) {
+//                return new ServiceResponse(success: false,
+//                        msg: provisionResponse.message ?: VM_CONFIG_ERROR_MSG, error: provisionResponse.message,
+//                        data: provisionResponse)
+//            }
+//            return new ServiceResponse<ProvisionResponse>(success: true, data: provisionResponse)
+//        } catch (RuntimeException e) {
+//            log.error("Error in runHost method: ${e.message}", e)
+//            provisionResponse.setError(e.message)
+//            return new ServiceResponse(success: false, msg: e.message, error: e.message, data: provisionResponse)
+//        }
+//    }
+
+// groovy/com/morpheusdata/scvmm/ScvmmProvisionProvider.groovy
     @Override
+    @SuppressWarnings('CatchRuntimeException')
     ServiceResponse<ProvisionResponse> runHost(ComputeServer server, HostRequest hostRequest, Map opts) {
         log.debug("runHost: ${server} ${hostRequest} ${opts}")
         ProvisionResponse provisionResponse = new ProvisionResponse()
         try {
             def config = server.configMap
-            config.resourcePool = ""   // keep it blank else server creation failed
+            config.resourcePool = ""
             Cloud cloud = server.cloud
             def account = server.account
-            def layout = server.layout
-            def typeSet = server.typeSet
             def controllerNode = pickScvmmController(cloud)
-            def scvmmOpts = apiService.getScvmmCloudOpts(context, cloud, controllerNode)
-            scvmmOpts.controllerServerId = controllerNode.id
-            scvmmOpts.creatingDockerHost = true
-            scvmmOpts.name = server.name
-
-            def imageType = config.templateTypeSelect ?: 'default'
-            def virtualImage
-            def clusterId
-            if (config.resourcePool) {
-                def pool = server.resourcePool
-                if (pool) {
-                    clusterId = pool.externalId
-                }
-            }
-
-            // host, datastore configuration
-            ComputeServer node
-            Datastore datastore
-            def volumePath, nodeId, highlyAvailable
-            def storageVolumes = server.volumes
+            def scvmmOpts = prepareScvmmOpts(context, cloud, controllerNode, server)
+            def clusterId = resolveClusterId(config, server)
             def rootVolume = getServerRootDisk(server)
             def maxStorage = getServerRootSize(server)
             def maxMemory = server.maxMemory ?: server.plan.maxMemory
-            (node, datastore, volumePath, highlyAvailable) = getHostAndDatastore(cloud, account,
-                    clusterId, config.hostId, rootVolume?.datastore, rootVolume?.datastoreOption, maxStorage,
-                    server.provisionSiteId, maxMemory)
-            nodeId = node?.id
-            scvmmOpts.datastoreId = datastore?.externalId
-            scvmmOpts.hostExternalId = node?.externalId
-            scvmmOpts.volumePath = volumePath
-            scvmmOpts.highlyAvailable = highlyAvailable
 
-            if (rootVolume) {
-                rootVolume.datastore = datastore
-                context.services.storageVolume.save(rootVolume)
-            }
+            def hostDatastoreInfo = getHostDatastoreInfoForRoot(cloud, account, clusterId, config, rootVolume,
+                    maxStorage, server.provisionSiteId, maxMemory)
+            updateScvmmOptsWithHostDatastore(scvmmOpts, hostDatastoreInfo)
 
-            storageVolumes?.each { vol ->
-                if (!vol.rootVolume) {
-                    def tmpNode, tmpDatastore, tmpVolumePath, tmpHighlyAvailable
-                    (tmpNode, tmpDatastore, tmpVolumePath, tmpHighlyAvailable) = getHostAndDatastore(cloud, account,
-                            clusterId, config.hostId, vol?.datastore, vol?.datastoreOption, maxStorage,
-                            server.provisionSiteId, maxMemory)
-                    vol.datastore = tmpDatastore
-                    context.services.storageVolume.save(vol)
-                }
-            }
+            updateRootVol(rootVolume, hostDatastoreInfo.datastore)
+            updateServerVolumes(server.volumes, cloud, account, clusterId, config.hostId,
+                    maxStorage, server.provisionSiteId, maxMemory)
 
             scvmmOpts += apiService.getScvmmControllerOpts(cloud, controllerNode)
-            def imageId
-            if (layout && typeSet) {
-                virtualImage = typeSet.workloadType.virtualImage
-                imageId = virtualImage.externalId
-            } else if (imageType == 'custom' && config.template) {
-                def virtualImageId = config.template?.toLong()
-                virtualImage = context.services.virtualImage.get(virtualImageId)
-                imageId = virtualImage.externalId
-            } else {
-                virtualImage = new VirtualImage(code: 'scvmm.image.morpheus.ubuntu.22.04.20250218.amd64')
-                // better this later
-            }
+            def imageInfo = resolveImageInfo(config, server)
+            def imageId = imageInfo.imageId
+            def virtualImage = imageInfo.virtualImage
 
-            if (!imageId) { // If its userUploaded and still needs uploaded
-                def cloudFiles =
-                        context.async.virtualImage.getVirtualImageFiles(virtualImage).blockingGet()
-                def imageFile = cloudFiles?.find { cloudFile ->
-                    def name = cloudFile.name.toLowerCase()
-                    name.endsWith(".vhd") || name.endsWith(".vhdx") ||
-                            name.endsWith(".vmdk") || name.endsWith(".vhd.tar.gz")
-                }
-
-                def containerImage = [
-                        name          : virtualImage.name,
-                        minDisk       : INTEGER_FIVE,
-                        minRam        : FIVE_TWELVE_LONG * ComputeUtility.ONE_MEGABYTE,
-                        virtualImageId: virtualImage.id,
-                        tags          : MORPHEUS_UBUNTU_TAGS,
-                        imageType     : virtualImage.imageType,
-                        containerType : VHD_CONTAINER_TYPE,
-                        imageFile     : imageFile,
-                        cloudFiles    : cloudFiles,
-                ]
-
-                scvmmOpts.image = containerImage
-                scvmmOpts.userId = server.createdBy?.id
-                log.debug("scvmmOpts: {}", scvmmOpts)
-
-                def imageResults = apiService.insertContainerImage(scvmmOpts)
-                if (imageResults.success == true) {
-                    imageId = imageResults.imageId
-                }
+            if (!imageId) {
+                imageId = handleImageUpload(scvmmOpts, server, virtualImage)
             }
 
             if (imageId) {
-                server.sourceImage = virtualImage
-                server.externalId = scvmmOpts.name
-                server.serverOs = server.serverOs ?: virtualImage.osType
-                def osplatform = virtualImage?.osType?.platform?.toString()?.toLowerCase()
-                        ?: virtualImage?.platform?.toString()?.toLowerCase()
-                server.osType = [WINDOWS_PLATFORM, OSX_PLATFORM].contains(osplatform) ? osplatform : LINUX_PLATFORM
-                server.parentServer = node
-                scvmmOpts.secureBoot = virtualImage?.uefi ?: false
-                scvmmOpts.imageId = imageId
-                scvmmOpts.scvmmGeneration =
-                        virtualImage?.getConfigProperty(GENERATION_FIELD) ?: SCVMM_GENERATION1_VALUE
-                scvmmOpts.diskMap = context.services.virtualImage.getImageDiskMap(virtualImage)
-                server = saveAndGetMorpheusServer(server, true)
+                prepareServerForProvision(server, virtualImage, scvmmOpts, hostDatastoreInfo.node, imageId)
                 scvmmOpts += getScvmmServerOpts(server)
-
-                scvmmOpts.networkConfig = hostRequest.networkConfiguration
-                scvmmOpts.cloudConfigUser = hostRequest.cloudConfigUser
-                scvmmOpts.cloudConfigMeta = hostRequest.cloudConfigMeta
-                scvmmOpts.cloudConfigNetwork = hostRequest.cloudConfigNetwork
-                scvmmOpts.isSysprep = virtualImage?.isSysprep
-
-                def isoBuffer = context.services.provision.buildIsoOutputStream(
-                        scvmmOpts.isSysprep, PlatformType.valueOf(server.osType),
-                        scvmmOpts.cloudConfigMeta, scvmmOpts.cloudConfigUser, scvmmOpts.cloudConfigNetwork)
-
-                scvmmOpts.cloudConfigBytes = isoBuffer
-                server.cloudConfigUser = scvmmOpts.cloudConfigUser
-                server.cloudConfigMeta = scvmmOpts.cloudConfigMeta
-                server.cloudConfigNetwork = scvmmOpts.cloudConfigNetwork
-
-                // save the server
+                setCloudConfig(scvmmOpts, hostRequest, server)
                 server = saveAndGetMorpheusServer(server, true)
-                log.debug("create server:${scvmmOpts}")
-
-                // create it in scvmm
                 def createResults = apiService.createServer(scvmmOpts)
                 log.debug "create server results:${createResults}"
-                if (createResults.success == true) {
-                    def instance = createResults.server
-                    if (instance) {
-                        node = context.services.computeServer.get(nodeId)
-                        server.externalId = instance.id
-                        server.parentServer = node
-                        def serverDisks = createResults.server.disks
-                        if (serverDisks) {
-                            storageVolumes = server.volumes
-                            rootVolume = storageVolumes.find { sv -> sv.rootVolume == true }
-                            rootVolume.externalId = serverDisks.diskMetaData[serverDisks.osDisk?.externalId]?.VhdID
-                            // Fix up the externalId.. initially set to the VirtualDiskDrive ID..
-                            // now setting to VirtualHardDisk ID
-                            rootVolume.datastore = loadDatastoreForVolume(
-                                    cloud,
-                                    serverDisks.diskMetaData[rootVolume.externalId]?.HostVolumeId,
-                                    serverDisks.diskMetaData[rootVolume.externalId]?.FileShareId,
-                                    serverDisks.diskMetaData[rootVolume.externalId]?.PartitionUniqueId
-                            ) ?: rootVolume.datastore
-                            storageVolumes.each { storageVolume ->
-                                def dataDisk = serverDisks.dataDisks.find { sd -> sd.id == storageVolume.id }
-                                if (dataDisk) {
-                                    def newExternalId = serverDisks.diskMetaData[dataDisk.externalId]?.VhdID
-                                    if (newExternalId) {
-                                        storageVolume.externalId = newExternalId
-                                    }
-
-                                    // Ensure the datastore is set
-                                    storageVolume.datastore = loadDatastoreForVolume(
-                                            cloud,
-                                            serverDisks.diskMetaData[storageVolume.externalId]?.HostVolumeId,
-                                            serverDisks.diskMetaData[storageVolume.externalId]?.FileShareId,
-                                            serverDisks.diskMetaData[storageVolume.externalId]?.PartitionUniqueId
-                                    ) ?: storageVolume.datastore
-                                }
-                            }
-                        }
-
-                        def serverDetails = apiService.getServerDetails(scvmmOpts, server.externalId)
-                        if (serverDetails.success == true) {
-                            // fill in ip address.
-                            def newIpAddress = serverDetails.server?.ipAddress ?: createResults.server?.ipAddress
-                            def macAddress = serverDetails.server?.macAddress
-                            applyComputeServerNetworkIp(server, newIpAddress, newIpAddress, 0, macAddress)
-                            server.osDevice = DEV_SDA_PATH
-                            server.dataDevice = DEV_SDA_PATH
-                            server.sshHost = server.internalIp
-                            server.managed = true
-                            server.with {
-                                status = PROVISIONED_STATUS
-                                capacityInfo = new ComputeCapacityInfo(maxCores: scvmmOpts.maxCores,
-                                        maxMemory: scvmmOpts.memory, maxStorage: scvmmOpts.maxTotalStorage)
-                            }
-                            context.async.computeServer.save(server).blockingGet()
-                            provisionResponse.success = true
-                            log.debug("provisionResponse.success: ${provisionResponse.success}")
-                        } else {
-                            server.statusMessage = FAILED_TO_RUN_SERVER_MSG
-                            context.async.computeServer.save(server).blockingGet()
-                            provisionResponse.success = false
-                        }
-                    } else {
-                        // no reservation
-                        server.statusMessage = 'Error loading created server'
-                    }
-                } else {
-                    if (createResults.server?.id) {
-                        // we did create a vm though so we need to bind it to the server
-                        server.externalId = createResults.server.id
-                        context.async.computeServer.save(server).blockingGet()
-                    }
-                    server.statusMessage = ERROR_CREATING_SERVER_MSG
-                    // tell someone :)
-                }
+                provisionResponse = handleServerCreation(createResults, server,
+                        hostDatastoreInfo.node?.id, cloud, scvmmOpts)
             } else {
                 server.statusMessage = ERROR_CREATING_SERVER_MSG
             }
+
             if (provisionResponse.success != true) {
                 return new ServiceResponse(success: false,
-                        msg: provisionResponse.message ?: VM_CONFIG_ERROR_MSG, error: provisionResponse.message,
+                        msg: provisionResponse.message ?: VM_CONFIG_ERROR_MSG,
+                        error: provisionResponse.message,
                         data: provisionResponse)
             }
             return new ServiceResponse<ProvisionResponse>(success: true, data: provisionResponse)
@@ -2997,6 +3060,376 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             provisionResponse.setError(e.message)
             return new ServiceResponse(success: false, msg: e.message, error: e.message, data: provisionResponse)
         }
+    }
+
+// --- Helper Methods ---
+
+    protected void updateScvmmOptsWithHostDatastore(Map scvmmOpts, Map hostDatastoreInfo) {
+        scvmmOpts.datastoreId = hostDatastoreInfo.datastore?.externalId
+        scvmmOpts.hostExternalId = hostDatastoreInfo.node?.externalId
+        scvmmOpts.volumePath = hostDatastoreInfo.volumePath
+        scvmmOpts.highlyAvailable = hostDatastoreInfo.highlyAvailable
+    }
+
+    protected Map prepareScvmmOpts(MorpheusContext context, Cloud cloud, ComputeServer controllerNode,
+                                   ComputeServer server) {
+        def scvmmOpts = apiService.getScvmmCloudOpts(context, cloud, controllerNode)
+        scvmmOpts.controllerServerId = controllerNode.id
+        scvmmOpts.creatingDockerHost = true
+        scvmmOpts.name = server.name
+        return scvmmOpts
+    }
+
+    protected String resolveClusterId(Map config, ComputeServer server) {
+        if (config.resourcePool) {
+            def pool = server.resourcePool
+            if (pool) {
+                return pool.externalId
+            }
+        }
+        return null
+    }
+
+    @SuppressWarnings('ParameterCount')
+    protected Map getHostDatastoreInfoForRoot(Cloud cloud, Account account, String clusterId, Map config,
+                                              StorageVolume rootVolume, Long maxStorage,
+                                              Long provisionSiteId, Long maxMemory) {
+        def result = [:]
+        def hostAndDatastore = getHostAndDatastore(cloud, account, clusterId, config.hostId, rootVolume?.datastore,
+                rootVolume?.datastoreOption, maxStorage, provisionSiteId, maxMemory)
+        result.node = hostAndDatastore[0]
+        result.datastore = hostAndDatastore[1]
+        result.volumePath = hostAndDatastore[SORT_ORDER_2]
+        result.highlyAvailable = hostAndDatastore[SORT_ORDER_3]
+        return result
+    }
+
+    protected void updateRootVol(StorageVolume rootVolume, Datastore datastore) {
+        if (rootVolume) {
+            rootVolume.datastore = datastore
+            context.services.storageVolume.save(rootVolume)
+        }
+    }
+
+    @SuppressWarnings('ParameterCount')
+    protected void updateServerVolumes(List<StorageVolume> storageVolumes, Cloud cloud, Account account,
+                                       String clusterId, Integer hostId, Long maxStorage,
+                                       Long provisionSiteId, Long maxMemory) {
+        storageVolumes?.each { vol ->
+            if (!vol.rootVolume) {
+                def tmpNode, tmpDatastore, tmpVolumePath, tmpHighlyAvailable
+                (tmpNode, tmpDatastore, tmpVolumePath, tmpHighlyAvailable) = getHostAndDatastore(cloud, account,
+                        clusterId, hostId, vol?.datastore, vol?.datastoreOption, maxStorage, provisionSiteId, maxMemory)
+                vol.datastore = tmpDatastore
+                context.services.storageVolume.save(vol)
+            }
+        }
+    }
+
+    protected Map resolveImageInfo(Map config, ComputeServer server) {
+        def imageType = config.templateTypeSelect ?: 'default'
+        def virtualImage
+        def imageId
+        def layout = server.layout
+        def typeSet = server.typeSet
+        if (layout && typeSet) {
+            virtualImage = typeSet.workloadType.virtualImage
+            imageId = virtualImage.externalId
+        } else if (imageType == 'custom' && config.template) {
+            def virtualImageId = config.template?.toLong()
+            virtualImage = context.services.virtualImage.get(virtualImageId)
+            imageId = virtualImage.externalId
+        } else {
+            virtualImage = new VirtualImage(code: 'scvmm.image.morpheus.ubuntu.22.04.20250218.amd64')
+        }
+        return [imageId: imageId, virtualImage: virtualImage]
+    }
+
+    protected String handleImageUpload(Map scvmmOpts, ComputeServer server, VirtualImage virtualImage) {
+        def cloudFiles = context.async.virtualImage.getVirtualImageFiles(virtualImage).blockingGet()
+        def imageFile = cloudFiles?.find { cloudFile ->
+            def name = cloudFile.name.toLowerCase()
+            name.endsWith(".vhd") || name.endsWith(".vhdx") || name.endsWith(".vmdk") || name.endsWith(".vhd.tar.gz")
+        }
+        def containerImage = [
+                name          : virtualImage.name,
+                minDisk       : INTEGER_FIVE,
+                minRam        : FIVE_TWELVE_LONG * ComputeUtility.ONE_MEGABYTE,
+                virtualImageId: virtualImage.id,
+                tags          : MORPHEUS_UBUNTU_TAGS,
+                imageType     : virtualImage.imageType,
+                containerType : VHD_CONTAINER_TYPE,
+                imageFile     : imageFile,
+                cloudFiles    : cloudFiles,
+        ]
+        scvmmOpts.image = containerImage
+        scvmmOpts.userId = server.createdBy?.id
+        log.debug("scvmmOpts: {}", scvmmOpts)
+        def imageResults = apiService.insertContainerImage(scvmmOpts)
+        if (imageResults.success == true) {
+            return imageResults.imageId
+        }
+        return null
+    }
+
+//    protected void prepareServerForProvision(ComputeServer server, VirtualImage virtualImage, Map scvmmOpts,
+//                                             ComputeServer node, String imageId) {
+//        server.sourceImage = virtualImage
+//        server.externalId = scvmmOpts.name
+//        server.serverOs = server.serverOs ?: virtualImage.osType
+//        def osplatform = virtualImage?.osType?.platform?.toString()?.toLowerCase()
+//                ?: virtualImage?.platform?.toString()?.toLowerCase()
+//        server.osType = [WINDOWS_PLATFORM, OSX_PLATFORM].contains(osplatform) ? osplatform : LINUX_PLATFORM
+//        server.parentServer = node
+//        scvmmOpts.secureBoot = virtualImage?.uefi ?: false
+//        scvmmOpts.imageId = imageId
+//        scvmmOpts.scvmmGeneration = virtualImage?.getConfigProperty(GENERATION_FIELD) ?: SCVMM_GENERATION1_VALUE
+//        scvmmOpts.diskMap = context.services.virtualImage.getImageDiskMap(virtualImage)
+//        saveAndGetMorpheusServer(server, true)
+//    }
+
+    protected void prepareServerForProvision(ComputeServer server, VirtualImage virtualImage, Map scvmmOpts,
+                                             ComputeServer node, String imageId) {
+        assignSourceImageAndExternalId(server, virtualImage, scvmmOpts)
+        assignServerOsType(server, virtualImage)
+        assignParentServer(server, node)
+        setupScvmmOpts(scvmmOpts, virtualImage, imageId)
+        saveAndGetMorpheusServer(server, true)
+    }
+
+    private void assignSourceImageAndExternalId(ComputeServer server, VirtualImage virtualImage, Map scvmmOpts) {
+        server.sourceImage = virtualImage
+        server.externalId = scvmmOpts.name
+    }
+
+    private void assignServerOsType(ComputeServer server, VirtualImage virtualImage) {
+        server.serverOs = server.serverOs ?: virtualImage.osType
+        def osplatform = virtualImage?.osType?.platform?.toString()?.toLowerCase()
+                ?: virtualImage?.platform?.toString()?.toLowerCase()
+        server.osType = [WINDOWS_PLATFORM, OSX_PLATFORM].contains(osplatform) ? osplatform : LINUX_PLATFORM
+    }
+
+    private void assignParentServer(ComputeServer server, ComputeServer node) {
+        server.parentServer = node
+    }
+
+    private void setupScvmmOpts(Map scvmmOpts, VirtualImage virtualImage, String imageId) {
+        scvmmOpts.secureBoot = virtualImage?.uefi ?: false
+        scvmmOpts.imageId = imageId
+        scvmmOpts.scvmmGeneration = virtualImage?.getConfigProperty(GENERATION_FIELD) ?: SCVMM_GENERATION1_VALUE
+        scvmmOpts.diskMap = context.services.virtualImage.getImageDiskMap(virtualImage)
+    }
+
+    protected void setCloudConfig(Map scvmmOpts, HostRequest hostRequest, ComputeServer server) {
+        scvmmOpts.networkConfig = hostRequest.networkConfiguration
+        scvmmOpts.cloudConfigUser = hostRequest.cloudConfigUser
+        scvmmOpts.cloudConfigMeta = hostRequest.cloudConfigMeta
+        scvmmOpts.cloudConfigNetwork = hostRequest.cloudConfigNetwork
+        scvmmOpts.isSysprep = server.sourceImage?.isSysprep
+        def isoBuffer = context.services.provision.buildIsoOutputStream(
+                scvmmOpts.isSysprep, PlatformType.valueOf(server.osType),
+                scvmmOpts.cloudConfigMeta, scvmmOpts.cloudConfigUser, scvmmOpts.cloudConfigNetwork)
+        scvmmOpts.cloudConfigBytes = isoBuffer
+        server.cloudConfigUser = scvmmOpts.cloudConfigUser
+        server.cloudConfigMeta = scvmmOpts.cloudConfigMeta
+        server.cloudConfigNetwork = scvmmOpts.cloudConfigNetwork
+    }
+
+//    protected ProvisionResponse handleServerCreation(Map createResults, ComputeServer server, Long nodeId,
+//                                                     Cloud cloud, Map scvmmOpts) {
+//        ProvisionResponse provisionResponse = new ProvisionResponse()
+//        if (createResults.success == true) {
+//            def instance = createResults.server
+//            if (instance) {
+//                def node = context.services.computeServer.get(nodeId)
+//                server.externalId = instance.id
+//                server.parentServer = node
+//                def serverDisks = createResults.server.disks
+//                if (serverDisks) {
+//                    def storageVolumes = server.volumes
+//                    def rootVolume = storageVolumes.find { sv -> sv.rootVolume == true }
+//                    rootVolume.externalId = serverDisks.diskMetaData[serverDisks.osDisk?.externalId]?.VhdID
+//                    rootVolume.datastore = loadDatastoreForVolume(
+//                            cloud,
+//                            serverDisks.diskMetaData[rootVolume.externalId]?.HostVolumeId,
+//                            serverDisks.diskMetaData[rootVolume.externalId]?.FileShareId,
+//                            serverDisks.diskMetaData[rootVolume.externalId]?.PartitionUniqueId
+//                    ) ?: rootVolume.datastore
+//                    storageVolumes.each { storageVolume ->
+//                        def dataDisk = serverDisks.dataDisks.find { sd -> sd.id == storageVolume.id }
+//                        if (dataDisk) {
+//                            def newExternalId = serverDisks.diskMetaData[dataDisk.externalId]?.VhdID
+//                            if (newExternalId) {
+//                                storageVolume.externalId = newExternalId
+//                            }
+//                            storageVolume.datastore = loadDatastoreForVolume(
+//                                    cloud,
+//                                    serverDisks.diskMetaData[storageVolume.externalId]?.HostVolumeId,
+//                                    serverDisks.diskMetaData[storageVolume.externalId]?.FileShareId,
+//                                    serverDisks.diskMetaData[storageVolume.externalId]?.PartitionUniqueId
+//                            ) ?: storageVolume.datastore
+//                        }
+//                    }
+//                }
+//                def serverDetails = apiService.getServerDetails(scvmmOpts, server.externalId)
+//                if (serverDetails.success == true) {
+//                    def newIpAddress = serverDetails.server?.ipAddress ?: createResults.server?.ipAddress
+//                    def macAddress = serverDetails.server?.macAddress
+//                    applyComputeServerNetworkIp(server, newIpAddress, newIpAddress, 0, macAddress)
+//                    server.osDevice = DEV_SDA_PATH
+//                    server.dataDevice = DEV_SDA_PATH
+//                    server.sshHost = server.internalIp
+//                    server.managed = true
+//                    server.with {
+//                        status = PROVISIONED_STATUS
+//                        capacityInfo = new ComputeCapacityInfo(maxCores: scvmmOpts.maxCores,
+//                                maxMemory: scvmmOpts.memory, maxStorage: scvmmOpts.maxTotalStorage)
+//                    }
+//                    context.async.computeServer.save(server).blockingGet()
+//                    provisionResponse.success = true
+//                    log.debug("provisionResponse.success: ${provisionResponse.success}")
+//                } else {
+//                    server.statusMessage = FAILED_TO_RUN_SERVER_MSG
+//                    context.async.computeServer.save(server).blockingGet()
+//                    provisionResponse.success = false
+//                }
+//            } else {
+//                server.statusMessage = 'Error loading created server'
+//            }
+//        } else {
+//            if (createResults.server?.id) {
+//                server.externalId = createResults.server.id
+//                context.async.computeServer.save(server).blockingGet()
+//            }
+//            server.statusMessage = ERROR_CREATING_SERVER_MSG
+//        }
+//        return provisionResponse
+//    }
+
+// Groovy
+
+    protected ProvisionResponse handleServerCreation(Map createResults, ComputeServer server, Long nodeId,
+                                                     Cloud cloud, Map scvmmOpts) {
+        ProvisionResponse provisionResponse = new ProvisionResponse()
+        if (createResults.success == true) {
+            def instance = createResults.server
+            if (instance) {
+                def node = context.services.computeServer.get(nodeId)
+                server.externalId = instance.id
+                server.parentServer = node
+                def serverDisks = createResults.server.disks
+                if (serverDisks) {
+                    updateServerVolumesAfterCreation(server, serverDisks, cloud)
+                }
+                def serverDetails = apiService.getServerDetails(scvmmOpts, server.externalId)
+                if (serverDetails.success == true) {
+                    updateServerNetworkAndStatus(server, serverDetails, createResults)
+                    context.async.computeServer.save(server).blockingGet()
+                    provisionResponse.success = true
+                    log.debug("provisionResponse.success: ${provisionResponse.success}")
+                } else {
+                    handleServerDetailsFailure(server)
+                    provisionResponse.success = false
+                }
+            } else {
+                server.statusMessage = 'Error loading created server'
+            }
+        } else {
+            handleServerCreationFailure(createResults, server)
+        }
+        return provisionResponse
+    }
+
+//    protected void updateServerVolumesAfterCreation(ComputeServer server, def serverDisks, Cloud cloud) {
+//        def storageVolumes = server.volumes
+//        def rootVolume = storageVolumes.find { sv -> sv.rootVolume == true }
+//        rootVolume.externalId = serverDisks.diskMetaData[serverDisks.osDisk?.externalId]?.VhdID
+//        rootVolume.datastore = loadDatastoreForVolume(
+//                cloud,
+//                serverDisks.diskMetaData[rootVolume.externalId]?.HostVolumeId,
+//                serverDisks.diskMetaData[rootVolume.externalId]?.FileShareId,
+//                serverDisks.diskMetaData[rootVolume.externalId]?.PartitionUniqueId
+//        ) ?: rootVolume.datastore
+//        storageVolumes.each { storageVolume ->
+//            def dataDisk = serverDisks.dataDisks.find { sd -> sd.id == storageVolume.id }
+//            if (dataDisk) {
+//                def newExternalId = serverDisks.diskMetaData[dataDisk.externalId]?.VhdID
+//                if (newExternalId) {
+//                    storageVolume.externalId = newExternalId
+//                }
+//                storageVolume.datastore = loadDatastoreForVolume(
+//                        cloud,
+//                        serverDisks.diskMetaData[storageVolume.externalId]?.HostVolumeId,
+//                        serverDisks.diskMetaData[storageVolume.externalId]?.FileShareId,
+//                        serverDisks.diskMetaData[storageVolume.externalId]?.PartitionUniqueId
+//                ) ?: storageVolume.datastore
+//            }
+//        }
+//    }
+
+// Groovy
+
+    protected void updateServerVolumesAfterCreation(ComputeServer server, def serverDisks, Cloud cloud) {
+        def storageVolumes = server.volumes
+        def rootVolume = storageVolumes.find { sv -> sv.rootVolume == true }
+        updateRootVolumeAfterCreation(rootVolume, serverDisks, cloud)
+        updateDataVolumesAfterCreation(storageVolumes, serverDisks, cloud)
+    }
+
+    protected void updateRootVolumeAfterCreation(StorageVolume rootVolume, def serverDisks, Cloud cloud) {
+        rootVolume.externalId = serverDisks.diskMetaData[serverDisks.osDisk?.externalId]?.VhdID
+        rootVolume.datastore = loadDatastoreForVolume(
+                cloud,
+                serverDisks.diskMetaData[rootVolume.externalId]?.HostVolumeId,
+                serverDisks.diskMetaData[rootVolume.externalId]?.FileShareId,
+                serverDisks.diskMetaData[rootVolume.externalId]?.PartitionUniqueId
+        ) ?: rootVolume.datastore
+    }
+
+    protected void updateDataVolumesAfterCreation(List<StorageVolume> storageVolumes, def serverDisks, Cloud cloud) {
+        storageVolumes.each { storageVolume ->
+            def dataDisk = serverDisks.dataDisks.find { sd -> sd.id == storageVolume.id }
+            if (dataDisk) {
+                def newExternalId = serverDisks.diskMetaData[dataDisk.externalId]?.VhdID
+                if (newExternalId) {
+                    storageVolume.externalId = newExternalId
+                }
+                storageVolume.datastore = loadDatastoreForVolume(
+                        cloud,
+                        serverDisks.diskMetaData[storageVolume.externalId]?.HostVolumeId,
+                        serverDisks.diskMetaData[storageVolume.externalId]?.FileShareId,
+                        serverDisks.diskMetaData[storageVolume.externalId]?.PartitionUniqueId
+                ) ?: storageVolume.datastore
+            }
+        }
+    }
+
+    protected void updateServerNetworkAndStatus(ComputeServer server, def serverDetails, Map createResults) {
+        def newIpAddress = serverDetails.server?.ipAddress ?: createResults.server?.ipAddress
+        def macAddress = serverDetails.server?.macAddress
+        applyComputeServerNetworkIp(server, newIpAddress, newIpAddress, 0, macAddress)
+        server.osDevice = DEV_SDA_PATH
+        server.dataDevice = DEV_SDA_PATH
+        server.sshHost = server.internalIp
+        server.managed = true
+        server.with {
+            status = PROVISIONED_STATUS
+            capacityInfo = new ComputeCapacityInfo(maxCores: scvmmOpts.maxCores,
+                    maxMemory: scvmmOpts.memory, maxStorage: scvmmOpts.maxTotalStorage)
+        }
+    }
+
+    protected void handleServerDetailsFailure(ComputeServer server) {
+        server.statusMessage = FAILED_TO_RUN_SERVER_MSG
+        context.async.computeServer.save(server).blockingGet()
+    }
+
+    protected void handleServerCreationFailure(Map createResults, ComputeServer server) {
+        if (createResults.server?.id) {
+            server.externalId = createResults.server.id
+            context.async.computeServer.save(server).blockingGet()
+        }
+        server.statusMessage = ERROR_CREATING_SERVER_MSG
     }
 
     // Helper to find existing interface
@@ -3207,7 +3640,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     }
 
     // Update existing volumes
-    protected void updateVolumes(List volumesUpdate, ComputeServer computeServer, Map scvmmOpts, ServiceResponse rtn) {
+    protected void updateVolumes(List volumesUpdate, Map scvmmOpts, ServiceResponse rtn) {
         volumesUpdate?.each { volumeUpdate ->
             log.debug("resizing vm storage: ${volumeUpdate}")
             StorageVolume existing = volumeUpdate.existingModel
@@ -3285,7 +3718,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     protected boolean handleVolumeOperations(Map opts, ResizeRequest resizeRequest, ComputeServer computeServer,
                                              Map scvmmOpts, ServiceResponse rtn) {
         if (opts.volumes && !rtn.error) {
-            updateVolumes(resizeRequest.volumesUpdate, computeServer, scvmmOpts, rtn)
+            updateVolumes(resizeRequest.volumesUpdate, scvmmOpts, rtn)
             addVolumes(resizeRequest.volumesAdd, computeServer, scvmmOpts, rtn)
             deleteVolumes(resizeRequest.volumesDelete, computeServer, scvmmOpts)
         }
