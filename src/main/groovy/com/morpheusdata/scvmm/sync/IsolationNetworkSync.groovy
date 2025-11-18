@@ -13,7 +13,9 @@ import com.morpheusdata.model.NetworkType
 import com.morpheusdata.model.projection.NetworkIdentityProjection
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
+import groovy.transform.CompileDynamic
 
+@CompileDynamic
 class IsolationNetworkSync {
     private static final String OWNER = 'owner'
     private final MorpheusContext morpheusContext
@@ -27,7 +29,7 @@ class IsolationNetworkSync {
         this.apiService = apiService
     }
 
-    def execute() {
+    void execute() {
         log.debug 'IsolationNetworkSync'
         try {
             def networkType = new NetworkType(code: 'scvmmVLANNetwork')
@@ -77,12 +79,11 @@ class IsolationNetworkSync {
         }
     }
 
-    private addMissingNetworks(Collection<Map> addList, NetworkType networkType, ComputeServer server) {
+    protected void addMissingNetworks(Collection<Map> addList, NetworkType networkType, ComputeServer server) {
         log.debug('IsolationNetworkSync >> addMissingNetworks >> called')
         def networkAdds = []
         try {
             addList?.each { networkItem ->
-
                 def networkConfig = [
                         code      : "scvmm.vlan.network.${cloud.id}.${server.id}.${networkItem.ID}",
                         cidr      : networkItem.Subnet,
@@ -110,7 +111,7 @@ class IsolationNetworkSync {
         }
     }
 
-    private updateMatchedNetworks(List<SyncTask.UpdateItem<Network, Map>> updateList) {
+    protected void updateMatchedNetworks(List<SyncTask.UpdateItem<Network, Map>> updateList) {
         log.debug('IsolationNetworkSync:updateMatchedNetworks: Entered')
         List<Network> itemsToUpdate = []
         try {

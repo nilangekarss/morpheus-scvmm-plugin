@@ -17,7 +17,9 @@ import com.morpheusdata.model.projection.NetworkIdentityProjection
 import com.morpheusdata.model.projection.NetworkSubnetIdentityProjection
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
+import groovy.transform.CompileDynamic
 
+@CompileDynamic
 class NetworkSync {
     private static final String OWNER = 'owner'
     private static final String COMPUTE_ZONE = 'ComputeZone'
@@ -35,7 +37,7 @@ class NetworkSync {
         this.apiService = new ScvmmApiService(morpheusContext)
     }
 
-    def execute() {
+    void execute() {
         log.debug 'NetworkSync'
         try {
             def networkType = new NetworkType(code: 'scvmmNetwork')
@@ -84,7 +86,7 @@ class NetworkSync {
         }
     }
 
-    private addMissingNetworks(Collection<Map> addList, NetworkType networkType,
+    protected void addMissingNetworks(Collection<Map> addList, NetworkType networkType,
                                NetworkSubnetType subnetType, ComputeServer server) {
         log.debug('NetworkSync >> addMissingNetworks >> called')
 
@@ -96,7 +98,7 @@ class NetworkSync {
         }
     }
 
-    private List<Network> createNetworkEntities(Collection<Map> addList, NetworkType networkType,
+    protected List<Network> createNetworkEntities(Collection<Map> addList, NetworkType networkType,
                                                 ComputeServer server) {
         def networkAdds = []
         addList?.each { networkItem ->
@@ -117,10 +119,10 @@ class NetworkSync {
             Network networkAdd = new Network(networkConfig)
             networkAdds << networkAdd
         }
-        networkAdds
+        return networkAdds
     }
 
-    private void processNetworksWithSubnets(List<Network> networkAdds, Collection<Map> addList,
+    protected void processNetworksWithSubnets(List<Network> networkAdds, Collection<Map> addList,
                                             NetworkSubnetType subnetType) {
         if (networkAdds.size() > 0) {
             def result = morpheusContext.async.cloud.network.bulkCreate(networkAdds).blockingGet()
@@ -128,7 +130,7 @@ class NetworkSync {
         }
     }
 
-    private void processSubnetsForNetworks(List<Network> networks, Collection<Map> addList,
+    protected void processSubnetsForNetworks(List<Network> networks, Collection<Map> addList,
                                            NetworkSubnetType subnetType) {
         networks.each { networkAdd ->
             def cloudItem = addList.find { item -> item.Name == networkAdd.name }
@@ -138,7 +140,7 @@ class NetworkSync {
         }
     }
 
-    private void addSubnetToNetwork(Network networkAdd, Map cloudItem, NetworkSubnetType subnetType) {
+    protected void addSubnetToNetwork(Network networkAdd, Map cloudItem, NetworkSubnetType subnetType) {
         def subnet = cloudItem.Subnets?.getAt(0)?.Subnet
         def networkCidr = NetworkUtility.getNetworkCidrConfig(subnet)
 
@@ -162,7 +164,8 @@ class NetworkSync {
         morpheusContext.async.networkSubnet.create([addSubnet], networkAdd).blockingGet()
     }
 
-    private updateMatchedNetworks(List<SyncTask.UpdateItem<Network, Map>> updateList, NetworkSubnetType subnetType) {
+    protected void updateMatchedNetworks(List<SyncTask.UpdateItem<Network, Map>> updateList,
+                                        NetworkSubnetType subnetType) {
         log.debug('NetworkSync >> updateMatchedNetworks >> Entered')
 
         try {
@@ -198,7 +201,7 @@ class NetworkSync {
         }
     }
 
-    private addMissingNetworkSubnet(Collection<Map> addList, NetworkSubnetType subnetType, Network network) {
+    protected void addMissingNetworkSubnet(Collection<Map> addList, NetworkSubnetType subnetType, Network network) {
         log.debug("addMissingNetworkSubnet: ${addList}")
 
         def subnetAdds = []
@@ -235,7 +238,7 @@ class NetworkSync {
         }
     }
 
-    private updateMatchedNetworkSubnet(List<SyncTask.UpdateItem<NetworkSubnet, Map>> updateList) {
+    protected void updateMatchedNetworkSubnet(List<SyncTask.UpdateItem<NetworkSubnet, Map>> updateList) {
         log.debug("updateMatchedNetworkSubnet: ${updateList}")
 
         List<NetworkSubnet> itemsToUpdate = []
@@ -258,7 +261,7 @@ class NetworkSync {
         }
     }
 
-    private boolean updateSubnetProperties(NetworkSubnet subnet, Map matchedSubnet) {
+    protected boolean updateSubnetProperties(NetworkSubnet subnet, Map matchedSubnet) {
         def networkCidr = NetworkUtility.getNetworkCidrConfig(matchedSubnet.Subnet)
         def save = false
 
@@ -271,10 +274,10 @@ class NetworkSync {
             save = true
         }
 
-        save
+        return save
     }
 
-    private boolean updateSubnetBasicProperties(NetworkSubnet subnet, Map matchedSubnet) {
+    protected boolean updateSubnetBasicProperties(NetworkSubnet subnet, Map matchedSubnet) {
         def save = false
 
         if (subnet.name != matchedSubnet.Name) {
@@ -286,10 +289,10 @@ class NetworkSync {
             save = true
         }
 
-        save
+        return save
     }
 
-    private boolean updateSubnetNetworkProperties(NetworkSubnet subnet, Map matchedSubnet, Map networkCidr) {
+    protected boolean updateSubnetNetworkProperties(NetworkSubnet subnet, Map matchedSubnet, Map networkCidr) {
         def save = false
 
         if (subnet.cidr != matchedSubnet.Subnet) {
@@ -309,10 +312,10 @@ class NetworkSync {
             save = true
         }
 
-        save
+        return save
     }
 
-    private boolean updateSubnetDhcpProperties(NetworkSubnet subnet, Map networkCidr) {
+    protected boolean updateSubnetDhcpProperties(NetworkSubnet subnet, Map networkCidr) {
         def save = false
 
         def dhcpStart = networkCidr.ranges ? networkCidr.ranges[0].startAddress : null
@@ -327,6 +330,6 @@ class NetworkSync {
             save = true
         }
 
-        save
+        return save
     }
 }

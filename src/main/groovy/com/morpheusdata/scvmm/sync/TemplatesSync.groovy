@@ -21,11 +21,13 @@ import com.morpheusdata.model.projection.VirtualImageLocationIdentityProjection
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
 import io.reactivex.rxjava3.core.Observable
+import groovy.transform.CompileDynamic
 
 /**
  * @author rahul.ray
  */
 
+@CompileDynamic
 class TemplatesSync {
     // Constants for duplicate string literals
     private static final String REF_TYPE = 'refType'
@@ -61,10 +63,9 @@ class TemplatesSync {
         this.context = context
         this.apiService = new ScvmmApiService(context)
         this.@cloudProvider = cloudProvider
-
     }
 
-    def execute() {
+    void execute() {
         log.debug "TemplatesSync"
         def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(context, cloud, node)
         def listResults = apiService.listTemplates(scvmmOpts)
@@ -73,27 +74,28 @@ class TemplatesSync {
         }
     }
 
-    private void processTemplateSync(Collection templates) {
+    protected void processTemplateSync(Collection templates) {
+        // @SuppressWarnings('UnnecessaryGetter')
         def existingLocations = getExistingImageLocations()
         def cleanedLocations = removeDuplicateImageLocations(existingLocations)
         def domainRecords = buildDomainRecords(cleanedLocations)
         executeTemplateSync(domainRecords, templates)
     }
 
-    private Collection getExistingImageLocations() {
+    protected Collection getExistingImageLocations() {
         def query = new DataQuery().withFilter(REF_TYPE, COMPUTE_ZONE).withFilter(REF_ID, cloud.id)
                 .withFilter(VIRTUAL_IMAGE_TYPE, IN, [VHD, VHDX]).withJoin(VIRTUAL_IMAGE)
         return context.services.virtualImage.location.listIdentityProjections(query)
     }
 
-    private Collection removeDuplicateImageLocations(Collection existingLocations) {
-        def groupedLocations = existingLocations.groupBy({ row -> row.externalId })
+    protected Collection removeDuplicateImageLocations(Collection existingLocations) {
+        def groupedLocations = existingLocations.groupBy { row -> row.externalId }
         def dupedLocations = groupedLocations.findAll { key, value -> value.size() > 1 }
         def dupeCleanup = identifyDuplicatesForCleanup(dupedLocations)
         return cleanupDuplicateLocations(dupeCleanup, existingLocations)
     }
 
-    private List identifyDuplicatesForCleanup(Map dupedLocations) {
+    protected List identifyDuplicatesForCleanup(Map dupedLocations) {
         def dupeCleanup = []
         if (dupedLocations?.size() > 0) {
             log.warn("removing duplicate image locations: {}", dupedLocations*.key)
@@ -108,7 +110,7 @@ class TemplatesSync {
         return dupeCleanup
     }
 
-    private Collection cleanupDuplicateLocations(List dupeCleanup, Collection existingLocations) {
+    protected Collection cleanupDuplicateLocations(List dupeCleanup, Collection existingLocations) {
         dupeCleanup?.each { row ->
             def dupeResults = context.async.virtualImage.location.remove([row.id]).blockingGet()
             if (dupeResults == true) {
@@ -118,21 +120,22 @@ class TemplatesSync {
         return existingLocations
     }
 
-    private buildDomainRecords(Collection existingLocations) {
+    protected Observable buildDomainRecords(Collection existingLocations) {
         def query = new DataQuery().withFilter(REF_TYPE, COMPUTE_ZONE).withFilter(REF_ID, cloud.id)
                 .withFilter(VIRTUAL_IMAGE_TYPE, IN, [VHD, VHDX]).withJoin(VIRTUAL_IMAGE)
                 .withFilter(ID, IN, existingLocations*.id)
         return context.async.virtualImage.location.listIdentityProjections(query)
     }
 
-    private void executeTemplateSync(def domainRecords, Collection templates) {
+    protected void executeTemplateSync(Observable domainRecords, Collection templates) {
         SyncTask<VirtualImageLocationIdentityProjection, Map, VirtualImageLocation> syncTask =
                 new SyncTask<>(domainRecords, templates as Collection<Map>)
         syncTask.addMatchFunction { VirtualImageLocationIdentityProjection domainObject, Map cloudItem ->
             domainObject.externalId == cloudItem.ID.toString()
         }.withLoadObjectDetailsFromFinder {
             List<SyncTask.UpdateItemDto<VirtualImageLocationIdentityProjection, Map>> updateItems ->
-            context.async.virtualImage.location.listById(updateItems.collect { it.existingItem.id } as List<Long>)
+            context.async.virtualImage.location.listById(
+                updateItems.collect { item -> item.existingItem.id } as List<Long>)
         }.onAdd { itemsToAdd ->
             log.debug("TemplatesSync, onAdd: ${itemsToAdd}")
             addMissingVirtualImageLocations(itemsToAdd)
@@ -145,7 +148,7 @@ class TemplatesSync {
         }.start()
     }
 
-    protected removeMissingVirtualImages(List<VirtualImageLocationIdentityProjection> removeList) {
+    protected void removeMissingVirtualImages(List<VirtualImageLocationIdentityProjection> removeList) {
         try {
             log.debug("removeMissingVirtualImageLocations: ${cloud} ${removeList.size()}")
             context.async.virtualImage.location.remove(removeList).blockingGet()
@@ -154,7 +157,8 @@ class TemplatesSync {
         }
     }
 
-    private updateMatchedVirtualImageLocations(List<SyncTask.UpdateItem<VirtualImageLocation, Map>> updateItems) {
+    protected void updateMatchedVirtualImageLocations(
+            List<SyncTask.UpdateItem<VirtualImageLocation, Map>> updateItems) {
         log.debug "updateMatchedVirtualImages: ${updateItems.size()}"
         try {
             def existingData = prepareExistingVirtualImageData(updateItems)
@@ -165,13 +169,15 @@ class TemplatesSync {
         }
     }
 
-    private Map prepareExistingVirtualImageData(List<SyncTask.UpdateItem<VirtualImageLocation, Map>> updateItems) {
-        def locationIds = updateItems.findAll { it.existingItem.id }?.collect { it.existingItem.id }
+    protected Map prepareExistingVirtualImageData(List<SyncTask.UpdateItem<VirtualImageLocation, Map>> updateItems) {
+        def locationIds = updateItems.findAll { item -> item.existingItem.id }?.collect { item -> item.existingItem.id }
         def existingLocations = getExistingVirtualImageLocations(locationIds)
-        def imageIds = updateItems?.findAll {
-            it.existingItem.virtualImage?.id
-        }?.collect { it.existingItem.virtualImage?.id }
-        def externalIds = updateItems?.findAll { it.existingItem.externalId }?.collect { it.existingItem.externalId }
+        def imageIds = updateItems?.findAll { item ->
+            item.existingItem.virtualImage?.id
+        }?.collect { item -> item.existingItem.virtualImage?.id }
+        def externalIds = updateItems?.findAll { item -> item.existingItem.externalId }?.collect { item ->
+            item.existingItem.externalId
+        }
         def existingImages = getExistingVirtualImages(imageIds, externalIds)
 
         return [
@@ -180,14 +186,14 @@ class TemplatesSync {
         ]
     }
 
-    private List getExistingVirtualImageLocations(def locationIds) {
+    protected List getExistingVirtualImageLocations(List locationIds) {
         return locationIds ? context.services.virtualImage.location.list(new DataQuery()
                 .withFilter(ID, IN, locationIds)
                 .withFilter(REF_TYPE, COMPUTE_ZONE)
                 .withFilter(REF_ID, cloud.id)) : []
     }
 
-    private List<VirtualImage> getExistingVirtualImages(def imageIds, def externalIds) {
+    protected List<VirtualImage> getExistingVirtualImages(List imageIds, List externalIds) {
         List<VirtualImage> existingItems = []
         if (imageIds && externalIds) {
             def tmpImgProjs = context.async.virtualImage.listIdentityProjections(cloud.id).filter { img ->
@@ -204,7 +210,7 @@ class TemplatesSync {
         return existingItems
     }
 
-    private Map processVirtualImageLocationUpdates(List<SyncTask.UpdateItem<VirtualImageLocation, Map>> updateItems,
+    protected Map processVirtualImageLocationUpdates(List<SyncTask.UpdateItem<VirtualImageLocation, Map>> updateItems,
                                                     Map existingData) {
         List<VirtualImageLocation> locationsToCreate = []
         List<VirtualImageLocation> locationsToUpdate = []
@@ -212,7 +218,7 @@ class TemplatesSync {
 
         updateItems?.each { update ->
             def matchedTemplate = update.masterItem
-            def imageLocation = existingData.existingLocations?.find { it.id == update.existingItem.id }
+            def imageLocation = existingData.existingLocations?.find { loc -> loc.id == update.existingItem.id }
 
             if (imageLocation) {
                 processExistingVirtualImageLocation(imageLocation, matchedTemplate, existingData.existingImages,
@@ -230,7 +236,7 @@ class TemplatesSync {
         ]
     }
 
-    private void processExistingVirtualImageLocation(def imageLocation, def matchedTemplate,
+    protected void processExistingVirtualImageLocation(VirtualImageLocation imageLocation, Map matchedTemplate,
                                                      List<VirtualImage> existingImages,
                                                      List<VirtualImageLocation> locationsToUpdate,
                                                      List<VirtualImage> imagesToUpdate) {
@@ -244,11 +250,11 @@ class TemplatesSync {
         }
     }
 
-    private Map updateVirtualImageLocationProperties(def imageLocation, def matchedTemplate,
+    protected Map updateVirtualImageLocationProperties(VirtualImageLocation imageLocation, Map matchedTemplate,
                                                      List<VirtualImage> existingImages) {
         def save = false
         def saveImage = false
-        def virtualImage = existingImages.find { it.id == imageLocation.virtualImage.id }
+        def virtualImage = existingImages.find { img -> img.id == imageLocation.virtualImage.id }
 
         if (virtualImage) {
             def nameUpdateResult = updateVirtualImageNames(imageLocation, virtualImage, matchedTemplate)
@@ -271,7 +277,8 @@ class TemplatesSync {
         ]
     }
 
-    private Map updateVirtualImageNames(def imageLocation, def virtualImage, def matchedTemplate) {
+    protected Map updateVirtualImageNames(VirtualImageLocation imageLocation, VirtualImage virtualImage,
+                                         Map matchedTemplate) {
         def save = false
         def saveImage = false
 
@@ -287,7 +294,7 @@ class TemplatesSync {
         return [saveLocation: save, saveImage: saveImage]
     }
 
-    private Map updateVirtualImagePublicity(def imageLocation, def virtualImage) {
+    protected Map updateVirtualImagePublicity(VirtualImageLocation imageLocation, VirtualImage virtualImage) {
         def save = false
         def saveImage = false
 
@@ -301,7 +308,7 @@ class TemplatesSync {
         return [saveLocation: save, saveImage: saveImage]
     }
 
-    private boolean updateVirtualImageLocationCode(def imageLocation, def matchedTemplate) {
+    protected boolean updateVirtualImageLocationCode(VirtualImageLocation imageLocation, Map matchedTemplate) {
         if (imageLocation.code == null) {
             imageLocation.code = "scvmm.image.${cloud.id}.${matchedTemplate.ID}"
             return true
@@ -309,7 +316,7 @@ class TemplatesSync {
         return false
     }
 
-    private boolean updateVirtualImageLocationExternalId(def imageLocation, def matchedTemplate) {
+    protected boolean updateVirtualImageLocationExternalId(VirtualImageLocation imageLocation, Map matchedTemplate) {
         if (imageLocation.externalId != matchedTemplate.ID) {
             imageLocation.externalId = matchedTemplate.ID
             return true
@@ -317,7 +324,7 @@ class TemplatesSync {
         return false
     }
 
-    private boolean updateVirtualImageLocationVolumes(def imageLocation, def matchedTemplate) {
+    protected boolean updateVirtualImageLocationVolumes(VirtualImageLocation imageLocation, Map matchedTemplate) {
         if (matchedTemplate.Disks) {
             def changed = syncVolumes(imageLocation, matchedTemplate.Disks)
             return changed == true
@@ -325,10 +332,12 @@ class TemplatesSync {
         return false
     }
 
-    private void processNewVirtualImageLocation(def matchedTemplate, List<VirtualImage> existingImages,
+    protected void processNewVirtualImageLocation(Map matchedTemplate, List<VirtualImage> existingImages,
                                                 List<VirtualImageLocation> locationsToCreate,
                                                 List<VirtualImage> imagesToUpdate) {
-        def image = existingImages?.find { it.externalId == matchedTemplate.ID || it.name == matchedTemplate.Name }
+        def image = existingImages?.find { img ->
+            img.externalId == matchedTemplate.ID || img.name == matchedTemplate.Name
+        }
         if (image) {
             def locationConfig = createVirtualImageLocationConfig(matchedTemplate, image)
             def addLocation = new VirtualImageLocation(locationConfig)
@@ -340,7 +349,7 @@ class TemplatesSync {
         }
     }
 
-    private Map createVirtualImageLocationConfig(def matchedTemplate, def image) {
+    protected Map createVirtualImageLocationConfig(Map matchedTemplate, VirtualImage image) {
         return [
                 code        : "scvmm.image.${cloud.id}.${matchedTemplate.ID}",
                 externalId  : matchedTemplate.ID,
@@ -353,7 +362,7 @@ class TemplatesSync {
         ]
     }
 
-    private void prepareVirtualImageForUpdate(def image) {
+    protected void prepareVirtualImageForUpdate(VirtualImage image) {
         if (!image.owner && !image.systemImage) {
             image.owner = cloud.owner
         }
@@ -361,7 +370,7 @@ class TemplatesSync {
         image.isPublic = false
     }
 
-    private void saveVirtualImageLocationResults(Map updateLists) {
+    protected void saveVirtualImageLocationResults(Map updateLists) {
         if (updateLists.locationsToCreate.size() > 0) {
             context.async.virtualImage.location.create(updateLists.locationsToCreate, cloud).blockingGet()
         }
@@ -373,7 +382,7 @@ class TemplatesSync {
         }
     }
 
-    private addMissingVirtualImageLocations(Collection<Map> addList) {
+    protected void addMissingVirtualImageLocations(Collection<Map> addList) {
         log.debug "addMissingVirtualImageLocations: ${addList?.size()}"
         try {
             def names = addList*.Name?.unique()
@@ -405,14 +414,15 @@ class TemplatesSync {
             }.onUpdate { List<SyncTask.UpdateItem<VirtualImage, Map>> updateItems ->
                 updateMatchedVirtualImages(updateItems)
             }.withLoadObjectDetailsFromFinder { updateItems ->
-                return context.async.virtualImage.listById(updateItems?.collect { it.existingItem.id } as List<Long>)
+                return context.async.virtualImage.listById(
+                    updateItems?.collect { item -> item.existingItem.id } as List<Long>)
             }.start()
         } catch (e) {
             log.error("Error in addMissingVirtualImageLocations: ${e}", e)
         }
     }
 
-    private updateMatchedVirtualImages(List<SyncTask.UpdateItem<VirtualImage, Map>> updateItems) {
+    protected void updateMatchedVirtualImages(List<SyncTask.UpdateItem<VirtualImage, Map>> updateItems) {
         log.debug "updateMatchedVirtualImages: ${updateItems.size()}"
         try {
             def existingData = prepareVirtualImageData(updateItems)
@@ -423,11 +433,13 @@ class TemplatesSync {
         }
     }
 
-    private Map prepareVirtualImageData(List<SyncTask.UpdateItem<VirtualImage, Map>> updateItems) {
+    protected Map prepareVirtualImageData(List<SyncTask.UpdateItem<VirtualImage, Map>> updateItems) {
         def locationIds = extractLocationIds(updateItems)
         def existingLocations = getExistingVirtualImageLocations(locationIds)
-        def imageIds = updateItems?.findAll { it.existingItem.id }?.collect { it.existingItem.id }
-        def externalIds = updateItems?.findAll { it.existingItem.externalId }?.collect { it.existingItem.externalId }
+        def imageIds = updateItems?.findAll { item -> item.existingItem.id }?.collect { item -> item.existingItem.id }
+        def externalIds = updateItems?.findAll { item -> item.existingItem.externalId }?.collect { item ->
+            item.existingItem.externalId
+        }
         def existingImages = getExistingVirtualImages(imageIds, externalIds)
 
         return [
@@ -436,23 +448,24 @@ class TemplatesSync {
         ]
     }
 
-    private List extractLocationIds(List<SyncTask.UpdateItem<VirtualImage, Map>> updateItems) {
+    protected List extractLocationIds(List<SyncTask.UpdateItem<VirtualImage, Map>> updateItems) {
         def locationIds = []
-        updateItems?.each {
-            def ids = it.existingItem.locations
+        updateItems?.each { item ->
+            def ids = item.existingItem.locations
             locationIds << ids
         }
         return locationIds
     }
 
-    private Map processVirtualImageUpdates(List<SyncTask.UpdateItem<VirtualImage, Map>> updateItems, Map existingData) {
+    protected Map processVirtualImageUpdates(List<SyncTask.UpdateItem<VirtualImage, Map>> updateItems,
+                                            Map existingData) {
         List<VirtualImageLocation> locationsToCreate = []
         List<VirtualImageLocation> locationsToUpdate = []
         List<VirtualImage> imagesToUpdate = []
 
         updateItems?.each { update ->
             def matchedTemplate = update.masterItem
-            def imageLocation = existingData.existingLocations?.find { it.id == update.existingItem.id }
+            def imageLocation = existingData.existingLocations?.find { loc -> loc.id == update.existingItem.id }
 
             if (imageLocation) {
                 processExistingImageLocationForVirtualImage(imageLocation, matchedTemplate, existingData.existingImages,
@@ -470,7 +483,7 @@ class TemplatesSync {
         ]
     }
 
-    private void processExistingImageLocationForVirtualImage(def imageLocation, def matchedTemplate,
+    protected void processExistingImageLocationForVirtualImage(VirtualImageLocation imageLocation, Map matchedTemplate,
                                                              List<VirtualImage> existingImages,
                                                              List<VirtualImageLocation> locationsToUpdate,
                                                              List<VirtualImage> imagesToUpdate) {
@@ -484,11 +497,11 @@ class TemplatesSync {
         }
     }
 
-    private Map updateImageLocationPropertiesForVirtualImage(def imageLocation, def matchedTemplate,
+    protected Map updateImageLocationPropertiesForVirtualImage(VirtualImageLocation imageLocation, Map matchedTemplate,
                                                              List<VirtualImage> existingImages) {
         def save = false
         def saveImage = false
-        def virtualImage = existingImages.find { it.id == imageLocation.virtualImage.id }
+        def virtualImage = existingImages.find { img -> img.id == imageLocation.virtualImage.id }
 
         if (virtualImage) {
             def nameUpdateResult = updateImageNameForVirtualImage(imageLocation, virtualImage, matchedTemplate)
@@ -511,7 +524,8 @@ class TemplatesSync {
         ]
     }
 
-    private Map updateImageNameForVirtualImage(def imageLocation, def virtualImage, def matchedTemplate) {
+    protected Map updateImageNameForVirtualImage(VirtualImageLocation imageLocation, VirtualImage virtualImage,
+                                                Map matchedTemplate) {
         def save = false
         def saveImage = false
 
@@ -527,7 +541,7 @@ class TemplatesSync {
         return [saveLocation: save, saveImage: saveImage]
     }
 
-    private Map updateImagePublicityForVirtualImage(def imageLocation, def virtualImage) {
+    protected Map updateImagePublicityForVirtualImage(VirtualImageLocation imageLocation, VirtualImage virtualImage) {
         def save = false
         def saveImage = false
 
@@ -541,7 +555,7 @@ class TemplatesSync {
         return [saveLocation: save, saveImage: saveImage]
     }
 
-    private boolean updateImageLocationCodeForVirtualImage(def imageLocation, def matchedTemplate) {
+    protected boolean updateImageLocationCodeForVirtualImage(VirtualImageLocation imageLocation, Map matchedTemplate) {
         if (imageLocation.code == null) {
             imageLocation.code = "scvmm.image.${cloud.id}.${matchedTemplate.ID}"
             return true
@@ -549,7 +563,8 @@ class TemplatesSync {
         return false
     }
 
-    private boolean updateImageLocationExternalIdForVirtualImage(def imageLocation, def matchedTemplate) {
+    protected boolean updateImageLocationExternalIdForVirtualImage(VirtualImageLocation imageLocation,
+                                                                 Map matchedTemplate) {
         if (imageLocation.externalId != matchedTemplate.ID) {
             imageLocation.externalId = matchedTemplate.ID
             return true
@@ -557,7 +572,8 @@ class TemplatesSync {
         return false
     }
 
-    private boolean updateImageLocationVolumesForVirtualImage(def imageLocation, def matchedTemplate) {
+    protected boolean updateImageLocationVolumesForVirtualImage(VirtualImageLocation imageLocation,
+                                                              Map matchedTemplate) {
         if (matchedTemplate.Disks) {
             def changed = syncVolumes(imageLocation, matchedTemplate.Disks)
             return changed == true
@@ -565,10 +581,12 @@ class TemplatesSync {
         return false
     }
 
-    private void processNewImageLocationForVirtualImage(def matchedTemplate, List<VirtualImage> existingImages,
+    protected void processNewImageLocationForVirtualImage(Map matchedTemplate, List<VirtualImage> existingImages,
                                                         List<VirtualImageLocation> locationsToCreate,
                                                         List<VirtualImage> imagesToUpdate) {
-        def image = existingImages?.find { it.externalId == matchedTemplate.ID || it.name == matchedTemplate.Name }
+        def image = existingImages?.find { img ->
+            img.externalId == matchedTemplate.ID || img.name == matchedTemplate.Name
+        }
         if (image) {
             def locationConfig = createLocationConfigForVirtualImage(matchedTemplate, image)
             def addLocation = new VirtualImageLocation(locationConfig)
@@ -580,7 +598,7 @@ class TemplatesSync {
         }
     }
 
-    private Map createLocationConfigForVirtualImage(def matchedTemplate, def image) {
+    protected Map createLocationConfigForVirtualImage(Map matchedTemplate, VirtualImage image) {
         return [
                 code        : "scvmm.image.${cloud.id}.${matchedTemplate.ID}",
                 externalId  : matchedTemplate.ID,
@@ -593,7 +611,7 @@ class TemplatesSync {
         ]
     }
 
-    private void prepareImageForVirtualImageUpdate(def image) {
+    protected void prepareImageForVirtualImageUpdate(VirtualImage image) {
         if (!image.owner && !image.systemImage) {
             image.owner = cloud.owner
         }
@@ -601,7 +619,7 @@ class TemplatesSync {
         image.isPublic = false
     }
 
-    private void saveVirtualImageResults(Map updateLists) {
+    protected void saveVirtualImageResults(Map updateLists) {
         if (updateLists.locationsToCreate.size() > 0) {
             context.async.virtualImage.location.create(updateLists.locationsToCreate, cloud).blockingGet()
         }
@@ -613,7 +631,7 @@ class TemplatesSync {
         }
     }
 
-    private addMissingVirtualImages(Collection<Map> addList) {
+    protected void addMissingVirtualImages(Collection<Map> addList) {
         log.debug "addMissingVirtualImages ${addList?.size()}"
         try {
             addList?.each { templateItem ->
@@ -624,7 +642,7 @@ class TemplatesSync {
         }
     }
 
-    private void createVirtualImageFromTemplate(Map templateItem) {
+    protected void createVirtualImageFromTemplate(Map templateItem) {
         def imageConfig = buildImageConfig(templateItem)
         def osType = getOsTypeForTemplate(templateItem)
         updateImageConfigWithOsType(imageConfig, osType)
@@ -639,7 +657,7 @@ class TemplatesSync {
         createAndSaveVirtualImage(virtualImage, templateItem)
     }
 
-    private Map buildImageConfig(Map templateItem) {
+    protected Map buildImageConfig(Map templateItem) {
         def imageConfig = [
                 name       : templateItem.Name,
                 code       : "scvmm.image.${cloud.id}.${templateItem.ID}",
@@ -666,7 +684,7 @@ class TemplatesSync {
         return imageConfig
     }
 
-    private OsType getOsTypeForTemplate(Map templateItem) {
+    protected OsType getOsTypeForTemplate(Map templateItem) {
         def osTypeCode = apiService.getMapScvmmOsType(templateItem.OperatingSystem, true, "Other Linux (64 bit)")
         log.info "cacheTemplates osTypeCode: ${osTypeCode}"
         def osType = context.services.osType.find(new DataQuery().withFilter(CODE, osTypeCode ?: 'other'))
@@ -674,7 +692,7 @@ class TemplatesSync {
         return osType
     }
 
-    private void updateImageConfigWithOsType(Map imageConfig, OsType osType) {
+    protected void updateImageConfigWithOsType(Map imageConfig, OsType osType) {
         imageConfig.osType = osType
         imageConfig.platform = osType?.platform
         if (imageConfig.platform == 'windows') {
@@ -682,7 +700,7 @@ class TemplatesSync {
         }
     }
 
-    private void setImageGeneration(VirtualImage virtualImage, Map templateItem) {
+    protected void setImageGeneration(VirtualImage virtualImage, Map templateItem) {
         if (templateItem.Generation) {
             virtualImage.setConfigProperty(GENERATION,
                 templateItem.Generation?.toString() == ONE ? GENERATION1 : GENERATION2)
@@ -692,7 +710,7 @@ class TemplatesSync {
         }
     }
 
-    private Map buildLocationConfig(Map templateItem) {
+    protected Map buildLocationConfig(Map templateItem) {
         return [
                 code       : "scvmm.image.${cloud.id}.${templateItem.ID}",
                 refId      : cloud.id,
@@ -704,7 +722,7 @@ class TemplatesSync {
         ]
     }
 
-    private void createAndSaveVirtualImage(VirtualImage virtualImage, Map templateItem) {
+    protected void createAndSaveVirtualImage(VirtualImage virtualImage, Map templateItem) {
         context.async.virtualImage.create([virtualImage], cloud).blockingGet()
         def savedLocation = findSavedLocation(virtualImage.imageLocations[0])
         def hasVolumeChanges = syncVolumes(savedLocation, templateItem.Disks)
@@ -713,14 +731,14 @@ class TemplatesSync {
         }
     }
 
-    private VirtualImageLocation findSavedLocation(VirtualImageLocation location) {
+    protected VirtualImageLocation findSavedLocation(VirtualImageLocation location) {
         return context.async.virtualImage.location.find(new DataQuery()
                 .withFilter(CODE, location.code)
                 .withFilter(REF_TYPE, location.refType)
                 .withFilter(REF_ID, location.refId)).blockingGet()
     }
 
-    private syncVolumes(addLocation, externalVolumes) {
+    protected boolean syncVolumes(VirtualImageLocation addLocation, List externalVolumes) {
         log.debug "syncVolumes: ${addLocation}, " +
                   "${groovy.json.JsonOutput.prettyPrint(externalVolumes?.encodeAsJSON()?.toString())}"
         def changes = false // returns if there are changes to be saved
@@ -740,13 +758,13 @@ class TemplatesSync {
                 storageVolume.externalId == masterItem.ID
             }.withLoadObjectDetailsFromFinder {
                 List<SyncTask.UpdateItemDto<StorageVolumeIdentityProjection, StorageVolume>> updateItems ->
-                context.async.storageVolume.listById(updateItems.collect { it.existingItem.id } as List<Long>)
+                context.async.storageVolume.listById(updateItems.collect { item -> item.existingItem.id } as List<Long>)
             }.onAdd { itemsToAdd ->
                 addMissingStorageVolumes(itemsToAdd, addLocation, diskNumber, maxStorage)
             }.onUpdate { List<SyncTask.UpdateItem<StorageVolume, Map>> updateItems ->
-                updateMatchedStorageVolumes(updateItems, addLocation, maxStorage, changes)
+                changes = updateMatchedStorageVolumes(updateItems, addLocation, maxStorage, changes)
             }.onDelete { removeItems ->
-                removeMissingStorageVolumes(removeItems, addLocation, changes)
+                changes = removeMissingStorageVolumes(removeItems, addLocation, changes)
             }.start()
         } catch (e) {
             log.error("syncVolumes error: ${e}", e)
@@ -754,7 +772,8 @@ class TemplatesSync {
         return changes
     }
 
-    private addMissingStorageVolumes(itemsToAdd, VirtualImageLocation addLocation, int diskNumber, maxStorage) {
+    protected void addMissingStorageVolumes(List itemsToAdd, VirtualImageLocation addLocation,
+                                           int diskNumber, int maxStorage) {
         List<StorageVolume> volumes = []
         itemsToAdd?.each { diskData ->
             log.debug("adding new volume: ${diskData}")
@@ -773,8 +792,9 @@ class TemplatesSync {
                     // as this is the fully qualified path
                     internalId: diskData.Location,
                     // StorageVolumeType code eg 'scvmm-dynamicallyexpanding-vhd'
+                    // @SuppressWarnings('UnnecessaryGetter')
                     storageType: getStorageVolumeType(
-                            "scvmm-${diskData?.VHDType}-${diskData?.VHDFormat}".toLowerCase()).getId(),
+                            "scvmm-${diskData?.VHDType}-${diskData?.VHDFormat}".toLowerCase()).id,
                     displayOrder: volumes?.size(),
             ]
             if (datastore) {
@@ -790,20 +810,23 @@ class TemplatesSync {
         context.async.storageVolume.create(volumes, addLocation).blockingGet()
     }
 
-    private updateMatchedStorageVolumes(updateItems, addLocation, maxStorage, changes) {
+    protected boolean updateMatchedStorageVolumes(List<SyncTask.UpdateItem<StorageVolume, Map>> updateItems,
+                                             VirtualImageLocation addLocation, int maxStorage, boolean changes) {
+        boolean hasChanges = changes
         updateItems?.each { updateMap ->
             log.debug("updating volume: ${updateMap.masterItem}")
             def updateResult = processStorageVolumeUpdate(updateMap, addLocation)
 
             if (updateResult.needsSave) {
                 context.async.storageVolume.save(updateResult.volume).blockingGet()
-                changes = true
+                hasChanges = true
             }
             maxStorage += updateResult.masterDiskSize
         }
+        return hasChanges
     }
 
-    private Map processStorageVolumeUpdate(def updateMap, def addLocation) {
+    protected Map processStorageVolumeUpdate(SyncTask.UpdateItem updateMap, VirtualImageLocation addLocation) {
         StorageVolume volume = updateMap.existingItem
         def masterItem = updateMap.masterItem
         def masterDiskSize = masterItem?.TotalSize?.toLong() ?: 0
@@ -821,7 +844,7 @@ class TemplatesSync {
         ]
     }
 
-    private boolean updateVolumeSize(StorageVolume volume, long masterDiskSize) {
+    protected boolean updateVolumeSize(StorageVolume volume, long masterDiskSize) {
         if (!masterDiskSize || volume.maxStorage == masterDiskSize) {
             return false
         }
@@ -839,7 +862,7 @@ class TemplatesSync {
         return false
     }
 
-    private boolean updateVolumeInternalId(StorageVolume volume, def masterItem) {
+    protected boolean updateVolumeInternalId(StorageVolume volume, Map masterItem) {
         if (volume.internalId != masterItem.Location) {
             volume.internalId = masterItem.Location
             return true
@@ -847,7 +870,7 @@ class TemplatesSync {
         return false
     }
 
-    private boolean updateVolumeRootStatus(StorageVolume volume, def masterItem, def addLocation) {
+    protected boolean updateVolumeRootStatus(StorageVolume volume, Map masterItem, VirtualImageLocation addLocation) {
         def isRootVolume = (masterItem?.VolumeType == BOOT_AND_SYSTEM) || (addLocation.volumes.size() == 1)
         if (volume.rootVolume != isRootVolume) {
             volume.rootVolume = isRootVolume
@@ -856,7 +879,7 @@ class TemplatesSync {
         return false
     }
 
-    private boolean updateVolumeStorageType(StorageVolume volume, def masterItem) {
+    protected boolean updateVolumeStorageType(StorageVolume volume, Map masterItem) {
         if (!masterItem?.VHDType || !masterItem?.VHDFormat) {
             return false
         }
@@ -874,17 +897,17 @@ class TemplatesSync {
 
     // todo Move to ScvmmComputeService?
     // Get the SCVMM StorageVolumeType - set a meaningful default if vhdType is null
-    private getStorageVolumeType(String storageVolumeTypeCode) {
+    protected Object getStorageVolumeType(String storageVolumeTypeCode) {
         log.debug("getStorageVolumeTypeId - Looking up volumeTypeCode ${storageVolumeTypeCode}")
         def code = storageVolumeTypeCode ?: STANDARD
         return context.async.storageVolume.storageVolumeType.find(
                 new DataQuery().withFilter(CODE, code)).blockingGet()
     }
-
-    private removeMissingStorageVolumes(removeItems, addLocation, changes) {
+    protected boolean removeMissingStorageVolumes(List removeItems, VirtualImageLocation addLocation, boolean changes) {
+        boolean hasChanges = changes
         removeItems?.each { currentVolume ->
             log.debug "removing volume: ${currentVolume}"
-            changes = true
+            hasChanges = true
             currentVolume.controller = null
             currentVolume.datastore = null
 
@@ -892,9 +915,10 @@ class TemplatesSync {
             context.async.storageVolume.remove([currentVolume], addLocation).blockingGet()
             context.async.storageVolume.remove(currentVolume).blockingGet()
         }
+        return hasChanges
     }
 
-    private buildStorageVolume(account, addLocation, volume) {
+    protected StorageVolume buildStorageVolume(Object account, VirtualImageLocation addLocation, Map volume) {
         def storageVolume = new StorageVolume()
         storageVolume.name = volume.name
         storageVolume.account = account
@@ -929,7 +953,8 @@ class TemplatesSync {
         return storageVolume
     }
 
-    private loadDatastoreForVolume(hostVolumeId = null, fileShareId = null, partitionUniqueId = null) {
+    protected Datastore loadDatastoreForVolume(String hostVolumeId = null, String fileShareId = null,
+                                              String partitionUniqueId = null) {
         log.debug "loadDatastoreForVolume: ${hostVolumeId}, ${fileShareId}"
         if (hostVolumeId) {
             StorageVolume storageVolume = context.services.storageVolume.find(new DataQuery()
@@ -950,6 +975,6 @@ class TemplatesSync {
                     .withFilter(REF_ID, cloud.id))
             return datastore
         }
-        null
+        return null
     }
 }

@@ -12,7 +12,9 @@ import com.morpheusdata.model.projection.CloudPoolIdentity
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
 import io.reactivex.rxjava3.core.Observable
+import groovy.transform.CompileDynamic
 
+@CompileDynamic
 class ClustersSync {
     // Constants to avoid duplicate string literals
     private static final String COMPUTE_ZONE = 'ComputeZone'
@@ -33,7 +35,7 @@ class ClustersSync {
         this.apiService = new ScvmmApiService(morpheusContext)
     }
 
-    def execute() {
+    void execute() {
         log.debug 'ClustersSync'
         try {
             def server = morpheusContext.services.computeServer.find(new DataQuery().withFilter('cloud.id', cloud.id))
@@ -81,7 +83,7 @@ class ClustersSync {
         }
     }
 
-    def chooseOwnerPoolDefaults(Account currentAccount) {
+    void chooseOwnerPoolDefaults(Account currentAccount) {
         // check for default store and set if not
         def pool = morpheusContext.services.cloud.pool.find(new DataQuery()
                 .withFilter(OWNER, currentAccount)
@@ -109,7 +111,7 @@ class ClustersSync {
         }
     }
 
-    private addMissingResourcePools(Collection<Map> addList) {
+    protected void addMissingResourcePools(Collection<Map> addList) {
         log.debug("addMissingResourcePools: ${addList.size()}")
 
         List<CloudPool> clusterAdds = []
@@ -160,7 +162,7 @@ class ClustersSync {
         }
     }
 
-    private updateMatchedResourcePools(List<SyncTask.UpdateItem<CloudPool, Map>> updateList) {
+    protected void updateMatchedResourcePools(List<SyncTask.UpdateItem<CloudPool, Map>> updateList) {
         log.debug("updateMatchedResourcePools: ${updateList.size()}")
 
         List<CloudPool> itemsToUpdate = []
@@ -203,7 +205,7 @@ class ClustersSync {
         }
     }
 
-    private removeMissingResourcePools(List<CloudPoolIdentity> removeList) {
+    protected void removeMissingResourcePools(List<CloudPoolIdentity> removeList) {
         log.debug "removeMissingResourcePools: ${removeList?.size()}"
 
         def deleteList = []
@@ -222,14 +224,14 @@ class ClustersSync {
         }
     }
 
-    private clearResourcePoolAssociations(CloudPoolIdentity removeItem) {
+    protected void clearResourcePoolAssociations(CloudPoolIdentity removeItem) {
         clearComputeServerAssociations(removeItem)
         clearDatastoreAssociations(removeItem)
         clearNetworkAssociations(removeItem)
         clearCloudPoolAssociations(removeItem)
     }
 
-    private clearComputeServerAssociations(CloudPoolIdentity removeItem) {
+    protected void clearComputeServerAssociations(CloudPoolIdentity removeItem) {
         def serversToUpdate = morpheusContext.services.computeServer.list(new DataQuery()
                 .withFilter('resourcePool.id', removeItem.id))
         if (serversToUpdate) {
@@ -238,7 +240,7 @@ class ClustersSync {
         }
     }
 
-    private clearDatastoreAssociations(CloudPoolIdentity removeItem) {
+    protected void clearDatastoreAssociations(CloudPoolIdentity removeItem) {
         def datastoresToUpdate = morpheusContext.services.cloud.datastore.list(new DataQuery()
                 .withFilter('zonePool.id', removeItem.id))
         if (datastoresToUpdate) {
@@ -247,7 +249,7 @@ class ClustersSync {
         }
     }
 
-    private clearNetworkAssociations(CloudPoolIdentity removeItem) {
+    protected void clearNetworkAssociations(CloudPoolIdentity removeItem) {
         def networksToUpdate = morpheusContext.services.cloud.network.list(new DataQuery()
                 .withFilter('cloudPool.id', removeItem.id))
         if (networksToUpdate) {
@@ -256,7 +258,7 @@ class ClustersSync {
         }
     }
 
-    private clearCloudPoolAssociations(CloudPoolIdentity removeItem) {
+    protected void clearCloudPoolAssociations(CloudPoolIdentity removeItem) {
         def cloudPoolsToUpdate = morpheusContext.services.cloud.pool.list(new DataQuery()
                 .withFilter('parent.id', removeItem.id))
         if (cloudPoolsToUpdate) {

@@ -13,11 +13,13 @@ import com.morpheusdata.model.projection.StorageVolumeIdentityProjection
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
 import io.reactivex.rxjava3.core.Observable
+import groovy.transform.CompileDynamic
 
 /**
  * @author rahul.ray
  */
 
+@CompileDynamic
 class RegisteredStorageFileSharesSync {
     private static final String REF_TYPE = 'refType'
     private static final String COMPUTE_ZONE = 'ComputeZone'
@@ -42,7 +44,7 @@ class RegisteredStorageFileSharesSync {
         this.apiService = new ScvmmApiService(context)
     }
 
-    def execute() {
+    void execute() {
         log.debug 'RegisteredStorageFileSharesSync'
         try {
             def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(context, cloud, node)
@@ -69,17 +71,19 @@ class RegisteredStorageFileSharesSync {
                 }.onAdd { itemsToAdd ->
                     addMissingFileShares(itemsToAdd, objList)
                 }.withLoadObjectDetailsFromFinder { List<SyncTask.UpdateItem> updateItems ->
-                    context.async.cloud.datastore.listById(updateItems.collect { it.existingItem.id } as List<Long>)
+                    context.async.cloud.datastore.listById(
+                            updateItems.collect { updateItem -> updateItem.existingItem.id } as List<Long>)
                 }.start()
             } else {
                 log.info('Not getting the RegisteredStorageFileShares data')
             }
         } catch (e) {
+            // @SuppressWarnings('UnnecessaryGetter')
             log.error("RegisteredStorageFileSharesSync error: ${e}", e.getMessage())
         }
     }
 
-    private addMissingFileShares(Collection<Map> addList, List objList) {
+    protected void addMissingFileShares(Collection<Map> addList, List objList) {
         log.debug('RegisteredStorageFileSharesSync: addMissingFileShares: called')
         def dataStoreAdds = []
         try {
@@ -134,7 +138,7 @@ class RegisteredStorageFileSharesSync {
         }
     }
 
-    private updateMatchedFileShares(List<SyncTask.UpdateItem<Datastore, Map>> updateList, List objList) {
+    protected void updateMatchedFileShares(List<SyncTask.UpdateItem<Datastore, Map>> updateList, List objList) {
         log.debug('RegisteredStorageFileSharesSync >> updateMatchedFileShares >> Entered')
         try {
             def hostToShareMap = [:]
@@ -151,8 +155,8 @@ class RegisteredStorageFileSharesSync {
         }
     }
 
-    private void processDatastoreUpdate(SyncTask.UpdateItem<Datastore, Map> update,
-                                         List itemsToUpdate, Map hostToShareMap) {
+    protected void processDatastoreUpdate(SyncTask.UpdateItem<Datastore, Map> update,
+                                          List itemsToUpdate, Map hostToShareMap) {
         Datastore existingItem = update.existingItem
         Map masterItem = update.masterItem
 
@@ -163,7 +167,7 @@ class RegisteredStorageFileSharesSync {
         mapHostToShares(masterItem, hostToShareMap)
     }
 
-    private boolean updateDatastoreProperties(Datastore datastore, Map masterItem) {
+    protected boolean updateDatastoreProperties(Datastore datastore, Map masterItem) {
         boolean save = false
 
         save |= updateDatastoreOnlineStatus(datastore, masterItem)
@@ -174,7 +178,7 @@ class RegisteredStorageFileSharesSync {
         return save
     }
 
-    private boolean updateDatastoreOnlineStatus(Datastore datastore, Map masterItem) {
+    protected boolean updateDatastoreOnlineStatus(Datastore datastore, Map masterItem) {
         if (datastore.online != masterItem.IsAvailableForPlacement) {
             datastore.online = masterItem.IsAvailableForPlacement
             return true
@@ -182,7 +186,7 @@ class RegisteredStorageFileSharesSync {
         return false
     }
 
-    private boolean updateDatastoreName(Datastore datastore, Map masterItem) {
+    protected boolean updateDatastoreName(Datastore datastore, Map masterItem) {
         if (datastore.name != masterItem.Name) {
             datastore.name = masterItem.Name
             return true
@@ -190,7 +194,7 @@ class RegisteredStorageFileSharesSync {
         return false
     }
 
-    private boolean updateDatastoreFreeSpace(Datastore datastore, Map masterItem) {
+    protected boolean updateDatastoreFreeSpace(Datastore datastore, Map masterItem) {
         def freeSpace = masterItem.FreeSpace?.toLong() ?: 0
         if (datastore.freeSpace != freeSpace) {
             datastore.freeSpace = freeSpace
@@ -199,7 +203,7 @@ class RegisteredStorageFileSharesSync {
         return false
     }
 
-    private boolean updateDatastoreStorageSize(Datastore datastore, Map masterItem) {
+    protected boolean updateDatastoreStorageSize(Datastore datastore, Map masterItem) {
         def totalSize = masterItem.Capacity ? masterItem.Capacity?.toLong() : 0
         if (datastore.storageSize != totalSize) {
             datastore.storageSize = totalSize
@@ -208,7 +212,7 @@ class RegisteredStorageFileSharesSync {
         return false
     }
 
-    private void mapHostToShares(Map masterItem, Map hostToShareMap) {
+    protected void mapHostToShares(Map masterItem, Map hostToShareMap) {
         def externalId = masterItem.ID
         def getOrCreateHostEntry = createHostEntryGetter(hostToShareMap)
 
@@ -216,28 +220,28 @@ class RegisteredStorageFileSharesSync {
         processHostAssociations(masterItem, externalId, getOrCreateHostEntry)
     }
 
-    private Closure createHostEntryGetter(Map hostToShareMap) {
+    protected Closure createHostEntryGetter(Map hostToShareMap) {
         return { hostId ->
             hostToShareMap[hostId] = hostToShareMap[hostId] ?: ([] as Set)
             hostToShareMap[hostId]
         }
     }
 
-    private void processClusterAssociations(Map masterItem, String externalId, Closure getOrCreateHostEntry) {
+    protected void processClusterAssociations(Map masterItem, String externalId, Closure getOrCreateHostEntry) {
         masterItem.ClusterAssociations?.each { ca ->
             def hostEntry = getOrCreateHostEntry(ca.HostID)
             hostEntry << externalId
         }
     }
 
-    private void processHostAssociations(Map masterItem, String externalId, Closure getOrCreateHostEntry) {
+    protected void processHostAssociations(Map masterItem, String externalId, Closure getOrCreateHostEntry) {
         masterItem.HostAssociations?.each { ha ->
             def hostEntry = getOrCreateHostEntry(ha.HostID)
             hostEntry << externalId
         }
     }
 
-    private void saveUpdatedDatastores(List itemsToUpdate) {
+    protected void saveUpdatedDatastores(List itemsToUpdate) {
         if (itemsToUpdate.size() > 0) {
             context.async.cloud.datastore.bulkSave(itemsToUpdate).blockingGet()
         }
@@ -245,9 +249,11 @@ class RegisteredStorageFileSharesSync {
 
     /// hostToShareMap is a map of host externalId to a list of registered file share IDs
     /// objList is the list of registered file shares
-    private syncVolumeForEachHosts(Map hostToShareMap, List objList) {
+    protected void syncVolumeForEachHosts(Map hostToShareMap, List objList) {
         try {
+            // @SuppressWarnings('UnnecessaryGetter')
             def existingHostsList = getExistingHosts()
+            // @SuppressWarnings('UnnecessaryGetter')
             def morphDatastores = getMorphDatastores()
             def findMountPath = createMountPathFinder(objList)
 
@@ -259,13 +265,13 @@ class RegisteredStorageFileSharesSync {
         }
     }
 
-    private List<ComputeServer> getExistingHosts() {
+    protected List<ComputeServer> getExistingHosts() {
         return context.services.computeServer.list(new DataQuery()
                 .withFilter('zone.id', cloud.id)
                 .withFilter('computeServerType.code', SCVMM_HYPERVISOR))
     }
 
-    private List<Datastore> getMorphDatastores() {
+    protected List<Datastore> getMorphDatastores() {
         return context.services.cloud.datastore.list(new DataQuery()
                 .withFilter(CATEGORY, EQUALS_REGEX, CATEGORY_PATTERN)
                 .withFilter(REF_TYPE, COMPUTE_ZONE)
@@ -273,15 +279,16 @@ class RegisteredStorageFileSharesSync {
                 .withFilter(TYPE, GENERIC))
     }
 
-    private Closure createMountPathFinder(List objList) {
+    protected Closure createMountPathFinder(List objList) {
         return { dsID ->
             def obj = objList.find { storageObj -> storageObj.ID == dsID }
             obj?.MountPoints?.size() > 0 ? obj.MountPoints[0] : null
         }
     }
 
-    private void syncVolumesForSingleHost(ComputeServer host, Map hostToShareMap,
-                                          List morphDatastores, Closure findMountPath) {
+    protected void syncVolumesForSingleHost(ComputeServer host, Map hostToShareMap,
+                                            List morphDatastores, Closure findMountPath) {
+        // @SuppressWarnings('UnnecessaryGetter')
         def volumeType = getVolumeType()
         def existingStorageVolumes = getExistingStorageVolumes(host, volumeType)
         def masterVolumeIds = hostToShareMap[host.externalId]
@@ -293,17 +300,17 @@ class RegisteredStorageFileSharesSync {
         syncTask.start()
     }
 
-    private getVolumeType() {
-        context.services.storageVolume.storageVolumeType.find(new DataQuery()
+    protected Object getVolumeType() {
+        return context.services.storageVolume.storageVolumeType.find(new DataQuery()
                 .withFilter('code', 'scvmm-registered-file-share-datastore'))
     }
 
-    private List<StorageVolume> getExistingStorageVolumes(ComputeServer host, Object volumeType) {
+    protected List<StorageVolume> getExistingStorageVolumes(ComputeServer host, Object volumeType) {
         return host.volumes?.findAll { volume -> volume.type == volumeType }
     }
 
-    private SyncTask createStorageVolumeSyncTask(Observable domainRecords, Collection masterVolumeIds,
-                                                 ComputeServer host, List morphDatastores, Closure findMountPath) {
+    protected SyncTask createStorageVolumeSyncTask(Observable domainRecords, Collection masterVolumeIds,
+                                                   ComputeServer host, List morphDatastores, Closure findMountPath) {
         def syncTask = new SyncTask<StorageVolumeIdentityProjection, Map, StorageVolume>(
                 domainRecords, masterVolumeIds as Collection<Map>)
 
@@ -318,18 +325,18 @@ class RegisteredStorageFileSharesSync {
                 }
     }
 
-    private boolean matchStorageVolume(StorageVolumeIdentityProjection storageVolume, Map cloudItem) {
+    protected boolean matchStorageVolume(StorageVolumeIdentityProjection storageVolume, Map cloudItem) {
         return storageVolume?.externalId == cloudItem?.ID
     }
 
-    private void deleteStorageVolumes(Collection removeItems, ComputeServer host) {
+    protected void deleteStorageVolumes(Collection removeItems, ComputeServer host) {
         log.debug("${host.id}: removing storageVolume: ${removeItems.size()}")
         removeItems?.each { currentVolume ->
             removeStorageVolume(currentVolume, host)
         }
     }
 
-    private void removeStorageVolume(StorageVolume currentVolume, ComputeServer host) {
+    protected void removeStorageVolume(StorageVolume currentVolume, ComputeServer host) {
         log.debug "removing volume: ${currentVolume}"
         currentVolume.controller = null
         currentVolume.datastore = null
@@ -339,13 +346,13 @@ class RegisteredStorageFileSharesSync {
         context.async.storageVolume.remove(currentVolume).blockingGet()
     }
 
-    private void updateStorageVolumes(Collection updateItems, List morphDatastores, Closure findMountPath) {
+    protected void updateStorageVolumes(Collection updateItems, List morphDatastores, Closure findMountPath) {
         updateItems?.each { updateMap ->
             updateSingleStorageVolume(updateMap, morphDatastores, findMountPath)
         }
     }
 
-    private void updateSingleStorageVolume(Object updateMap, List morphDatastores, Closure findMountPath) {
+    protected void updateSingleStorageVolume(Object updateMap, List morphDatastores, Closure findMountPath) {
         StorageVolume storageVolume = updateMap.existingItem
         def dsExternalId = updateMap.masterItem
         Datastore match = morphDatastores.find { datastore -> datastore.externalId == dsExternalId }
@@ -355,8 +362,8 @@ class RegisteredStorageFileSharesSync {
         }
     }
 
-    private boolean updateStorageVolumeProperties(StorageVolume storageVolume, Datastore match,
-                                                  Closure findMountPath, Object dsExternalId) {
+    protected boolean updateStorageVolumeProperties(StorageVolume storageVolume, Datastore match,
+                                                    Closure findMountPath, Object dsExternalId) {
         boolean save = false
 
         save |= updateProperty(storageVolume, 'maxStorage', match.storageSize)
@@ -368,7 +375,7 @@ class RegisteredStorageFileSharesSync {
         return save
     }
 
-    private boolean updateProperty(StorageVolume volume, String property, Object value) {
+    protected boolean updateProperty(StorageVolume volume, String property, Object value) {
         if (volume."${property}" != value) {
             volume."${property}" = value
             return true
@@ -376,7 +383,7 @@ class RegisteredStorageFileSharesSync {
         return false
     }
 
-    private boolean updateDatastoreProperty(StorageVolume volume, Datastore match) {
+    protected boolean updateDatastoreProperty(StorageVolume volume, Datastore match) {
         if (volume.datastore?.id != match.id) {
             volume.datastore = match
             return true
@@ -384,15 +391,15 @@ class RegisteredStorageFileSharesSync {
         return false
     }
 
-    private void addStorageVolumes(Collection itemsToAdd, List morphDatastores,
-                                   Closure findMountPath, ComputeServer host) {
+    protected void addStorageVolumes(Collection itemsToAdd, List morphDatastores,
+                                     Closure findMountPath, ComputeServer host) {
         itemsToAdd?.each { dsExternalId ->
             addSingleStorageVolume(dsExternalId, morphDatastores, findMountPath, host)
         }
     }
 
-    private void addSingleStorageVolume(Object dsExternalId, List morphDatastores,
-                                         Closure findMountPath, ComputeServer host) {
+    protected void addSingleStorageVolume(Object dsExternalId, List morphDatastores,
+                                          Closure findMountPath, ComputeServer host) {
         Datastore match = morphDatastores.find { datastore -> datastore.externalId == dsExternalId }
         if (match) {
             log.debug "${host.id}: Adding new volume ${dsExternalId}"
@@ -403,7 +410,8 @@ class RegisteredStorageFileSharesSync {
         }
     }
 
-    private StorageVolume createNewStorageVolume(Datastore match, def dsExternalId, Closure findMountPath) {
+    protected StorageVolume createNewStorageVolume(Datastore match, Object dsExternalId, Closure findMountPath) {
+        // @SuppressWarnings('UnnecessaryGetter')
         def volumeType = getVolumeType()
         def newVolume = new StorageVolume(
                 type: volumeType,
@@ -416,11 +424,12 @@ class RegisteredStorageFileSharesSync {
                 cloudId: cloud?.id
         )
         newVolume.datastore = match
-        newVolume
+        return newVolume
     }
 
-    private void saveNewStorageVolume(StorageVolume newVolume, ComputeServer host) {
+    protected void saveNewStorageVolume(StorageVolume newVolume, ComputeServer host) {
         context.async.storageVolume.create([newVolume], host).blockingGet()
         context.async.computeServer.save(host).blockingGet()
     }
 }
+

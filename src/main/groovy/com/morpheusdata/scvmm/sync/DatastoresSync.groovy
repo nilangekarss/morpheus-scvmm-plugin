@@ -14,11 +14,13 @@ import com.morpheusdata.model.projection.DatastoreIdentityProjection
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
 import io.reactivex.rxjava3.core.Observable
+import groovy.transform.CompileDynamic
 
 /**
  * @author rahul.ray
  */
 
+@CompileDynamic
 class DatastoresSync {
     // Constants to avoid duplicate string literals
     private static final String REF_TYPE = 'refType'
@@ -51,7 +53,7 @@ class DatastoresSync {
         this.log = log ?: LogWrapper.instance
     }
 
-    def execute() {
+    void execute() {
         log.debug 'DatastoresSync'
         try {
             def syncContext = buildSyncContext()
@@ -65,11 +67,12 @@ class DatastoresSync {
                 performDatastoreSync(objList, syncContext)
             }
         } catch (ex) {
+            // @SuppressWarnings('UnnecessaryGetter')
             log.error('DatastoresSync error: {}', ex.getMessage())
         }
     }
 
-    private buildSyncContext() {
+    protected Map buildSyncContext() {
         List<CloudPool> clusters = context.services.cloud.pool.list(new DataQuery()
                 .withFilter(REF_TYPE, COMPUTE_ZONE).withFilter(REF_ID, cloud.id)
                 .withFilter(TYPE, 'Cluster').withFilter('internalId', '!=', null))
@@ -80,7 +83,7 @@ class DatastoresSync {
                 new DataQuery().withFilter('zone.id', cloud.id)
                         .withFilter('computeServerType.code', 'scvmmHypervisor'))
 
-        [
+        return [
                 clusters: clusters,
                 volumeType: volumeType,
                 scvmmOpts: scvmmOpts,
@@ -88,7 +91,7 @@ class DatastoresSync {
         ]
     }
 
-    private List<Map> filterUniqueDatastores(List<Map> datastores) {
+    protected List<Map> filterUniqueDatastores(List<Map> datastores) {
         def objList = []
         def partitionUniqueIds = []
         datastores?.each { data ->
@@ -100,7 +103,7 @@ class DatastoresSync {
         return objList
     }
 
-    private void performDatastoreSync(List<Map> objList, Map syncContext) {
+    protected void performDatastoreSync(List<Map> objList, Map syncContext) {
         Observable<DatastoreIdentityProjection> existingItems = context.async.cloud.datastore.listIdentityProjections(
                 new DataQuery()
                 .withFilter('category', '=~', 'scvmm.datastore.%').withFilter(REF_TYPE, COMPUTE_ZONE)
@@ -124,16 +127,17 @@ class DatastoresSync {
         }.start()
     }
 
-    private removeMissingDatastores(List<DatastoreIdentityProjection> removeList) {
+    protected void removeMissingDatastores(List<DatastoreIdentityProjection> removeList) {
         log.debug("removeMissingDatastores: ${cloud} ${removeList.size()}")
         try {
             context.services.cloud.datastore.bulkRemove(removeList)
         } catch (ex) {
+            // @SuppressWarnings('UnnecessaryGetter')
             log.error('DatastoresSync: removeMissingDatastores error: {}', ex.getMessage())
         }
     }
 
-    private void updateMatchedDatastores(List<SyncTask.UpdateItem<Datastore, Map>> updateList,
+    protected void updateMatchedDatastores(List<SyncTask.UpdateItem<Datastore, Map>> updateList,
                                          List<CloudPool> clusters, List<ComputeServer> existingHosts,
                                          StorageVolumeType volumeType) {
         try {
@@ -146,7 +150,7 @@ class DatastoresSync {
         }
     }
 
-    private void updateSingleDatastore(SyncTask.UpdateItem<Datastore, Map> item, List<CloudPool> clusters,
+    protected void updateSingleDatastore(SyncTask.UpdateItem<Datastore, Map> item, List<CloudPool> clusters,
                                        List<ComputeServer> existingHosts, StorageVolumeType volumeType) {
         def masterItem = item.masterItem
         def existingItem = item.existingItem
@@ -162,7 +166,7 @@ class DatastoresSync {
         }
     }
 
-    private CloudPool findClusterForDatastore(Map masterItem, List<CloudPool> clusters, ComputeServer host) {
+    protected CloudPool findClusterForDatastore(Map masterItem, List<CloudPool> clusters, ComputeServer host) {
         if (masterItem.isClusteredSharedVolume) {
             return clusters.find { c ->
                 c.getConfigProperty(SHARED_VOLUMES)?.toString().contains(masterItem.name) &&
@@ -172,7 +176,8 @@ class DatastoresSync {
         return null
     }
 
-    private boolean updateDatastoreProperties(Datastore existingItem, Map masterItem, String name, CloudPool cluster) {
+    protected boolean updateDatastoreProperties(Datastore existingItem, Map masterItem, String name,
+                                               CloudPool cluster) {
         boolean doSave = false
 
         if (existingItem.online != masterItem.isAvailableForPlacement) {
@@ -204,11 +209,11 @@ class DatastoresSync {
         return doSave
     }
 
-    private long calculateTotalSize(Map masterItem) {
+    protected long calculateTotalSize(Map masterItem) {
         return masterItem.size ? masterItem.size?.toLong() : masterItem.capacity ? masterItem.capacity?.toLong() : 0
     }
 
-    private void addMissingDatastores(Collection<Map> addList, List<CloudPool> clusters,
+    protected void addMissingDatastores(Collection<Map> addList, List<CloudPool> clusters,
                                       List<ComputeServer> existingHosts, StorageVolumeType volumeType) {
         log.debug("addMissingDatastores: addList?.size(): ${addList?.size()}")
         try {
@@ -220,7 +225,7 @@ class DatastoresSync {
         }
     }
 
-    private void addSingleDatastore(Map item, List<CloudPool> clusters, List<ComputeServer> existingHosts,
+    protected void addSingleDatastore(Map item, List<CloudPool> clusters, List<ComputeServer> existingHosts,
                                     StorageVolumeType volumeType) {
         def externalId = getDataStoreExternalId(item)
         ComputeServer host = existingHosts.find { hostItem -> hostItem.hostname == item.vmHost }
@@ -238,7 +243,7 @@ class DatastoresSync {
         }
     }
 
-    private Map buildDatastoreConfig(Map item, CloudPool cluster, ComputeServer host, String externalId) {
+    protected Map buildDatastoreConfig(Map item, CloudPool cluster, ComputeServer host, String externalId) {
         return [
                 cloud      : cloud,
                 drsEnabled : false,
@@ -257,7 +262,7 @@ class DatastoresSync {
         ]
     }
 
-    private void syncVolume(Map item, ComputeServer host, Datastore savedDataStore, StorageVolumeType volumeType,
+    protected void syncVolume(Map item, ComputeServer host, Datastore savedDataStore, StorageVolumeType volumeType,
                             String externalId) {
         try {
             def volumeMetrics = calculateVolumeMetrics(item)
@@ -281,7 +286,7 @@ class DatastoresSync {
         }
     }
 
-    private Map calculateVolumeMetrics(Map item) {
+    protected Map calculateVolumeMetrics(Map item) {
         def totalSize = calculateTotalSize(item)
         def freeSpace = item.freeSpace?.toLong() ?: 0
         def usedSpace = totalSize - freeSpace
@@ -295,7 +300,7 @@ class DatastoresSync {
         ]
     }
 
-    private void updateExistingVolume(StorageVolume existingVolume, Map item, Datastore savedDataStore,
+    protected void updateExistingVolume(StorageVolume existingVolume, Map item, Datastore savedDataStore,
                                       Map volumeMetrics) {
         boolean save = false
 
@@ -329,7 +334,7 @@ class DatastoresSync {
         }
     }
 
-    private void addNewVolume(Map volumeContext) {
+    protected void addNewVolume(Map volumeContext) {
         def newVolume = new StorageVolume(
                 type: volumeContext.volumeType,
                 name: volumeContext.item.name,
@@ -345,7 +350,7 @@ class DatastoresSync {
         log.debug('syncVolume: newVolume created')
     }
 
-    private String getDataStoreExternalId(Map cloudItem) {
+    protected String getDataStoreExternalId(Map cloudItem) {
         if (cloudItem.partitionUniqueID) {
             return cloudItem.partitionUniqueID
         } else if (cloudItem.isClusteredSharedVolume && cloudItem.storageVolumeID) {
@@ -354,7 +359,7 @@ class DatastoresSync {
         return "${cloudItem.name}|${cloudItem.vmHost}"
     }
 
-    private String getName(Map ds, CloudPool cluster, ComputeServer host) {
+    protected String getName(Map ds, CloudPool cluster, ComputeServer host) {
         def name = ds.name
         if (ds.isClusteredSharedVolume && cluster?.name) {
             name = "${cluster.name} : ${ds.name}"

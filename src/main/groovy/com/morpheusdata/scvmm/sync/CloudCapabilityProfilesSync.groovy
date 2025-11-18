@@ -6,7 +6,10 @@ import com.morpheusdata.core.data.DataQuery
 import com.morpheusdata.model.Cloud
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
+import groovy.transform.CompileStatic
+import groovy.transform.CompileDynamic
 
+@CompileStatic
 class CloudCapabilityProfilesSync {
     private static final String CAPABILITY_PROFILES = 'capabilityProfiles'
 
@@ -21,7 +24,8 @@ class CloudCapabilityProfilesSync {
         this.apiService = new ScvmmApiService(morpheusContext)
     }
 
-    def execute() {
+    @CompileDynamic
+    void execute() {
         log.debug 'CloudCapabilityProfilesSync'
         try {
             def scvmmCloud = morpheusContext.services.cloud.get(cloud.id)

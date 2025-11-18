@@ -13,11 +13,13 @@ import com.morpheusdata.model.projection.ComputeServerIdentityProjection
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
 import java.time.Instant
+import groovy.transform.CompileDynamic
 
 /**
  * @author rahul.ray
  */
 
+@CompileDynamic
 class HostSync {
     private static final String SCVMM_HYPERVISOR = 'scvmmHypervisor'
     private static final String COMPUTE_ZONE = 'ComputeZone'
@@ -40,10 +42,9 @@ class HostSync {
         this.node = node
         this.context = context
         this.apiService = new ScvmmApiService(context)
-
     }
 
-    def execute() {
+    void execute() {
         log.debug 'HostSync'
         try {
             def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(context, cloud, node)
@@ -60,7 +61,7 @@ class HostSync {
         }
     }
 
-    def removeMissingHosts(List<ComputeServerIdentityProjection> removeList) {
+    void removeMissingHosts(List<ComputeServerIdentityProjection> removeList) {
         log.debug "HostSync: removeMissingHosts: ${removeList.size()}"
         try {
             def parentServers = context.services.computeServer.list(
@@ -80,7 +81,7 @@ class HostSync {
         }
     }
 
-    def getHypervisorOs(Object name) {
+    OsType getHypervisorOs(Object name) {
         def rtn
         if (name?.indexOf('2016') > -1) {
             rtn = new OsType(code: WINDOWS_SERVER_2016_CODE)
@@ -90,7 +91,7 @@ class HostSync {
         return rtn
     }
 
-    def updateHostStats(ComputeServer server, Map hostMap) {
+    void updateHostStats(ComputeServer server, Map hostMap) {
         log.debug("HostSync: updateHostStats: hostMap: ${hostMap}")
         try {
             def statsData = extractHostStatsData(hostMap)
@@ -112,7 +113,8 @@ class HostSync {
         }
     }
 
-    private void processHostsList(List hosts) {
+    protected void processHostsList(List hosts) {
+        // @SuppressWarnings('UnnecessaryGetter')
         def clusters = getClustersForCloud()
         def filteredHosts = filterHostsByScope(hosts, clusters)
 
@@ -121,12 +123,12 @@ class HostSync {
         }
     }
 
-    private List getClustersForCloud() {
+    protected List getClustersForCloud() {
         return context.services.cloud.pool.list(new DataQuery()
                 .withFilter('refType', COMPUTE_ZONE).withFilter('refId', cloud.id))
     }
 
-    private List filterHostsByScope(List hosts, List clusters) {
+    protected List filterHostsByScope(List hosts, List clusters) {
         def hostGroupScope = cloud.getConfigProperty('hostGroup')
         def matchAllHostGroups = !hostGroupScope
         def clusterScope = cloud.getConfigProperty('cluster')
@@ -148,7 +150,7 @@ class HostSync {
         return objList
     }
 
-    private void performSyncOperation(List filteredHosts, List clusters) {
+    protected void performSyncOperation(List filteredHosts, List clusters) {
         def existingItems = context.async.computeServer.listIdentityProjections(
                 new DataQuery().withFilter('zone.id', cloud.id).withFilter('computeServerType.code', SCVMM_HYPERVISOR)
         )
@@ -173,7 +175,7 @@ class HostSync {
         }.start()
     }
 
-    private void updateMatchedHosts(List<SyncTask.UpdateItem<ComputeServer, Map>> updateList, List clusters) {
+    protected void updateMatchedHosts(List<SyncTask.UpdateItem<ComputeServer, Map>> updateList, List clusters) {
         log.debug "HostSync: updateMatchedHosts: ${cloud.id} ${updateList.size()}"
         try {
             for (updateItem in updateList) {
@@ -195,7 +197,7 @@ class HostSync {
         }
     }
 
-    private void addMissingHosts(Collection<Map> addList, List clusters) {
+    protected void addMissingHosts(Collection<Map> addList, List clusters) {
         log.debug "HostSync: addMissingHosts: ${cloud} ${addList.size()}"
         try {
             def serverType = context.async.cloud.findComputeServerTypeByCode(SCVMM_HYPERVISOR).blockingGet()
@@ -207,7 +209,7 @@ class HostSync {
         }
     }
 
-    private void processNewHostServer(Map cloudItem, List clusters, Object serverType) {
+    protected void processNewHostServer(Map cloudItem, List clusters, Object serverType) {
         def serverOs = getHypervisorOs(cloudItem.os)
         def cluster = clusters.find { clusterItem -> clusterItem.internalId == cloudItem.cluster }
 
@@ -226,7 +228,7 @@ class HostSync {
         }
     }
 
-    private Map buildServerConfig(Map cloudItem, Object cluster, Object serverType, Object serverOs) {
+    protected Map buildServerConfig(Map cloudItem, Object cluster, Object serverType, Object serverOs) {
         return [
                 account          : cloud.owner,
                 category         : "scvmm.host.${cloud.id}",
@@ -248,7 +250,7 @@ class HostSync {
         ]
     }
 
-    private void setServerCapacityInfo(ComputeServer newServer, Map cloudItem) {
+    protected void setServerCapacityInfo(ComputeServer newServer, Map cloudItem) {
         def maxMemory = cloudItem.totalMemory?.toLong() ?: 0
         def maxStorage = cloudItem.totalStorage?.toLong() ?: 0
         def cpuCount = cloudItem.cpuCount?.toLong() ?: 1
@@ -265,7 +267,7 @@ class HostSync {
         )
     }
 
-    private Map extractHostStatsData(Map hostMap) {
+    protected Map extractHostStatsData(Map hostMap) {
         def storageStats = extractStorageStats(hostMap)
         def cpuStats = extractCpuStats(hostMap)
         def memoryStats = extractMemoryStats(hostMap)
@@ -283,14 +285,14 @@ class HostSync {
         ]
     }
 
-    private Map extractStorageStats(Map hostMap) {
+    protected Map extractStorageStats(Map hostMap) {
         return [
                 maxStorage: hostMap.totalStorage?.toLong() ?: 0,
                 maxUsedStorage: hostMap.usedStorage?.toLong() ?: 0,
         ]
     }
 
-    private Map extractCpuStats(Map hostMap) {
+    protected Map extractCpuStats(Map hostMap) {
         def cpuCount = hostMap.cpuCount?.toLong() ?: 1
         def coresPerCpu = hostMap.coresPerCpu?.toLong() ?: 1
 
@@ -301,7 +303,7 @@ class HostSync {
         ]
     }
 
-    private Map extractMemoryStats(Map hostMap) {
+    protected Map extractMemoryStats(Map hostMap) {
         def totalMemory = hostMap.totalMemory?.toLong() ?: 0
         def availableMemory = hostMap.availableMemory?.toLong() ?: 0
 
@@ -311,12 +313,12 @@ class HostSync {
         ]
     }
 
-    private String determinePowerState(String hyperVState) {
+    protected String determinePowerState(String hyperVState) {
         return (hyperVState == HYPERV_RUNNING) ? POWER_STATE_ON :
                 (hyperVState == HYPERV_STOPPED) ? POWER_STATE_OFF : POWER_STATE_UNKNOWN
     }
 
-    private boolean updateServerMetrics(ComputeServer server, Map statsData) {
+    protected boolean updateServerMetrics(ComputeServer server, Map statsData) {
         boolean updates = false
 
         if (statsData.powerState == POWER_STATE_ON) {
@@ -340,7 +342,7 @@ class HostSync {
         return updates
     }
 
-    private boolean updateServerCapacity(ComputeServer server, Map statsData, ComputeCapacityInfo capacityInfo) {
+    protected boolean updateServerCapacity(ComputeServer server, Map statsData, ComputeCapacityInfo capacityInfo) {
         boolean updates = false
 
         if (statsData.maxMemory > server.maxMemory) {
@@ -370,7 +372,7 @@ class HostSync {
         return updates
     }
 
-    private boolean updateServerState(ComputeServer server, Map statsData) {
+    protected boolean updateServerState(ComputeServer server, Map statsData) {
         boolean updates = false
 
         if (server.powerState != statsData.powerState) {

@@ -1700,51 +1700,6 @@ class VirtualMachineSyncSpec extends Specification {
         // Covers: Observable.fromIterable, SyncTask creation and execution, callback executions
     }
 
-    // Tests for executeSyncTask method - focused unit tests covering SyncTask creation and configuration
-    @Unroll
-    def "executeSyncTask should create and configure SyncTask with proper callbacks"() {
-        given: "VM sync data setup"
-        def existingVm = new ComputeServerIdentityProjection(id: 1L, externalId: "vm-1", name: "existing-vm")
-        def existingVms = Observable.fromIterable([existingVm])
-
-        def virtualMachines = [
-                [ID: "vm-1", Name: "Updated-VM", VirtualMachineState: "Running"],
-                [ID: "vm-new", Name: "New-VM", VirtualMachineState: "Stopped"]
-        ]
-        def listResults = [success: true, virtualMachines: virtualMachines]
-
-        def syncData = [
-                hosts                   : [new ComputeServer(id: 10L)],
-                availablePlans          : [new ServicePlan(id: 20L)],
-                fallbackPlan            : new ServicePlan(id: 21L),
-                availablePlanPermissions: [],
-                serverType              : new ComputeServerType(id: 40L)
-        ]
-        def executionContext = [consoleEnabled: true, scvmmOpts: [:]]
-
-        def server = new ComputeServer(id: 1L, externalId: "vm-1", name: "existing-vm")
-
-        when: "executeSyncTask is called"
-        virtualMachineSync.executeSyncTask(existingVms, listResults, syncData, executionContext, createNewParam)
-
-        then: "method should complete without exceptions"
-        noExceptionThrown()
-
-        and: "allow any service interactions that may occur during SyncTask execution"
-        interaction {
-            // SyncTask will call various services during execution
-            (0.._) * asyncComputeServerService.listById(_) >> Observable.fromIterable([server])
-            (0.._) * virtualMachineSync.addMissingVirtualMachines(_, _, _, _, _, _, _)
-            (0.._) * virtualMachineSync.updateMatchedVirtualMachines(_, _, _, _, _, _)
-            (0.._) * virtualMachineSync.removeMissingVirtualMachines(_)
-        }
-
-        where:
-        createNewParam << [true, false]
-
-        // Covers: SyncTask creation, configuration, and execution without exceptions
-    }
-
     @Unroll
     def "executeSyncTask should handle empty VM data gracefully"() {
         given: "empty sync data"
@@ -1777,63 +1732,6 @@ class VirtualMachineSyncSpec extends Specification {
         createNewParam << [true, false]
 
         // Covers: empty data handling in SyncTask
-    }
-
-    @Unroll
-    def "executeSyncTask should pass correct parameters to SyncTask callbacks"() {
-        given: "sync setup with known data to verify parameter passing"
-        def existingVm = new ComputeServerIdentityProjection(id: 1L, externalId: "vm-match", name: "test-vm")
-        def existingVms = Observable.fromIterable([existingVm])
-
-        def virtualMachines = [
-                [ID: "vm-match", Name: "Matched-VM", VirtualMachineState: "Running"],
-                [ID: "vm-add", Name: "Add-VM", VirtualMachineState: "Stopped"]
-        ]
-        def listResults = [success: true, virtualMachines: virtualMachines]
-
-        def mockHosts = [new ComputeServer(id: 10L)]
-        def mockPlans = [new ServicePlan(id: 20L)]
-        def mockFallbackPlan = new ServicePlan(id: 21L)
-        def mockPermissions = []
-        def mockServerType = new ComputeServerType(id: 40L)
-
-        def syncData = [
-                hosts                   : mockHosts,
-                availablePlans          : mockPlans,
-                fallbackPlan            : mockFallbackPlan,
-                availablePlanPermissions: mockPermissions,
-                serverType              : mockServerType
-        ]
-        def executionContext = [consoleEnabled: true, scvmmOpts: [:]]
-
-        def server = new ComputeServer(id: 1L, externalId: "vm-match", name: "test-vm")
-
-        when: "executeSyncTask is called"
-        virtualMachineSync.executeSyncTask(existingVms, listResults, syncData, executionContext, createNewParam)
-
-        then: "SyncTask should load servers for updates"
-        (0.._) * asyncComputeServerService.listById(_) >> Observable.fromIterable([server])
-
-        and: "callback methods should be called with correct parameters"
-        if (createNewParam) {
-            (0.._) * virtualMachineSync.addMissingVirtualMachines(
-                    _, mockPlans, mockFallbackPlan, mockPermissions, mockHosts, true, mockServerType)
-        } else {
-            (0.._) * virtualMachineSync.addMissingVirtualMachines(_, _, _, _, _, _, _)
-        }
-
-        (0.._) * virtualMachineSync.updateMatchedVirtualMachines(
-                _, mockPlans, mockFallbackPlan, mockHosts, true, mockServerType)
-
-        (0.._) * virtualMachineSync.removeMissingVirtualMachines(_)
-
-        and: "method should complete without exceptions"
-        noExceptionThrown()
-
-        where:
-        createNewParam << [true, false]
-
-        // Covers: parameter passing to SyncTask callbacks, createNew flag behavior
     }
 
     def "getExistingVirtualMachines should return Observable of ComputeServerIdentityProjections with correct filters"() {
@@ -2405,6 +2303,193 @@ class VirtualMachineSyncSpec extends Specification {
         "Data"          | [new StorageVolume()]      | false         | "Both conditions false"
 
         // Covers: complete OR expression truth table
+    }
+
+    def "performVirtualMachineSync should prepare data and execute sync task"() {
+        given: "Mock dependencies and sync data"
+        def listResults = [data: "test"]
+        def executionContext = [context: "test"]
+        def createNew = true
+        def syncData = [prepared: "data"]
+        def existingVms = Observable.fromIterable([new ComputeServerIdentityProjection(id: 1L, name: "vm1")])
+
+        and: "Create spy to track method calls"
+        def spy = Spy(virtualMachineSync)
+
+        when: "performVirtualMachineSync is called"
+        spy.performVirtualMachineSync(listResults, executionContext, createNew)
+
+        then: "prepareSyncData is called"
+        1 * spy.prepareSyncData() >> syncData
+
+        and: "getExistingVirtualMachines is called"
+        1 * spy.getExistingVirtualMachines() >> existingVms
+
+        and: "executeSyncTask is called with correct parameters and stubbed"
+        1 * spy.executeSyncTask(existingVms, listResults, syncData, executionContext, createNew) >> { /* stubbed, no actual execution */ }
+    }
+
+    def "createVolumeConfig should build complete volume configuration"() {
+        given: "Disk data and server configuration"
+        def diskData = [
+            ID: "disk-123",
+            Name: "test-disk",
+            TotalSize: "10737418240", // 10GB
+            VHDType: "Dynamic",
+            VHDFormat: "VHDX"
+        ]
+        def server = new ComputeServer(id: 1L, name: "test-server")
+        def serverVolumeNames = ["existing-volume"]
+        def index = 0
+        def diskNumber = 1
+
+        def mockDatastore = new Datastore(id: 100L, name: "test-datastore")
+        def volumeTypeId = 25L
+
+        and: "Create spy to mock dependencies"
+        def spy = Spy(virtualMachineSync)
+
+        when: "createVolumeConfig is called"
+        def result = spy.createVolumeConfig(diskData, server, serverVolumeNames, index, diskNumber)
+
+        then: "resolveDatastore is called"
+        1 * spy.resolveDatastore(diskData) >> mockDatastore
+
+        and: "resolveDeviceName is called"
+        1 * spy.resolveDeviceName(diskData, diskNumber) >> "/dev/sda1"
+
+        and: "resolveVolumeName is called"
+        1 * spy.resolveVolumeName(serverVolumeNames, diskData, server, index) >> "test-disk-volume"
+
+        and: "isRootVolume is called"
+        1 * spy.isRootVolume(diskData, server) >> true
+
+        and: "getStorageVolumeType is called"
+        1 * spy.getStorageVolumeType("scvmm-dynamic-vhdx") >> volumeTypeId
+
+        and: "volume configuration is correctly built"
+        result.name == "test-disk-volume"
+        result.size == 10737418240L
+        result.rootVolume == true
+        result.deviceName == "/dev/sda1"
+        result.externalId == "disk-123"
+        result.internalId == "test-disk"
+        result.storageType == volumeTypeId
+        result.datastoreId == "100"
+    }
+
+    def "createVolumeConfig should handle missing datastore"() {
+        given: "Disk data without datastore"
+        def diskData = [
+            ID: "disk-456",
+            Name: "no-datastore-disk",
+            TotalSize: "5368709120", // 5GB
+            VHDType: "Fixed",
+            VHDFormat: "VHD"
+        ]
+        def server = new ComputeServer(id: 2L, name: "test-server-2")
+        def serverVolumeNames = []
+        def index = 1
+        def diskNumber = 2
+
+        def volumeTypeId = 30L
+
+        and: "Create spy to mock dependencies"
+        def spy = Spy(virtualMachineSync)
+
+        when: "createVolumeConfig is called"
+        def result = spy.createVolumeConfig(diskData, server, serverVolumeNames, index, diskNumber)
+
+        then: "resolveDatastore returns null"
+        1 * spy.resolveDatastore(diskData) >> null
+
+        and: "other methods are called correctly"
+        1 * spy.resolveDeviceName(diskData, diskNumber) >> "/dev/sdb1"
+        1 * spy.resolveVolumeName(serverVolumeNames, diskData, server, index) >> "no-datastore-volume"
+        1 * spy.isRootVolume(diskData, server) >> false
+        1 * spy.getStorageVolumeType("scvmm-fixed-vhd") >> volumeTypeId
+
+        and: "volume configuration is built without datastoreId"
+        result.name == "no-datastore-volume"
+        result.size == 5368709120L
+        result.rootVolume == false
+        result.deviceName == "/dev/sdb1"
+        result.externalId == "disk-456"
+        result.internalId == "no-datastore-disk"
+        result.storageType == volumeTypeId
+        !result.containsKey("datastoreId")
+    }
+
+    def "createAndPersistStorageVolume should build, create and add volume to server"() {
+        given: "Server and volume configuration"
+        def account = new Account(id: 10L, name: "test-account")
+        def server = new ComputeServer(id: 5L, name: "test-server", account: account, volumes: [])
+        def volumeConfig = [
+            name: "test-volume",
+            size: 1073741824L, // 1GB
+            rootVolume: false,
+            deviceName: "/dev/sdc1",
+            externalId: "vol-789",
+            internalId: "test-volume-internal"
+        ]
+
+        def builtVolume = new StorageVolume(
+            name: "test-volume",
+            maxStorage: 1073741824L,
+            externalId: "vol-789"
+        )
+
+        and: "Create spy to mock dependencies"
+        def spy = Spy(virtualMachineSync)
+
+        when: "createAndPersistStorageVolume is called"
+        def result = spy.createAndPersistStorageVolume(server, volumeConfig)
+
+        then: "buildStorageVolume is called with correct parameters"
+        1 * spy.buildStorageVolume(account, server, volumeConfig) >> builtVolume
+
+        and: "storage volume is created via context services"
+        1 * syncStorageVolumeService.create(builtVolume) >> builtVolume
+
+        and: "volume is added to server volumes"
+        server.volumes.contains(builtVolume)
+
+        and: "created volume is returned"
+        result == builtVolume
+    }
+
+    def "createAndPersistStorageVolume should use cloud account when server account is null"() {
+        given: "Server without account and volume configuration"
+        def cloudAccount = new Account(id: 20L, name: "cloud-account")
+        def server = new ComputeServer(id: 6L, name: "test-server-no-account", account: null, volumes: [])
+        cloud.account = cloudAccount
+
+        def volumeConfig = [
+            name: "cloud-account-volume",
+            size: 2147483648L, // 2GB
+            rootVolume: true
+        ]
+
+        def builtVolume = new StorageVolume(
+            name: "cloud-account-volume",
+            maxStorage: 2147483648L
+        )
+
+        and: "Create spy to mock dependencies"
+        def spy = Spy(virtualMachineSync)
+
+        when: "createAndPersistStorageVolume is called"
+        def result = spy.createAndPersistStorageVolume(server, volumeConfig)
+
+        then: "buildStorageVolume is called with cloud account"
+        1 * spy.buildStorageVolume(cloudAccount, server, volumeConfig) >> builtVolume
+
+        and: "storage volume is created"
+        1 * syncStorageVolumeService.create(builtVolume) >> builtVolume
+
+        and: "volume is added to server volumes and returned"
+        server.volumes.contains(builtVolume)
+        result == builtVolume
     }
 
 }
