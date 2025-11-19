@@ -27,6 +27,7 @@ import com.morpheusdata.core.synchronous.compute.MorpheusSynchronousComputeServe
 import com.morpheusdata.core.synchronous.MorpheusSynchronousStorageVolumeService
 import com.morpheusdata.core.synchronous.MorpheusSynchronousResourcePermissionService
 import com.morpheusdata.core.data.DataQuery
+import com.morpheusdata.model.projection.DatastoreIdentity
 import com.morpheusdata.core.network.MorpheusNetworkService
 import com.morpheusdata.core.synchronous.library.MorpheusSynchronousWorkloadTypeService
 import com.morpheusdata.core.util.ComputeUtility
@@ -37,6 +38,7 @@ import com.morpheusdata.model.provisioning.WorkloadRequest
 import com.morpheusdata.request.ResizeRequest
 import com.morpheusdata.response.InitializeHypervisorResponse
 import com.morpheusdata.response.PrepareWorkloadResponse
+import com.morpheusdata.response.ProvisionResponse
 import com.morpheusdata.response.ServiceResponse
 import com.morpheusdata.scvmm.testdata.ProvisionDataHelper
 import groovy.json.JsonOutput
@@ -58,6 +60,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     private MorpheusProcessService processService
     private MorpheusSynchronousWorkloadService workloadService
     private MorpheusSynchronousWorkloadTypeService workloadTypeService
+    // private MorpheusSynchronousProvisionService provisionService
     private MorpheusWorkloadTypeService asyncWorkloadTypeService
     private MorpheusCloudService asyncCloudService
     private MorpheusSynchronousCloudService cloudService
@@ -92,6 +95,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         asyncStorageVolumeService = Mock(MorpheusStorageVolumeService)
         virtualImageService = Mock(MorpheusSynchronousVirtualImageService)
         asyncVirtualImageService = Mock(MorpheusVirtualImageService)
+        // provisionService = Mock(MorpheusSynchronousProvisionService)
 
         def morpheusServices = Mock(MorpheusServices) {
             getComputeServer() >> computeServerService
@@ -101,6 +105,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
             getStorageVolume() >> storageVolumeService
             getVirtualImage() >> virtualImageService
             getResourcePermission() >> resourcePermissionService
+            // getProvision() >> provisionService
         }
         def morpheusAsyncServices = Mock(MorpheusAsyncServices) {
             getCloud() >> asyncCloudService
@@ -2471,6 +2476,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         result.data.resized == true
     }
 
+    @Unroll
     def "test constructCloudInitOptions with different agent installation scenarios"() {
         given:
         // Create test objects
@@ -2544,4 +2550,313 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         'cloudInit' | 'windows' | true         | true      | null          | true               | false
         'vm'        | 'linux'   | true         | false     | null          | false              | true
     }
+
+    @Unroll
+    def "runHost returns success response when all steps succeed"() {
+        given:
+        // Setup input objects
+        def cloud = new Cloud(id: 1L)
+        def account = new Account(id: 2L)
+        def plan = new ServicePlan(id: 3L, maxMemory: 4096L)
+        def server = new ComputeServer(id: 10L, cloud: cloud, account: account, plan: plan, maxMemory: 2048L)
+        server.configMap = ["resourcePool":""]
+        server.volumes = []
+        def hostRequest = new HostRequest()
+        def opts = [key: "value"]
+
+        // Setup mocks for all service calls
+        def controllerNode = new ComputeServer(id: 20L)
+        def scvmmOpts = [opt1: "val1"]
+        def clusterId = "cluster-1"
+        def rootVolume = new StorageVolume(id: 100L)
+        def maxStorage = 100000L
+        def hostDatastoreInfo = [datastore: new Datastore(id: 200L), node: new ComputeServer(id: 21L)]
+        def imageInfo = [imageId: "img-1", virtualImage: new VirtualImage(id: 300L)]
+        def createResults = [success: true]
+        def provisionResponse = new ProvisionResponse(success: true)
+
+        provisionProvider.pickScvmmController(cloud) >> controllerNode
+        provisionProvider.prepareScvmmOpts(_, cloud, controllerNode, server) >> scvmmOpts
+        provisionProvider.resolveClusterId(server.configMap, server) >> {
+            clusterId
+        }
+        provisionProvider.getServerRootDisk(server) >> rootVolume
+        provisionProvider.getServerRootSize(server) >> maxStorage
+        provisionProvider.getHostDatastoreInfoForRoot(cloud, account, clusterId, server.configMap,
+                rootVolume, maxStorage, server.provisionSiteId, server.maxMemory) >> {
+            hostDatastoreInfo
+        }
+        provisionProvider.updateScvmmOptsWithHostDatastore(scvmmOpts, hostDatastoreInfo) >> null
+        provisionProvider.updateRootVol(rootVolume, hostDatastoreInfo.datastore) >> null
+        provisionProvider.updateServerVolumes(server.volumes, cloud, account, clusterId,
+                server.configMap.hostId, maxStorage, server.provisionSiteId, server.maxMemory) >> null
+        mockApiService.getScvmmControllerOpts(cloud, controllerNode) >> [controllerId: 20L]
+        provisionProvider.resolveImageInfo(server.configMap, server) >> imageInfo
+        provisionProvider.prepareServerForProvision(server, imageInfo.virtualImage, scvmmOpts,
+                hostDatastoreInfo.node, imageInfo.imageId) >> null
+        provisionProvider.getScvmmServerOpts(server) >> [vmId: "vm-123"]
+        provisionProvider.setCloudConfig(_ as Map, hostRequest, server) >> {
+            _
+        }
+        provisionProvider.saveAndGetMorpheusServer(server, true) >> {
+            server
+        }
+        mockApiService.createServer(_ as Map) >> {
+            createResults
+        }
+        provisionProvider.handleServerCreation(createResults, server, hostDatastoreInfo.node.id,
+                cloud, _ as Map) >> provisionResponse
+
+        when:
+        def result = provisionProvider.runHost(server, hostRequest, opts)
+
+        then:
+        result.success == true
+        result.data == provisionResponse
+    }
+
+    def "updateScvmmOptsWithHostDatastore sets all expected fields"() {
+        given:
+        def scvmmOpts = [:]
+        def datastore = [externalId: "ds-123"]
+        def node = [externalId: "host-456"]
+        def hostDatastoreInfo = [
+                datastore: datastore,
+                node: node,
+                volumePath: "/mnt/data",
+                highlyAvailable: true
+        ]
+
+        when:
+        provisionProvider.updateScvmmOptsWithHostDatastore(scvmmOpts, hostDatastoreInfo)
+
+        then:
+        scvmmOpts.datastoreId == "ds-123"
+        scvmmOpts.hostExternalId == "host-456"
+        scvmmOpts.volumePath == "/mnt/data"
+        scvmmOpts.highlyAvailable == true
+    }
+
+    def "prepareScvmmOpts sets expected fields in scvmmOpts"() {
+        given:
+        def cloud = new Cloud(id: 1L, name: "test-cloud")
+        def controllerNode = new ComputeServer(id: 10L, name: "controller-node")
+        def server = new ComputeServer(id: 20L, name: "test-server")
+        def initialOpts = [existingKey: "existingValue"]
+
+        mockApiService.getScvmmCloudOpts(morpheusContext, cloud, controllerNode) >> initialOpts
+
+        when:
+        def result = provisionProvider.prepareScvmmOpts(morpheusContext, cloud, controllerNode, server)
+
+        then:
+        result.controllerServerId == 10L
+        result.creatingDockerHost == true
+        result.name == "test-server"
+        result.existingKey == "existingValue"
+    }
+
+    def "resolveClusterId returns correct externalId or null for different scenarios"() {
+        given:
+        def pool = poolExternalId ? new ComputeZonePool(externalId: poolExternalId) : null
+        def server = new ComputeServer(resourcePool: pool)
+        def config = configHasResourcePool ? [resourcePool: "pool-1"] : [:]
+
+        when:
+        def result = provisionProvider.resolveClusterId(config, server)
+
+        then:
+        result == expectedResult
+
+        where:
+        scenario                        | configHasResourcePool | poolExternalId | expectedResult
+        "resourcePool and pool present" | true                  | "ext-123"      | "ext-123"
+        "resourcePool present, pool null" | true                | null           | null
+        "resourcePool missing"           | false                | "ext-123"      | null
+        "resourcePool missing, pool null"| false                | null           | null
+    }
+
+    @Unroll
+    def "getHostDatastoreInfoForRoot returns correct host, datastore, volumePath, and highlyAvailable"() {
+        given:
+        def cloud = new Cloud(id: 1L)
+        def account = new Account(id: 2L)
+        def clusterId = "cluster-1"
+        def config = [:]
+        config.hostId = 5
+        DatastoreIdentity datastoreIdentity = new Datastore()
+        datastoreIdentity.cloudId = cloud.id
+        datastoreIdentity.externalId = "externalId-123"
+
+        def rootVolume = new StorageVolume(
+                id: 100L,
+                datastore: datastoreIdentity,
+                datastoreOption: "option-1"
+        )
+        def maxStorage = 100000L
+        def provisionSiteId = 20L
+        def maxMemory = 4096L
+
+        // Mock getHostAndDatastore to return expected values
+        def expectedNode = new ComputeServer(id: 10L)
+        def expectedDatastore = new Datastore(id: 100L)
+        def expectedVolumePath = "/mnt/data"
+        def expectedHighlyAvailable = true
+
+        provisionProvider.getHostAndDatastore(_, _, _, _, _, _, _, _, _) >> [
+                expectedNode,
+                expectedDatastore,
+                expectedVolumePath,
+                expectedHighlyAvailable
+        ]
+
+        when:
+        def result = provisionProvider.getHostDatastoreInfoForRoot(
+                cloud, account, clusterId, config, rootVolume, maxStorage, provisionSiteId, maxMemory
+        )
+
+        then:
+        result.node == expectedNode
+        result.datastore == expectedDatastore
+        result.volumePath == expectedVolumePath
+        result.highlyAvailable == expectedHighlyAvailable
+        1 * provisionProvider.getHostAndDatastore(cloud, account, clusterId, config.hostId, rootVolume.datastore,
+                rootVolume.datastoreOption, maxStorage, provisionSiteId, maxMemory) >> [
+                expectedNode,
+                expectedDatastore,
+                expectedVolumePath,
+                expectedHighlyAvailable
+        ]
+    }
+
+    def "updateRootVol sets datastore and saves rootVolume successfully"() {
+        given:
+        def rootVolume = new StorageVolume(id: 1L)
+        def datastore = new Datastore(id: 2L)
+
+        storageVolumeService.save(rootVolume)
+
+        when:
+        provisionProvider.updateRootVol(rootVolume, datastore)
+
+        then:
+        rootVolume.datastore == datastore
+        1 * storageVolumeService.save(rootVolume)
+    }
+
+    def "updateServerVolumes updates non-root volumes and saves them"() {
+        given:
+        def cloud = new Cloud(id: 1L)
+        def account = new Account(id: 2L)
+        def clusterId = "cluster-1"
+        def hostId = 10
+        def maxStorage = 100000L
+        def provisionSiteId = 20L
+        def maxMemory = 4096L
+
+        def rootVolume = new StorageVolume(id: 1L, rootVolume: true)
+        def dataVolume = new StorageVolume(id: 2L, rootVolume: false)
+        def volumes = [rootVolume, dataVolume]
+
+        def tmpNode = new ComputeServer(id: 99L)
+        def tmpDatastore = new Datastore(id: 88L)
+        def tmpVolumePath = "/mnt/data"
+        def tmpHighlyAvailable = true
+
+        provisionProvider.getHostAndDatastore(_, _, _, _, _, _, _, _, _) >> [tmpNode, tmpDatastore, tmpVolumePath, tmpHighlyAvailable]
+        storageVolumeService.save(_) >> { StorageVolume vol -> vol }
+
+        when:
+        provisionProvider.updateServerVolumes(volumes, cloud, account, clusterId, hostId, maxStorage, provisionSiteId, maxMemory)
+
+        then:
+        dataVolume.datastore == tmpDatastore
+        1 * storageVolumeService.save(dataVolume)
+        0 * storageVolumeService.save(rootVolume)
+    }
+
+    def "resolveImageInfo returns imageId and virtualImage from typeSet when layout and typeSet are present"() {
+        given:
+        def virtualImage = new VirtualImage(externalId: "img-123")
+        def workloadType = new WorkloadType(virtualImage: virtualImage)
+        def typeSet = new ComputeTypeSet(workloadType: workloadType)
+        def compTypeLayout = new ComputeTypeLayout(code: "layout-1")
+        def server = new ComputeServer(layout: compTypeLayout, typeSet: typeSet)
+        def config = [:]
+
+        when:
+        def result = provisionProvider.resolveImageInfo(config, server)
+
+        then:
+        result.imageId == "img-123"
+        result.virtualImage == virtualImage
+    }
+
+    def "resolveImageInfo returns imageId and virtualImage from config.template when imageType is custom"() {
+        given:
+        def virtualImage = new VirtualImage(externalId: "img-456")
+        def config = [templateTypeSelect: 'custom', template: "789"]
+        def server = new ComputeServer()
+        virtualImageService.get(789L) >> virtualImage
+
+        when:
+        def result = provisionProvider.resolveImageInfo(config, server)
+
+        then:
+        result.imageId == "img-456"
+        result.virtualImage == virtualImage
+    }
+
+    def "resolveImageInfo returns default virtualImage when no layout/typeSet and not custom"() {
+        given:
+        def config = [:] // templateTypeSelect is null, so defaults to 'default'
+        def server = new ComputeServer()
+
+        when:
+        def result = provisionProvider.resolveImageInfo(config, server)
+
+        then:
+        result.imageId == null
+        result.virtualImage.code == 'scvmm.image.morpheus.ubuntu.22.04.20250218.amd64'
+    }
+
+
+    def "handleImageUpload returns imageId when upload succeeds"() {
+        given:
+        def scvmmOpts = [:]
+        def server = new ComputeServer(createdBy: new User(id: 42L))
+        def virtualImage = new VirtualImage(id: 101L, name: "test-image", imageType: "vhd")
+        def cloudFile1 = [name: "disk.vhd"]
+        def cloudFile2 = [name: "other.txt"]
+        def cloudFiles = [cloudFile1, cloudFile2]
+        asyncVirtualImageService.getVirtualImageFiles(virtualImage) >> Single.just(cloudFiles)
+        mockApiService.insertContainerImage(_) >> [success: true, imageId: "img-123"]
+
+        when:
+        def result = provisionProvider.handleImageUpload(scvmmOpts, server, virtualImage)
+
+        then:
+        result == "img-123"
+        scvmmOpts.image.name == "test-image"
+        scvmmOpts.userId == 42L
+        scvmmOpts.image.imageFile == cloudFile1
+    }
+
+    def "handleImageUpload returns null when upload fails"() {
+        given:
+        def scvmmOpts = [:]
+        def server = new ComputeServer(createdBy: new User(id: 42L))
+        def virtualImage = new VirtualImage(id: 101L, name: "test-image", imageType: "vhd")
+        def cloudFile1 = [name: "disk.vhd"]
+        def cloudFiles = [cloudFile1]
+        asyncVirtualImageService.getVirtualImageFiles(virtualImage) >> Single.just(cloudFiles)
+        mockApiService.insertContainerImage(_) >> [success: false]
+
+        when:
+        def result = provisionProvider.handleImageUpload(scvmmOpts, server, virtualImage)
+
+        then:
+        result == null
+    }
+
 }
