@@ -184,7 +184,54 @@ class ScvmmBackupExecutionProvider implements BackupExecutionProvider {
      * @return a {@link ServiceResponse} indicating the success or failure of the backup execution. A success value
      * of 'false' will halt the execution process.
      */
-    @SuppressWarnings(['UnnecessaryGetter', 'AbcMetric'])
+    @SuppressWarnings(['ParameterCount', 'UnnecessaryObjectReferences'])
+    protected void updateBackupResultSuccess(BackupResult backupResult, Map opts, Map executionConfig,
+                                             Map snapshotResults, String outputPath, String vmId) {
+        backupResult.backupSetId = opts.backupSetId
+        backupResult.executorIpAddress = executionConfig.ipAddress
+        backupResult.resultBase = 'scvmm'
+        backupResult.resultBucket = snapshotResults.snapshotId
+        backupResult.resultPath = outputPath
+        backupResult.resultArchive = snapshotResults.snapshotId
+        backupResult.sizeInMb = 0L
+        backupResult.snapshotId = snapshotResults.snapshotId
+        backupResult.setConfigProperty("snapshotId", snapshotResults.snapshotId)
+        backupResult.setConfigProperty("vmId", vmId)
+        backupResult.status = BackupResult.Status.SUCCEEDED
+        if (!backupResult.endDate) {
+            backupResult.endDate = Date.from(Instant.now())
+            def startDate = backupResult.startDate
+            if (startDate) {
+                def start = DateUtility.parseDate(startDate)
+                def end = backupResult.endDate
+                backupResult.durationMillis = end.time - start.time
+            }
+        }
+    }
+
+// Helper to update backup result on error
+    @SuppressWarnings('UnnecessaryObjectReferences')
+    protected void updateBackupResultError(BackupResult backupResult, Map opts, Map executionConfig,
+                                           String outputPath, String errorOutput) {
+        backupResult.backupSetId = opts.backupSetId
+        backupResult.executorIpAddress = executionConfig.ipAddress
+        backupResult.resultPath = outputPath
+        backupResult.sizeInMb = 0L
+        backupResult.status = BackupResult.Status.FAILED
+        backupResult.errorOutput = errorOutput
+    }
+
+// Helper to create snapshot
+    protected Map createSnapshot(Cloud cloud, ComputeServer server, String snapshotName) {
+        def node = provisionProvider.pickScvmmController(cloud)
+        def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(morpheusContext, cloud, node)
+        scvmmOpts.snapshotId = snapshotName
+        def vmId = server.externalId
+        return apiService.snapshotServer(scvmmOpts, vmId)
+    }
+
+// Main method refactored
+    @SuppressWarnings('UnnecessaryGetter')
     @Override
     ServiceResponse<BackupExecutionResponse> executeBackup(Backup backup, BackupResult backupResult,
                                                            Map executionConfig, Cloud cloud,
@@ -193,53 +240,22 @@ class ScvmmBackupExecutionProvider implements BackupExecutionProvider {
         ServiceResponse<BackupExecutionResponse> rtn =
                 ServiceResponse.prepare(new BackupExecutionResponse(backupResult))
         try {
-            log.info("backupConfig container: ${rtn}")
-            // def container = morpheusContext.services.workload.get(executionConfig.containerId)
             def snapshotName = "${server.externalId}.${System.currentTimeMillis()}".toString()
             def outputPath = executionConfig.workingPath
-
-            // update status
             rtn.data.backupResult.status = BackupResult.Status.IN_PROGRESS
 
-            // create snapshot
-            def node = provisionProvider.pickScvmmController(cloud)
-            def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(morpheusContext, cloud, node)
-            scvmmOpts.snapshotId = snapshotName
-            def vmId = server.externalId
-            def snapshotResults = apiService.snapshotServer(scvmmOpts, vmId)
+            def snapshotResults = createSnapshot(cloud, server, snapshotName)
             log.info("backup complete: {}", snapshotResults)
+            def vmId = server.externalId
+
             if (snapshotResults.success) {
-                rtn.data.backupResult.backupSetId = opts.backupSetId
-                rtn.data.backupResult.executorIpAddress = executionConfig.ipAddress
-                rtn.data.backupResult.resultBase = 'scvmm'
-                rtn.data.backupResult.resultBucket = snapshotResults.snapshotId
-                rtn.data.backupResult.resultPath = outputPath
-                rtn.data.backupResult.resultArchive = snapshotResults.snapshotId
-                rtn.data.backupResult.sizeInMb = 0L
-                rtn.data.backupResult.snapshotId = snapshotResults.snapshotId
-                rtn.data.backupResult.setConfigProperty("snapshotId", snapshotResults.snapshotId)
-                rtn.data.backupResult.setConfigProperty("vmId", vmId)
-                rtn.data.updates = true
-                rtn.data.backupResult.status = BackupResult.Status.SUCCEEDED
-                if (!backupResult.endDate) {
-                    rtn.data.backupResult.endDate = Date.from(Instant.now())
-                    def startDate = backupResult.startDate
-                    if (startDate) {
-                        def start = DateUtility.parseDate(startDate)
-                        def end = rtn.data.backupResult.endDate
-                        rtn.data.backupResult.durationMillis = end.time - start.time
-                    }
-                }
+                updateBackupResultSuccess(rtn.data.backupResult, opts, executionConfig, snapshotResults,
+                        outputPath, vmId)
             } else {
-                // error
-                rtn.data.backupResult.backupSetId = opts.backupSetId
-                rtn.data.backupResult.executorIpAddress = executionConfig.ipAddress
-                rtn.data.backupResult.resultPath = outputPath
-                rtn.data.backupResult.sizeInMb = 0L
-                rtn.data.backupResult.status = BackupResult.Status.FAILED
-                rtn.data.backupResult.errorOutput = snapshotResults.error?.toString().encodeAsBase64()
-                rtn.data.updates = true
+                def errorOutput = snapshotResults.error?.toString()?.encodeAsBase64()
+                updateBackupResultError(rtn.data.backupResult, opts, executionConfig, outputPath, errorOutput)
             }
+            rtn.data.updates = true
             rtn.success = true
         } catch (e) {
             log.error("executeBackup: ${e}", e)
