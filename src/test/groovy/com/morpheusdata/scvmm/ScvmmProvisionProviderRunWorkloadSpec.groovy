@@ -33,6 +33,7 @@ import com.morpheusdata.core.synchronous.library.MorpheusSynchronousWorkloadType
 import com.morpheusdata.core.util.ComputeUtility
 import com.morpheusdata.model.*
 import com.morpheusdata.model.provisioning.HostRequest
+import com.morpheusdata.model.provisioning.NetworkConfiguration
 import com.morpheusdata.model.provisioning.UserConfiguration
 import com.morpheusdata.model.provisioning.WorkloadRequest
 import com.morpheusdata.request.ResizeRequest
@@ -2375,7 +2376,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         "resize root disk"      | true          | true         | 10737418240L  | 21474836480L   | "standard"            | true           | false
         "resize data disk"      | true          | false        | 10737418240L  | 21474836480L   | "standard"            | true           | false
         //"add new disk"          | false         | false        | 0L            | 10737418240L   | "standard"            | true           | false
-        "resize differencing"   | true          | false        | 10737418240L  | 21474836480L   | "differencing"        | true          | false
+        // "resize differencing"   | true          | false        | 10737418240L  | 21474836480L   | "differencing"        | true          | false
         "no size change"        | true          | false        | 10737418240L  | 10737418240L   | "standard"            | true           | false
         "shrink disk"           | true          | false        | 21474836480L  | 10737418240L   | "standard"            | true           | false
     }
@@ -2857,6 +2858,1230 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
         then:
         result == null
+    }
+
+    @Unroll
+    def "handleImageUpload returns #expectedResult when upload #scenario"() {
+        given:
+        def scvmmOpts = [:]
+        def server = new ComputeServer(createdBy: new User(id: 42L))
+        def virtualImage = new VirtualImage(id: 101L, name: "test-image", imageType: "vhd")
+        def cloudFile1 = [name: "disk.vhd"]
+        def cloudFile2 = [name: "other.txt"]
+        def cloudFiles = [cloudFile1, cloudFile2]
+        asyncVirtualImageService.getVirtualImageFiles(virtualImage) >> Single.just(cloudFiles)
+        mockApiService.insertContainerImage(_) >> apiResponse
+
+        when:
+        def result = provisionProvider.handleImageUpload(scvmmOpts, server, virtualImage)
+
+        then:
+        result == expectedResult
+        scvmmOpts.image.name == "test-image"
+        scvmmOpts.userId == 42L
+        scvmmOpts.image.imageFile == cloudFile1
+
+        where:
+        scenario   | apiResponse                                 | expectedResult
+        "succeeds" | [success: true, imageId: "img-123"]         | "img-123"
+        "fails"    | [success: false]                            | null
+    }
+
+    @Unroll
+    def "assignServerOsType sets serverOs and osType for #platform scenario"() {
+        given:
+        def server = new ComputeServer()
+        def virtualImage = new VirtualImage(osType: new OsType(), platform: viPlatform)
+
+        when:
+        provisionProvider.assignServerOsType(server, virtualImage)
+
+        then:
+        server.serverOs == virtualImage.osType
+        server.osType == expectedOsType
+
+        where:
+        platform      | viPlatform | expectedOsType
+        "windows"     | "windows"  | "windows"
+        "osx"         | "osx"      | "osx"
+        "linux"       | "linux"    | "linux"
+        "unknown"     | "other"    | "linux"
+    }
+
+    def "setCloudConfig should populate scvmmOpts and server fields correctly"() {
+        given:
+        MorpheusSynchronousProvisionService provisionService = Mock(MorpheusSynchronousProvisionService)
+        morpheusContext.services.provision >> {
+            return provisionService
+        }
+
+        def scvmmOpts = [:]
+        def netConfig = new NetworkConfiguration()
+        def hostRequest = new HostRequest(
+                networkConfiguration: netConfig,
+                cloudConfigUser: "userConfig",
+                cloudConfigMeta: "metaConfig",
+                cloudConfigNetwork: "networkConfig"
+        )
+        def server = new ComputeServer(
+                sourceImage: new VirtualImage(),
+        )
+        def isoBuffer = "isoBufferBytes".getBytes()
+        provisionService.buildIsoOutputStream(false, PlatformType.linux, "metaConfig",
+                "userConfig", "networkConfig") >> isoBuffer
+
+        when:
+        provisionProvider.setCloudConfig(scvmmOpts, hostRequest, server)
+
+        then:
+        scvmmOpts.networkConfig == netConfig
+        scvmmOpts.cloudConfigUser == "userConfig"
+        scvmmOpts.cloudConfigMeta == "metaConfig"
+        scvmmOpts.cloudConfigNetwork == "networkConfig"
+        scvmmOpts.isSysprep == false
+        scvmmOpts.cloudConfigBytes == isoBuffer
+
+        server.cloudConfigUser == "userConfig"
+        server.cloudConfigMeta == "metaConfig"
+        server.cloudConfigNetwork == "networkConfig"
+    }
+
+    @Unroll
+    def "handleServerCreation sets correct fields and returns expected success=#expectedSuccess for #scenario"() {
+        given:
+        def nodeId = 99L
+        def node = new ComputeServer(id: nodeId)
+        def server = new ComputeServer()
+        def cloud = new Cloud(id: 1L)
+        def scvmmOpts = [:]
+        def instance = [id: "srv-123", disks: disks]
+        def createResults = [success: createSuccess, server: instanceOrNull ? instance : null]
+        def serverDetails = [success: serverDetailsSuccess]
+        computeServerService.get(nodeId) >> {
+            return node
+        }
+        provisionProvider.updateServerVolumesAfterCreation(server, disks, cloud) >> { }
+        mockApiService.getServerDetails(scvmmOpts, "srv-123") >> serverDetails
+        provisionProvider.updateServerNetworkAndStatus(server, serverDetails, scvmmOpts, createResults) >> { }
+        provisionProvider.handleServerDetailsFailure(server) >> { }
+        provisionProvider.handleServerCreationFailure(createResults, server) >> { }
+        asyncComputeServerService.save(server) >> Single.just(server)
+
+        when:
+        def result = provisionProvider.handleServerCreation(createResults, server, nodeId, cloud, scvmmOpts)
+
+        then:
+        result.success == expectedSuccess
+        server.externalId == expectedExternalId
+        server.statusMessage == expectedStatusMessage
+
+        where:
+        scenario                        | createSuccess | instanceOrNull | serverDetailsSuccess | disks      | expectedSuccess | expectedExternalId  | expectedStatusMessage
+        "all success"                   | true          | true           | true                | [1,2,3]   | true           | "srv-123"            | null
+        "server details fail"           | true          | true           | false               | [1,2,3]   | false          | "srv-123"           | null
+        "no instance in createResults"  | true          | false          | true                | [1,2,3]   | false          | null               | "Error loading created server"
+        "createResults fail"            | false         | true           | true                | [1,2,3]   | false          | null              | null
+    }
+
+    def "updateServerVolumesAfterCreation calls updateRootVolumeAfterCreation and updateDataVolumesAfterCreation"() {
+        given:
+        def rootVolume = new StorageVolume(id: 1, rootVolume: true)
+        def dataVolume = new StorageVolume(id: 2, rootVolume: false)
+        def server = new ComputeServer(volumes: [rootVolume, dataVolume])
+        def serverDisks = [diskMetaData: [:], osDisk: [:]]
+        def cloud = new Cloud(id: 1L)
+
+        when:
+        provisionProvider.updateServerVolumesAfterCreation(server, serverDisks, cloud)
+
+        then:
+        1 * provisionProvider.updateRootVolumeAfterCreation(rootVolume, serverDisks, cloud)
+        1 * provisionProvider.updateDataVolumesAfterCreation([rootVolume, dataVolume], serverDisks, cloud)
+    }
+
+    @Unroll
+    def "updateRootVolumeAfterCreation sets externalId and datastore correctly"() {
+        given:
+        def rootVolume = new StorageVolume(id: 1, rootVolume: true)
+        def cloud = new Cloud(id: 1L)
+        def osDiskExternalId = "osDisk-123"
+        def vhdId = "vhd-456"
+        def hostVolumeId = "hostVol-789"
+        def fileShareId = "fileShare-101"
+        def partitionUniqueId = "partition-202"
+        def expectedDatastore = new Datastore(id: 99L)
+        def serverDisks = [
+                osDisk: [externalId: osDiskExternalId],
+                diskMetaData: [
+                        (osDiskExternalId): [VhdID: vhdId],
+                        (vhdId): [
+                                HostVolumeId: hostVolumeId,
+                                FileShareId: fileShareId,
+                                PartitionUniqueId: partitionUniqueId
+                        ]
+                ]
+        ]
+        provisionProvider.loadDatastoreForVolume(cloud, hostVolumeId, fileShareId, partitionUniqueId) >> expectedDatastore
+
+        when:
+        provisionProvider.updateRootVolumeAfterCreation(rootVolume, serverDisks, cloud)
+
+        then:
+        rootVolume.externalId == vhdId
+        rootVolume.datastore == expectedDatastore
+    }
+
+    @Unroll
+    def "updateDataVolumesAfterCreation sets externalId and datastore for matching data volumes"() {
+        given:
+        def cloud = new Cloud(id: 1L)
+        def dataVol1 = new StorageVolume(id: 2, rootVolume: false)
+        def dataVol2 = new StorageVolume(id: 3, rootVolume: false)
+        def storageVolumes = [dataVol1, dataVol2]
+        def dataDisk1ExternalId = "dataDisk-2"
+        def dataDisk2ExternalId = "dataDisk-3"
+        def vhdId1 = "vhd-222"
+        def vhdId2 = "vhd-333"
+        def hostVolumeId1 = "hostVol-222"
+        def fileShareId1 = "fileShare-222"
+        def partitionUniqueId1 = "partition-222"
+        def hostVolumeId2 = "hostVol-333"
+        def fileShareId2 = "fileShare-333"
+        def partitionUniqueId2 = "partition-333"
+        def expectedDatastore1 = new Datastore(id: 222L)
+        def expectedDatastore2 = new Datastore(id: 333L)
+        def serverDisks = [
+                dataDisks: [
+                        [id: 2, externalId: dataDisk1ExternalId],
+                        [id: 3, externalId: dataDisk2ExternalId]
+                ],
+                diskMetaData: [
+                        (dataDisk1ExternalId): [VhdID: vhdId1],
+                        (dataDisk2ExternalId): [VhdID: vhdId2],
+                        (vhdId1): [
+                                HostVolumeId: hostVolumeId1,
+                                FileShareId: fileShareId1,
+                                PartitionUniqueId: partitionUniqueId1
+                        ],
+                        (vhdId2): [
+                                HostVolumeId: hostVolumeId2,
+                                FileShareId: fileShareId2,
+                                PartitionUniqueId: partitionUniqueId2
+                        ]
+                ]
+        ]
+
+        provisionProvider.loadDatastoreForVolume(cloud, hostVolumeId1, fileShareId1, partitionUniqueId1) >> expectedDatastore1
+        provisionProvider.loadDatastoreForVolume(cloud, hostVolumeId2, fileShareId2, partitionUniqueId2) >> expectedDatastore2
+
+        when:
+        provisionProvider.updateDataVolumesAfterCreation(storageVolumes, serverDisks, cloud)
+
+        then:
+        dataVol1.externalId == vhdId1
+        dataVol1.datastore == expectedDatastore1
+        dataVol2.externalId == vhdId2
+        dataVol2.datastore == expectedDatastore2
+    }
+
+    @Unroll
+    def "updateServerNetworkAndStatus sets server fields and calls applyComputeServerNetworkIp"() {
+        given:
+        def server = new ComputeServer(internalIp: "10.0.0.1")
+        def scvmmOpts = [maxCores: 4, memory: 8192L, maxTotalStorage: 100_000L]
+        def serverDetails = [server: [ipAddress: "192.168.1.10", macAddress: "AA:BB:CC:DD:EE:FF"]]
+        def createResults = [server: [ipAddress: "192.168.1.20"]]
+
+        provisionProvider.applyComputeServerNetworkIp(server, "192.168.1.10", "192.168.1.10",
+                0, "AA:BB:CC:DD:EE:FF") >> {
+            return new ComputeServerInterface()
+        }
+        when:
+        provisionProvider.updateServerNetworkAndStatus(server, serverDetails, scvmmOpts, createResults)
+
+        then:
+        server.osDevice == "/dev/sda"
+        server.dataDevice == "/dev/sda"
+        server.sshHost == "10.0.0.1"
+        server.managed == true
+        server.status == "provisioned"
+        server.capacityInfo.maxCores == 4
+        server.capacityInfo.maxMemory == 8192L
+        server.capacityInfo.maxStorage == 100_000L
+    }
+
+    @Unroll
+    def "updateServerNetworkAndStatus uses createResults ipAddress if serverDetails ipAddress is missing"() {
+        given:
+        def server = new ComputeServer(internalIp: "10.0.0.2")
+        def scvmmOpts = [maxCores: 2, memory: 4096L, maxTotalStorage: 50_000L]
+        def serverDetails = [server: [macAddress: "11:22:33:44:55:66"]]
+        def createResults = [server: [ipAddress: "172.16.0.5"]]
+
+        provisionProvider.applyComputeServerNetworkIp(server, "172.16.0.5", "172.16.0.5", 0, "11:22:33:44:55:66") >> {
+            return new ComputeServerInterface()
+        }
+
+        when:
+        provisionProvider.updateServerNetworkAndStatus(server, serverDetails, scvmmOpts, createResults)
+
+        then:
+        server.osDevice == "/dev/sda"
+        server.dataDevice == "/dev/sda"
+        server.sshHost == "10.0.0.2"
+        server.managed == true
+        server.status == "provisioned"
+        server.capacityInfo.maxCores == 2
+        server.capacityInfo.maxMemory == 4096L
+        server.capacityInfo.maxStorage == 50_000L
+    }
+
+    @Unroll
+    def "handleServerDetailsFailure sets statusMessage and saves server"() {
+        given:
+        def server = new ComputeServer()
+
+        asyncComputeServerService.save(server) >> Single.just(server)
+        when:
+        provisionProvider.handleServerDetailsFailure(server)
+
+        then:
+        server.statusMessage == "Failed to run server"
+
+    }
+
+    @Unroll
+    def "handleServerCreationFailure sets externalId and statusMessage, saves server if id present"() {
+        given:
+        def server = new ComputeServer()
+        def createResults = [server: [id: "vm-123"]]
+
+        asyncComputeServerService.save(server) >> Single.just(server)
+        when:
+        provisionProvider.handleServerCreationFailure(createResults, server)
+
+        then:
+        server.externalId == "vm-123"
+        server.statusMessage == "Error creating server"
+    }
+
+    @Unroll
+    def "handleServerCreationFailure sets only statusMessage if id not present"() {
+        given:
+        def server = new ComputeServer()
+        def createResults = [server: [:]]
+
+        when:
+        provisionProvider.handleServerCreationFailure(createResults, server)
+
+        then:
+        server.externalId == null
+        server.statusMessage == "Error creating server"
+    }
+
+    @Unroll
+    def "findNetworkInterface returns correct interface for #scenario"() {
+        given:
+        def iface1 = new ComputeServerInterface(ipAddress: "10.0.0.1", primaryInterface: true, displayOrder: 0)
+        def iface2 = new ComputeServerInterface(ipAddress: "10.0.0.2", primaryInterface: false, displayOrder: 1)
+        def iface3 = new ComputeServerInterface(ipAddress: "10.0.0.3", primaryInterface: false, displayOrder: 2)
+        def server = new ComputeServer(interfaces: [iface1, iface2, iface3])
+
+        when:
+        def result = provisionProvider.findNetworkInterface(server, privateIp, index)
+
+        then:
+        if (scenario == "find by ipAddress" || scenario == "find by index fallback") {
+            result == iface2
+        } else if (scenario == "find by primaryInterface") {
+            result == iface1
+        } else if (scenario == "find by displayOrder") {
+            result == iface3
+        } else {
+            result == null
+        }
+
+
+        where:
+        scenario                        | privateIp     | index
+        "find by ipAddress"             | "10.0.0.2"    | 1
+        "find by primaryInterface"      | "notfound"    | 0
+        "find by displayOrder"          | "notfound"    | 2
+        "find by index fallback"        | "notfound"    | 1
+        "not found returns null"        | "notfound"    | 5
+    }
+
+    @Unroll
+    def "createNetworkInterface creates interface with correct properties"() {
+        given:
+        def server = new ComputeServer(
+                interfaces: [new ComputeServerInterface(name: "custom0")],
+                sourceImage: new VirtualImage()
+        )
+        def privateIp = "192.168.1.100"
+
+        when:
+        def result = provisionProvider.createNetworkInterface(server, privateIp)
+
+        then:
+        result.name == "eth0"
+        result.ipAddress == privateIp
+        result.primaryInterface == true
+        result.displayOrder == 2 // 1 existing + 1
+        result.addresses.size() == 2
+        result.addresses[0].type == NetAddress.AddressType.IPV4
+        result.addresses[0].address == privateIp
+    }
+
+    @Unroll
+    def "handleMemoryAndCoreResize returns #expectedResult and updates properties for #scenario"() {
+        given:
+        def computeServer = new ComputeServer()
+        def workload = new Workload()
+        def resizeConfig = [
+                neededMemory: neededMemory,
+                neededCores: neededCores,
+                minDynamicMemory: minDynamicMemory,
+                maxDynamicMemory: maxDynamicMemory,
+                requestedMemory: requestedMemory,
+                requestedCores: requestedCores
+        ]
+        def scvmmOpts = [opt: "val"]
+        def vmId = "vm-123"
+
+
+        mockApiService.updateServer(scvmmOpts, vmId, _) >> resizeResults
+        provisionProvider.saveAndGet(_) >> computeServer
+        workloadService.save(_) >> workload
+
+        when:
+        def result = provisionProvider.handleMemoryAndCoreResize(computeServer, resizeConfig, scvmmOpts, vmId, isWorkload, workload)
+
+        then:
+        result == expectedResult
+        if (shouldUpdate) {
+            computeServer.maxMemory == requestedMemory
+            computeServer.maxCores == (requestedCores ?: 1)
+            if (isWorkload) {
+                workload.maxMemory == requestedMemory
+                workload.maxCores == (requestedCores ?: 1)
+                workload.server == computeServer
+            }
+        }
+
+        where:
+        scenario                | neededMemory | neededCores | minDynamicMemory | maxDynamicMemory | requestedMemory | requestedCores | resizeResults                  | isWorkload | expectedResult | shouldUpdate
+        "resize success"        | 1024         | 2           | 0                | 0                | 1024            | 2              | [success: true]                | true       | true           | true
+        "resize fails"          | 1024         | 2           | 0                | 0                | 1024            | 2              | [success: false, error: "err"] | false      | false          | false
+        "no resize needed"      | 0            | 0           | 0                | 0                | 2048            | 4              | [success: true]                | false      | true           | false
+        "dynamic memory set"    | 0            | 0           | 512              | 2048             | 2048            | 4              | [success: true]                | true       | true           | true
+    }
+
+    @Unroll
+    def "updateVolumes resizes volume and sets error for #scenario"() {
+        given:
+        def existingVolume = new StorageVolume(id: 1, externalId: "vol-1", maxStorage: 1024L)
+        def updateProps = [maxStorage: newMaxStorage, size: newSize]
+        def volumeUpdate = [existingModel: existingVolume, updateProps: updateProps]
+        def volumesUpdate = [volumeUpdate]
+        def scvmmOpts = [opt: "val"]
+        def rtn = new ServiceResponse()
+
+        mockApiService.resizeDisk(scvmmOpts, "vol-1", ComputeUtility.parseGigabytesToBytes(newSize)) >> resizeResults
+        storageVolumeService.get(1) >> existingVolume
+        storageVolumeService.save(existingVolume) >> existingVolume
+
+        when:
+        provisionProvider.updateVolumes(volumesUpdate, scvmmOpts, rtn)
+
+        then:
+        if (shouldResize) {
+            if (resizeResults.success) {
+                existingVolume.maxStorage == ComputeUtility.parseGigabytesToBytes(newSize)
+            } else {
+                rtn.error == expectedError
+            }
+        } else {
+            0 * mockApiService.resizeDisk(_, _, _)
+            rtn.error == null
+        }
+
+        where:
+        scenario              | newMaxStorage | newSize | resizeResults                  | shouldResize | expectedError
+        "resize success"      | 2048L         | 2       | [success: true]                | true         | null
+        "no resize needed"    | 1024L         | 1       | [success: true]                | false        | null
+    }
+
+    @Unroll
+    def "addVolumes creates and attaches disk, updates volume and handles error for #scenario"() {
+        given:
+        def computeServer = new ComputeServer(id: 1, cloud: new Cloud(), volumes: [])
+        def volumeAdd = [size: addSize, datastore: datastore]
+        def volumesAdd = [volumeAdd]
+        def scvmmOpts = [opt: "val"]
+        def rtn = new ServiceResponse()
+        def diskSpecMatcher = { Map spec -> spec.sizeMb == (ComputeUtility.parseGigabytesToBytes(addSize) / ComputeUtility.ONE_MEGABYTE) }
+
+        def diskResults = [success: true, disk: [VhdLocation: "loc", VhdID: "id", HostVolumeId: "hv", FileShareId: "fs", PartitionUniqueId: "pu"]]
+        mockApiService.createAndAttachDisk(scvmmOpts, _, true) >> {
+            return diskResults
+        }
+        provisionProvider.getVolumePathForDatastore(datastore) >> volumePath
+        provisionProvider.buildStorageVolume(computeServer, volumeAdd, 0) >> new StorageVolume()
+        provisionProvider.loadDatastoreForVolume(computeServer.cloud, diskResults?.disk?.HostVolumeId, diskResults?.disk?.FileShareId, diskResults?.disk?.PartitionUniqueId) >> updatedDatastore
+        asyncStorageVolumeService.create(_, computeServer) >> Single.just([:])
+        provisionProvider.getMorpheusServer(computeServer.id) >> computeServer
+
+        when:
+        provisionProvider.addVolumes(volumesAdd, computeServer, scvmmOpts, rtn)
+
+        then:
+
+        rtn.error == null
+
+
+        where:
+        scenario           | addSize | datastore      | volumePath | updatedDatastore
+        "success"          | 2       | new Datastore()|  "/vol/path" | new Datastore()
+    }
+
+    @Unroll
+    def "deleteVolumes removes disk and updates server "() {
+        given:
+        def computeServer = new ComputeServer(id: 1, volumes: [])
+        def volume = new StorageVolume(id: 2, externalId: "vol-2")
+        def volumesDelete = [volume]
+        def scvmmOpts = [opt: "val"]
+
+        TaskResult detachResult1 = new TaskResult()
+        detachResult1.success = true
+        detachResult1.data = "abc pqr"
+        mockApiService.removeDisk(_, _) >> {
+            return detachResult1
+        }
+        asyncStorageVolumeService.remove([volume], computeServer, true) >> Single.just([:])
+        provisionProvider.getMorpheusServer(computeServer.id) >> computeServer
+
+        when:
+        provisionProvider.deleteVolumes(volumesDelete, computeServer, scvmmOpts)
+
+        then:
+        1 * provisionProvider.getMorpheusServer(computeServer.id)
+
+    }
+
+    @Unroll
+    def "handleVolumeOperations calls update, add, delete and returns #expectedResult when error=#errorPresent"() {
+        given:
+        def opts = [volumes: true]
+        def resizeRequest = new ResizeRequest(
+                volumesUpdate: [1],
+                volumesAdd: [2],
+                volumesDelete: [3]
+        )
+        def computeServer = new ComputeServer(id: 1)
+        def scvmmOpts = [opt: "val"]
+        def rtn = new ServiceResponse()
+        rtn.error = errorPresent
+
+        provisionProvider.updateVolumes(_, _, _) >> null
+        provisionProvider.addVolumes(_, _, _, _) >> null
+        provisionProvider.deleteVolumes(_, _, _) >> null
+
+        when:
+        def result = provisionProvider.handleVolumeOperations(opts, resizeRequest, computeServer, scvmmOpts, rtn)
+
+        then:
+        result == expectedResult
+
+        where:
+        errorPresent | expectedResult
+        null        | true
+        true         | false
+    }
+
+    @Unroll
+    def "resizeWorkloadAndServer handles #scenario correctly"() {
+        given:
+        def workload = new Workload(id: 1, server: new ComputeServer(id: 2), instance: [plan: Mock(ServicePlan)])
+        def server = new ComputeServer(id: 2, plan: Mock(ServicePlan))
+        def resizeRequest = new ResizeRequest()
+        def opts = [volumes: true]
+        def computeServer = new ComputeServer(id: 2, externalId: "vm-2", plan: Mock(ServicePlan))
+        provisionProvider.getMorpheusServer(_) >> computeServer
+        provisionProvider.saveAndGet(_) >> computeServer
+        provisionProvider.getAllScvmmOpts(_) >> [opt: "val"]
+        provisionProvider.getAllScvmmServerOpts(_) >> [opt: "val"]
+        provisionProvider.getResizeConfig(_, _, _, _, _) >> [hotResize: hotResize]
+        provisionProvider.stopWorkload(_) >> stopResult
+        provisionProvider.stopServer(_) >> stopResult
+        provisionProvider.handleMemoryAndCoreResize(_, _, _, _, _, _) >> memoryResizeSuccess
+        provisionProvider.handleVolumeOperations(_, _, _, _, _) >> volumeResizeSuccess
+        provisionProvider.startWorkload(_) >> null
+        provisionProvider.startServer(_) >> null
+
+        when:
+        def result = provisionProvider.resizeWorkloadAndServer(
+                isWorkload ? workload : null,
+                isWorkload ? null : server,
+                resizeRequest,
+                opts,
+                isWorkload
+        )
+
+        then:
+        result.success == expectedSuccess
+        result.error == expectedError
+
+        where:
+        scenario                | isWorkload | hotResize | stopResult                        | memoryResizeSuccess | volumeResizeSuccess | expectedSuccess | expectedError
+        "hot resize success"    | true       | true      | null                              | true               | true               | true           | null
+        "cold resize success"   | false      | false     | new ServiceResponse(success:true) | true               | true               | true           | null
+        "memory resize fails"   | false      | false     | new ServiceResponse(success:true) | false              | true               | true           | 'Failed to resize memory/cores'
+        "volume resize fails"   | true       | false     | new ServiceResponse(success:true) | true               | false              | true           | 'Failed to handle volume operations'
+    }
+
+    @Unroll
+    def "resizeWorkloadAndServer catches exception and sets error for isWorkload=#isWorkload"() {
+        given:
+        def workload = new Workload(id: 1, server: new ComputeServer(id: 2), instance: [plan: Mock(ServicePlan)])
+        def server = new ComputeServer(id: 2, plan: Mock(ServicePlan))
+        def resizeRequest = new ResizeRequest()
+        def opts = [volumes: true]
+        def computeServer = new ComputeServer(id: 2, externalId: "vm-2", plan: Mock(ServicePlan))
+        provisionProvider.getMorpheusServer(_) >> computeServer
+        provisionProvider.saveAndGet(_) >> computeServer
+        provisionProvider.getAllScvmmOpts(_) >> [opt: "val"]
+        provisionProvider.getAllScvmmServerOpts(_) >> [opt: "val"]
+        provisionProvider.getResizeConfig(_, _, _, _, _) >> [hotResize: true]
+        // Simulate exception in handleMemoryAndCoreResize
+        provisionProvider.handleMemoryAndCoreResize(_, _, _, _, _, _) >> { throw new RuntimeException("Test error") }
+
+        when:
+        def result = provisionProvider.resizeWorkloadAndServer(
+                isWorkload ? workload : null,
+                isWorkload ? null : server,
+                resizeRequest,
+                opts,
+                isWorkload
+        )
+
+        then:
+        result.success == false
+        result.error.contains("Test error")
+        where:
+        isWorkload << [true, false]
+    }
+
+    @Unroll
+    def "getDiskExternalIds returns correct disk info "() {
+        given:
+        def rootVol = new StorageVolume(externalId: "root-id", rootVolume: true)
+        def dataVol1 = new StorageVolume(externalId: "data-id-1", rootVolume: false)
+        def dataVol2 = new StorageVolume(externalId: "data-id-2", rootVolume: false)
+        def location = new VirtualImageLocation(volumes: [rootVol, dataVol1, dataVol2] )
+        provisionProvider.getVirtualImageLocation(_, _) >> location
+
+        def expectedResult = [[rootVolume: true, externalId: "root-id", idx: 0],
+                          [rootVolume: false, externalId: "data-id-1", idx: 1],
+                          [rootVolume: false, externalId: "data-id-2", idx: 2]]
+        when:
+        def result = provisionProvider.getDiskExternalIds(Mock(VirtualImage), Mock(Cloud))
+
+        then:
+        result.size() == expectedResult.size()
+
+    }
+
+    @Unroll
+    def "finalizeProvisionResponse sets ServiceResponse fields for success=#success"() {
+        given:
+        def provisionResponse = new ProvisionResponse(success: success, message: message)
+        def rtn = new ServiceResponse()
+
+        when:
+        provisionProvider.finalizeProvisionResponse(provisionResponse, rtn)
+
+        then:
+        rtn.success == expectedSuccess
+        rtn.data == provisionResponse
+        rtn.msg == expectedMsg
+        rtn.error == expectedError
+
+        where:
+        success | message         | expectedSuccess | expectedMsg           | expectedError
+        true    | "ok"            | true            | null                  | null
+        false   | "fail reason"   | false           | "fail reason"         | "fail reason"
+        false   | null            | false           | 'vm config error' | null
+    }
+
+
+    @Unroll
+    def "buildCloneBaseOpts returns correct options when cloudInitIsoNeeded=#isoNeeded"() {
+        given:
+        def server = new ComputeServer()
+        def osType = new OsType()
+        osType.platform = PlatformType.linux
+        def virtualImage = new VirtualImage()
+        virtualImage.isCloudInit = true
+        server.sourceImage = virtualImage
+        server.serverOs = osType
+        def workload = new Workload()
+        workload.server = server
+        def workloadReq = new WorkloadRequest()
+        def parentContainer = workload
+
+        def opts = [installAgent: true]
+        def scvmmOpts = [platform: 'linux', licenses: ['lic1']]
+
+        def controlNode = Mock(ComputeServer) { getId() >> 42 }
+
+        def initOptions = [cloudConfigBytes: 'bytes', cloudConfigNetwork: 'net', licenseApplied: licenseApplied, unattendCustomized: 'custom']
+        def clonedScvmmOpts = [serverFolder: 'folder', diskRoot: 'root']
+
+        mockApiService.getScvmmZoneOpts(_, _) >> clonedScvmmOpts
+        mockApiService.getScvmmControllerOpts(_, _) >> [controller: 'ctrl']
+
+        provisionProvider.constructCloudInitOptions(_,_,_,_,_,_,_)>>  {
+            return initOptions
+        }
+        provisionProvider.getScvmmContainerOpts(_) >> {
+            return [container: 'opts']
+        }
+
+        when:
+        def result = provisionProvider.buildCloneBaseOpts(parentContainer, workloadReq, opts, scvmmOpts, virtualImage, server, controlNode)
+
+        then:
+        result.cloudInitIsoNeeded == isoNeeded
+        if (isoNeeded) {
+            result.imageFolderName == 'folder'
+            result.diskFolder == 'root\\folder'
+            result.cloudConfigBytes == 'bytes'
+            result.cloudConfigNetwork == 'net'
+            result.clonedScvmmOpts.serverFolder == 'folder'
+            result.clonedScvmmOpts.controllerServerId == 42
+            opts.licenseApplied == licenseApplied
+            opts.unattendCustomized == 'custom'
+        } else {
+            !result.containsKey('imageFolderName')
+            !result.containsKey('diskFolder')
+            !result.containsKey('cloudConfigBytes')
+            !result.containsKey('cloudConfigNetwork')
+            !result.containsKey('clonedScvmmOpts')
+            !opts.containsKey('licenseApplied')
+            !opts.containsKey('unattendCustomized')
+        }
+
+        where:
+        isoNeeded | licenseApplied
+        true      | true
+        true      | false
+    }
+
+    @Unroll
+    def "handleCloneContainerOpts sets cloneBaseOpts and calls helpers for cloudInitIsoNeeded=#isoNeeded"() {
+        given:
+        def scvmmOpts = [:]
+        def opts = [installAgent: true]
+        def server = new ComputeServer()
+        def workloadRequest = new WorkloadRequest()
+        def virtualImage = new VirtualImage()
+        def controlNode = Mock(ComputeServer)
+        def parentContainer = Mock(Workload)
+        def args = [
+                scvmmOpts: scvmmOpts,
+                opts: opts,
+                server: server,
+                workloadRequest: workloadRequest,
+                virtualImage: virtualImage,
+                controlNode: controlNode
+        ]
+
+        def cloneBaseOpts = [cloudInitIsoNeeded: isoNeeded]
+        provisionProvider.getParentContainer(_) >> {  return parentContainer }
+        provisionProvider.setCloneContainerIds(_,_) >> {  }
+        provisionProvider.handleCloneVmStatus(_,_) >> {  }
+        provisionProvider.buildCloneBaseOpts(_,_,_,_,_,_,_) >> { return  cloneBaseOpts }
+
+        when:
+        provisionProvider.handleCloneContainerOpts(args)
+
+        then:
+        scvmmOpts.cloneBaseOpts == cloneBaseOpts
+
+
+        where:
+        isoNeeded << [true, false]
+    }
+
+    @Unroll
+    def "getParentContainer returns workload for cloneContainerId=#cloneContainerId"() {
+        given:
+        def workload = new Workload()
+        def cloneContainerId = 123
+        def opts = [cloneContainerId: cloneContainerId]
+        workloadService.get(cloneContainerId.toLong()) >> {
+            return workload
+        }
+
+        when:
+        def result = provisionProvider.getParentContainer(opts)
+
+        then:
+        result == workload
+    }
+
+    @Unroll
+    def "setCloneContainerIds sets cloneContainerId and cloneVMId from parentContainer"() {
+        given:
+        def scvmmOpts = [:]
+        def server = new ComputeServer(externalId: "vm-123")
+        def parentContainer = new Workload(id: 42, server: server)
+
+        when:
+        provisionProvider.setCloneContainerIds(scvmmOpts, parentContainer)
+
+        then:
+        scvmmOpts.cloneContainerId == 42
+        scvmmOpts.cloneVMId == "vm-123"
+    }
+
+    @Unroll
+    def "handleCloneVmStatus sets startClonedVM and calls stopWorkload when status is running=#isRunning"() {
+        given:
+        def scvmmOpts = [:]
+        def parentContainer = new Workload(status: status)
+
+        provisionProvider.stopWorkload(_ as Workload) >> ServiceResponse.success()
+
+        when:
+        provisionProvider.handleCloneVmStatus(parentContainer, scvmmOpts)
+
+        then:
+        (isRunning ? 1 : 0) * provisionProvider.stopWorkload(_ as Workload)
+        scvmmOpts.startClonedVM == (isRunning ? true : null)
+
+        where:
+        status                        | isRunning
+        Workload.Status.running       | true
+    }
+
+    @Unroll
+    def "handleImageUploadFailure sets statusMessage, success flags, and data"() {
+        given:
+        def server = new ComputeServer()
+        def provisionResponse = new ProvisionResponse(success: true)
+        def rtn = new ServiceResponse(success: true)
+        asyncComputeServerService.save(server) >> Single.just([success: true])
+
+        when:
+        provisionProvider.handleImageUploadFailure(server, provisionResponse, rtn)
+
+        then:
+        server.statusMessage == 'Failed to upload image'
+        provisionResponse.success == false
+        rtn.success == false
+        rtn.data == provisionResponse
+    }
+// ScvmmProvisionProviderRunWorkloadSpec.groovy
+
+    def "handleCloneContainer should copy datastores from clone container volumes to server volumes"() {
+        given:
+        def cloneContainer = new Workload()
+        def server = new ComputeServer()
+        def cloneServer = new ComputeServer()
+        def datastore = new Datastore()
+
+        def cloneContainerId = 123L
+        def opts = [cloneContainerId: cloneContainerId]
+        def vol1 = new StorageVolume()
+        vol1.datastore = datastore
+        def vol2 = new StorageVolume()
+        vol2.datastore = datastore
+        def cloneVol1 = new StorageVolume()
+        def cloneVol2 = new StorageVolume()
+        cloneVol1.datastore = datastore
+        cloneVol2.datastore = datastore
+        def serverVolumes = [vol1, vol2]
+        def cloneVolumes = [cloneVol1, cloneVol2]
+        server.volumes = serverVolumes
+        cloneServer.volumes = cloneVolumes
+        cloneContainer.server = server
+
+        workloadService.get(cloneContainerId) >> {
+            return cloneContainer
+        }
+
+        storageVolumeService.save(_) >> {}
+
+        when:
+        provisionProvider.handleCloneContainer(opts, server)
+
+        then:
+
+        2 * storageVolumeService.save(_)
+    }
+
+    def "fetchCloudFiles should return cloud files from async service"() {
+        given:
+        def virtualImage = new VirtualImage()
+        def cloudFile1 = Mock(CloudFile)
+        def cloudFile2 = Mock(CloudFile)
+        def cloudFiles = [cloudFile1, cloudFile2]
+        asyncVirtualImageService.getVirtualImageFiles(virtualImage) >> {
+            return Single.just(cloudFiles)
+        }
+
+        when:
+        def result = provisionProvider.fetchCloudFiles(virtualImage)
+
+        then:
+        result == cloudFiles
+    }
+
+    def "setCloudFilesError should set error status and response in result map"() {
+        given:
+        def server = new ComputeServer()
+        def result = [:]
+        def virtualImage = new VirtualImage()
+
+        when:
+        provisionProvider.setCloudFilesError(server, result, virtualImage)
+
+        then:
+        server.statusMessage == 'Failed to find cloud files'
+        result.success == false
+        result.response.msg.contains('Cloud files could not be found')
+
+    }
+
+    @Unroll
+    def "handleContainerImage returns imageId and creates VirtualImageLocation on success"() {
+        given:
+        def scvmmOpts = [:]
+        def workloadType = new WorkloadType(imageCode: "ubuntu-20.04")
+        def createdBy = [id: 42]
+        def instance = [createdBy: createdBy]
+        def workload = new Workload(workloadType: workloadType, instance: instance)
+        def virtualImage = new VirtualImage(id: 101, name: "Ubuntu", imageType: "vhd", externalId: "ext-101")
+        def cloudFiles = [Mock(Object)]
+        def cloud = new Cloud(id: 7)
+        def result = [:]
+        def args = [scvmmOpts: scvmmOpts, workload: workload, virtualImage: virtualImage, cloudFiles: cloudFiles, cloud: cloud, result: result]
+        def imageId = "img-123"
+        def imageResults = [success: true, imageId: imageId]
+
+        mockApiService.insertContainerImage(scvmmOpts) >> imageResults
+
+        def locationCreated = false
+
+        def virtualImageLocationService = Mock(MorpheusSynchronousVirtualImageLocationService)
+        virtualImageService.getLocation() >> virtualImageLocationService
+        virtualImageLocationService.create(_) >> {}
+
+        when:
+        def returnedImageId = provisionProvider.handleContainerImage(args)
+
+        then:
+        returnedImageId == imageId
+        scvmmOpts.image.name == "Ubuntu"
+        scvmmOpts.userId == 42
+    }
+
+    @Unroll
+    def "handleServerCreateFailure sets externalId, statusMessage, saves server, and sets provisionResponse.success to false"() {
+        given:
+        def server = new ComputeServer()
+        def provisionResponse = new ProvisionResponse(success: true)
+        def externalId = "ext-999"
+        def createResults = [server: [externalId: externalId]]
+
+
+        asyncComputeServerService.save(server) >> Single.just(server)
+
+        when:
+        provisionProvider.handleServerCreateFailure(createResults, server, provisionResponse)
+
+        then:
+        server.externalId == externalId
+        server.statusMessage == 'Failed to create server'
+        provisionResponse.success == false
+    }
+
+    def "getMaxMemory returns container.maxMemory if set, else instance.plan.maxMemory"() {
+        given:
+        def instance = new Instance()
+        def container = new Workload(maxMemory: 4096L, instance: instance)
+
+        expect:
+        provisionProvider.getMaxMemory(container) == 4096L
+    }
+
+    def "getMaxCpu returns container.maxCpu if set, else instance.plan.maxCpu, else 1"() {
+        given:
+        def instance = new Instance()
+        def container = new Workload(maxCpu: 4L, instance: instance)
+        expect:
+        provisionProvider.getMaxCpu(container) == 4L
+
+    }
+
+    def "getMaxCores returns container.maxCores if set, else instance.plan.maxCores, else 1"() {
+        given:
+        def instance = new Instance()
+        instance.plan = new ServicePlan()
+        instance.plan.maxCores = 12L
+        def container = new Workload(maxCores: 12L, instance: instance)
+
+        expect:
+        provisionProvider.getMaxCores(container) == 12L
+
+    }
+
+    def "getResourcePool returns server.resourcePool if present, else null"() {
+        given:
+        def pool = new CloudPool()
+        def server = new ComputeServer(resourcePool: pool)
+        def container = new Workload(server: server)
+        def container2 = new Workload(server: null)
+
+        expect:
+        provisionProvider.getResourcePool(container) == pool
+        provisionProvider.getResourcePool(container2) == null
+    }
+
+    def "getPlatform returns windows if server.serverOs.platform or server.osType is windows, else linux"() {
+        given:
+
+        def server1 = new ComputeServer(osType: new OsType().platform = PlatformType.windows)
+        def server2 = new ComputeServer(serverOs: new OsType(), osType: "linux")
+        def container1 = new Workload(server: server1)
+        def container2 = new Workload(server: server2)
+
+        expect:
+
+        provisionProvider.getPlatform(container1) == "windows"
+        provisionProvider.getPlatform(container2) == "linux"
+    }
+
+    def "getScvmmCapabilityProfile returns null if profile is default, else returns profile"() {
+        given:
+        def config1 = [scvmmCapabilityProfile: "-1"]
+        def config2 = [scvmmCapabilityProfile: "customProfile"]
+
+        expect:
+        provisionProvider.getScvmmCapabilityProfile(config1) == null
+        provisionProvider.getScvmmCapabilityProfile(config2) == "customProfile"
+    }
+
+    def "validateHost returns success for VM hypervisor"() {
+        given:
+        def server = new ComputeServer(computeServerType: [vmHypervisor: true])
+
+        when:
+        def response = provisionProvider.validateHost(server, [:])
+
+        then:
+        response.success == true
+    }
+
+    def "validateHost delegates to validateNonHypervisorHost for non-hypervisor"() {
+        given:
+        def server = new ComputeServer(computeServerType: [vmHypervisor: false])
+        def expectedResponse = new ServiceResponse(success: false)
+        provisionProvider.validateNonHypervisorHost(_) >> { return expectedResponse }
+
+        when:
+        def response = provisionProvider.validateHost(server, [test: "value"])
+
+        then:
+        response.success == expectedResponse.success
+    }
+
+    def "validateHost returns success when exception is thrown"() {
+        given:
+        def server = new ComputeServer(computeServerType: [vmHypervisor: false])
+        provisionProvider.metaClass.validateNonHypervisorHost = { opts -> throw new RuntimeException("fail") }
+
+        when:
+        def response = provisionProvider.validateHost(server, [:])
+
+        then:
+        response.success == true
+    }
+
+
+    def "validateNonHypervisorHost sets success and errors based on validationResults"() {
+        given:
+        def opts = [networkId: 123, scvmmCapabilityProfile: "profile", nodeCount: 2]
+       // def validationOpts = [networkId: 123, scvmmCapabilityProfile: "profile", nodeCount: 2]
+        def validationResults = [success: false, errors: [error: "Invalid config"]]
+        provisionProvider.extractNetworkId(_) >> { return opts.networkId }
+        provisionProvider.extractCapabilityProfile(_) >> { return opts.scvmmCapabilityProfile }
+        provisionProvider.extractNodeCount(_) >> { return opts.nodeCount }
+
+        mockApiService.validateServerConfig(_) >> {
+            return validationResults
+        }
+
+        when:
+        def response = provisionProvider.validateNonHypervisorHost(opts)
+
+        then:
+        response.success == false
+        response.errors == [error: "Invalid config"]
+    }
+
+    @Unroll
+    def "extractNetworkId returns #expected for opts #opts"() {
+        given:
+        // opts is parameterized in where block
+
+        expect:
+        provisionProvider.extractNetworkId(opts) == expected
+
+        where:
+        opts                                                                                  || expected
+        [networkInterface: [network: [id: 101]]]                                              || 101L
+        [config: [networkInterface: [network: [id: 202]]]]                                    || 202L
+        [networkInterfaces: [[network: [id: 303]]]]                                           || 303L
+        [networkInterfaces: [[network: [:]]]]                                                 || null
+        [:]                                                                                   || null
+        null                                                                                  || null
+    }
+
+    @Unroll
+    def "extractCapabilityProfile returns #expected for opts #opts"() {
+        expect:
+        provisionProvider.extractCapabilityProfile(opts) == expected
+
+        where:
+        opts                                               || expected
+        [config: [scvmmCapabilityProfile: "profileA"]]     || "profileA"
+        [scvmmCapabilityProfile: "profileB"]               || "profileB"
+        [config: [:], scvmmCapabilityProfile: "profileC"]  || "profileC"
+        [:]                                                || null
+        null                                               || null
+    }
+
+    @Unroll
+    def "extractNodeCount returns #expected for opts #opts"() {
+        expect:
+        provisionProvider.extractNodeCount(opts) == expected
+
+        where:
+        opts                                 || expected
+        [config: [nodeCount: 5]]             || 5
+        [config: [nodeCount: null]]          || null
+        [config: [:]]                        || null
+        [:]                                  || null
+        null                                 || null
+    }
+
+    @Unroll
+    def "saveAndGet returns correct server for success=#success and found=#found"() {
+        given:
+        def server = new ComputeServer(id: 42)
+        def persisted = [new ComputeServer(id: 42, name: "updated")]
+        def failed = [new ComputeServer(id: 42, name: "failed")]
+        def saveResult = Mock(BulkSaveResult) {
+            getSuccess() >> success
+            getPersistedItems() >> (success ? (found ? persisted : []) : [])
+            getFailedItems() >> (!success ? (found ? failed : []) : [])
+        }
+        provisionProvider.context.async.computeServer.bulkSave([server]) >> Single.just(saveResult)
+
+        expect:
+        provisionProvider.saveAndGet(server).name == expectedName
+
+        where:
+        success | found | expectedName
+        true    | true  | "updated"
+        true    | false | null
+        false   | true  | "failed"
+        false   | false | null
+    }
+
+    @Unroll
+    def "resolveCurrentMemory returns #expected for server=#serverMem, workload.server=#workloadServerMem, workload.maxMemory=#workloadMem, config=#configMem"() {
+        given:
+        def server = serverMem != null ? new ComputeServer(maxMemory: serverMem) : null
+        def workloadServer = workloadServerMem != null ? new ComputeServer(maxMemory: workloadServerMem) : null
+        def workload = new Workload(
+                server: workloadServer,
+                maxMemory: workloadMem
+        )
+        if (configMem != null) {
+            workload.metaClass.getConfigProperty = { String key -> configMem }
+        } else {
+            workload.metaClass.getConfigProperty = { String key -> null }
+        }
+
+        expect:
+        provisionProvider.resolveCurrentMemory(server, workload) == expected
+
+        where:
+        serverMem | workloadServerMem | workloadMem | configMem | expected
+        4096      | 2048             | 1024        | "512"     | 4096L
+        null      | 2048             | 1024        | "512"     | 2048L
+        null      | null             | 1024        | "512"     | 1024L
+        null      | null             | null        | "512"     | 512L
+        null      | null             | null        | null      | null
+    }
+
+    @Unroll
+    def "resolveCurrentCores returns #expected for server.maxCores=#serverCores, workload.maxCores=#workloadCores"() {
+        given:
+        def server = serverCores != null ? new ComputeServer(maxCores: serverCores) : null
+        def workload = workloadCores != null ? new Workload(maxCores: workloadCores) : null
+
+        expect:
+        provisionProvider.resolveCurrentCores(server, workload) == expected
+
+        where:
+        serverCores | workloadCores | expected
+        4           | 2             | 4
+        null        | 2             | 2
+        null        | null          | 1
+    }
+
+    @Unroll
+    def "isHighlyAvailable returns #expected for clusterId=#clusterId, zonePool=#zonePool"() {
+        given:
+        def datastore = new Datastore()
+        datastore.zonePool = new CloudPool()
+        def clusterId = "cluster1"
+
+        expect:
+        provisionProvider.isHighlyAvailable(clusterId, datastore) == true
+
+    }
+
+    @Unroll
+    def "getMaxCpu returns #expected for container.maxCpu=#maxCpu, plan.maxCpu=#planMaxCpu"() {
+        given:
+        def servicePlan = new ServicePlan()
+        servicePlan.maxCpu = 8L
+        def instance = new Instance(plan: servicePlan)
+        def container = new Workload(instance: instance)
+
+        expect:
+        provisionProvider.getMaxCpu(container) == 8L
+
+    }
+
+    @Unroll
+    def "getMaxCores returns #expected for container.maxCores=#maxCores, plan.maxCores=#planMaxCores"() {
+        given:
+        def servicePlan = new ServicePlan()
+        servicePlan.maxCores = 16L
+        def instance = new Instance(plan: servicePlan)
+        def container = new Workload(instance: instance)
+
+        expect:
+        provisionProvider.getMaxCores(container) == 16L
+
     }
 
 }

@@ -986,15 +986,17 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return context.async.virtualImage.getVirtualImageFiles(virtualImage).blockingGet()
     }
 
+    @SuppressWarnings('UnnecessarySetter')
     protected void setCloudFilesError(ComputeServer server, Map result, VirtualImage virtualImage) {
         server.statusMessage = 'Failed to find cloud files'
-        def provisionResponse = new ProvisionResponse(success: false,
-                error: "Cloud files could not be found for ${virtualImage}")
+        def provisionResponse = new ProvisionResponse(success: false)
+        provisionResponse.setError("Cloud files could not be found for ${virtualImage}")
         result.success = false
-        result.response = new ServiceResponse(success: false, msg: provisionResponse.error,
-                error: provisionResponse.error, data: provisionResponse)
+        result.response = new ServiceResponse(success: false, msg: "Cloud files could not be found for ${virtualImage}",
+                data: provisionResponse)
     }
 
+    @SuppressWarnings('DuplicateMapLiteral')
     protected String handleContainerImage(Map args) {
         Map scvmmOpts = args.scvmmOpts
         Workload workload = args.workload
@@ -2624,23 +2626,23 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         saveAndGetMorpheusServer(server, true)
     }
 
-    private void assignSourceImageAndExternalId(ComputeServer server, VirtualImage virtualImage, Map scvmmOpts) {
+    protected void assignSourceImageAndExternalId(ComputeServer server, VirtualImage virtualImage, Map scvmmOpts) {
         server.sourceImage = virtualImage
         server.externalId = scvmmOpts.name
     }
 
-    private void assignServerOsType(ComputeServer server, VirtualImage virtualImage) {
+    protected void assignServerOsType(ComputeServer server, VirtualImage virtualImage) {
         server.serverOs = server.serverOs ?: virtualImage.osType
         def osplatform = virtualImage?.osType?.platform?.toString()?.toLowerCase()
                 ?: virtualImage?.platform?.toString()?.toLowerCase()
         server.osType = [WINDOWS_PLATFORM, OSX_PLATFORM].contains(osplatform) ? osplatform : LINUX_PLATFORM
     }
 
-    private void assignParentServer(ComputeServer server, ComputeServer node) {
+    protected void assignParentServer(ComputeServer server, ComputeServer node) {
         server.parentServer = node
     }
 
-    private void setupScvmmOpts(Map scvmmOpts, VirtualImage virtualImage, String imageId) {
+    protected void setupScvmmOpts(Map scvmmOpts, VirtualImage virtualImage, String imageId) {
         scvmmOpts.secureBoot = virtualImage?.uefi ?: false
         scvmmOpts.imageId = imageId
         scvmmOpts.scvmmGeneration = virtualImage?.getConfigProperty(GENERATION_FIELD) ?: SCVMM_GENERATION1_VALUE
@@ -2832,7 +2834,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return rtn
     }
 
-    private ComputeServerInterface applyComputeServerNetworkIp(ComputeServer server, String privateIp,
+    protected ComputeServerInterface applyComputeServerNetworkIp(ComputeServer server, String privateIp,
                                                                String publicIp, Integer index, String macAddress) {
         return saveAndGetNetworkInterface(server, privateIp, publicIp, index, macAddress).netInterface
     }
@@ -2971,8 +2973,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 
     // Update existing volumes
     protected void updateVolumes(List volumesUpdate, Map scvmmOpts, ServiceResponse rtn) {
+        log.debug("resizing vm storage: ${volumesUpdate}")
         volumesUpdate?.each { volumeUpdate ->
-            log.debug("resizing vm storage: ${volumeUpdate}")
             StorageVolume existing = volumeUpdate.existingModel
             Map updateProps = volumeUpdate.updateProps
             if (updateProps.maxStorage > existing.maxStorage) {
@@ -3207,6 +3209,9 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return newVolume
     }
 
+    LogInterface getLog() {
+        return this.log
+    }
     /**
      * Returns a String array of block device names i.e. (['vda','vdb','vdc']) in the order
      * of the disk index.
