@@ -14,6 +14,7 @@ resource "instance-type-layout" "almalinux-scvmm-9" {
   workloads                = [workload-type-set.almalinux-scvmm-9-set]
   actions                  = ["generic-add-node"]
   provisionType            = "scvmm"
+  hasAutoScale             = true
 }
 
 resource "scale-action" "almalinux-scvmm-9" {
@@ -40,6 +41,7 @@ resource "instance-type-layout" "centos-scvmm-9-stream" {
   workloads                = [workload-type-set.centos-scvmm-9-stream-set]
   actions                  = ["generic-add-node"]
   provisionType            = "scvmm"
+  hasAutoScale             = true
 }
 
 resource "scale-action" "centos-scvmm-9-stream" {
@@ -66,6 +68,7 @@ resource "instance-type-layout" "debian-scvmm-11" {
   workloads                = [workload-type-set.debian-scvmm-11-set]
   actions                  = ["generic-add-node"]
   provisionType            = "scvmm"
+  hasAutoScale             = true
 }
 
 resource "scale-action" "debian-scvmm-11" {
@@ -92,6 +95,7 @@ resource "instance-type-layout" "debian-scvmm-12" {
   workloads                = [workload-type-set.debian-scvmm-12-set]
   actions                  = ["generic-add-node"]
   provisionType            = "scvmm"
+  hasAutoScale             = true
 }
 
 resource "scale-action" "debian-scvmm-12" {
@@ -118,6 +122,7 @@ resource "instance-type-layout" "rocky-scvmm-8" {
   workloads                = [workload-type-set.rocky-scvmm-8-set]
   actions                  = ["generic-add-node"]
   provisionType            = "scvmm"
+  hasAutoScale             = true
 }
 
 resource "scale-action" "rocky-scvmm-8" {
@@ -144,6 +149,7 @@ resource "instance-type-layout" "rocky-scvmm-9" {
   workloads                = [workload-type-set.rocky-scvmm-9-set]
   actions                  = ["generic-add-node"]
   provisionType            = "scvmm"
+  hasAutoScale             = true
 }
 
 resource "scale-action" "rocky-scvmm-9" {
@@ -170,6 +176,7 @@ resource "instance-type-layout" "ubuntu-scvmm-18_04" {
   workloads                = [workload-type-set.ubuntu-scvmm-18_04-set]
   actions                  = ["ubuntu-add-node"]
   provisionType            = "scvmm"
+  hasAutoScale             = true
 }
 
 resource "scale-action" "ubuntu-scvmm-18_04" {
@@ -196,6 +203,7 @@ resource "instance-type-layout" "ubuntu-scvmm-24_04" {
   workloads                = [workload-type-set.ubuntu-scvmm-24_04-set]
   actions                  = ["ubuntu-add-node"]
   provisionType            = "scvmm"
+  hasAutoScale             = true
 }
 
 resource "scale-action" "ubuntu-scvmm-24_04" {
@@ -222,6 +230,7 @@ resource "instance-type-layout" "opensuse-scvmm-1_04" {
   workloads                = [workload-type-set.opensuse-scvmm-15_1-set]
   actions                  = ["generic-add-node"]
   provisionType            = "scvmm"
+  hasAutoScale             = true
 }
 
 resource "scale-action" "opensuse-scvmm-1_04" {
