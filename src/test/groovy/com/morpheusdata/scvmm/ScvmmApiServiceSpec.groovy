@@ -2980,4 +2980,80 @@ class ScvmmApiServiceSpec extends Specification {
         result.imageId == "vhd-existing-789"
     }
 
+    @Unroll
+    def "handleCopyItemFallback returns #expectedResult and sets imageId=#expectedImageId when wrapExecuteCommand returns #scenario"() {
+        given:
+        def opts = [foo: "bar"]
+        def sourcePath = "C:\\images\\test.vhdx"
+        def tgtFolder = "C:\\images\\target"
+        def rtn = [:]
+        def taskResult1 = new TaskResult()
+        taskResult1.success = true
+        taskResult1.error = null
+        taskResult1.data = [[ID: "vhd-123"]]
+
+        // Mock wrapExecuteCommand
+        apiService.wrapExecuteCommand(_, opts) >> taskResult1
+
+        when:
+        def result = apiService.handleCopyItemFallback(opts, sourcePath, tgtFolder, rtn)
+
+        then:
+        result == expectedResult
+        rtn.imageId == expectedImageId
+
+        where:
+        scenario         | expectedResult | expectedImageId
+        "success"        |  true           | "vhd-123"
+    }
+
+//    @Unroll
+//    def "createServer returns success result for valid input"() {
+//        given:
+//        def opts = [
+//                serverId: 101,
+//                diskRoot: "C:\\disks",
+//                serverFolder: "vm01",
+//                isSysprep: false
+//        ]
+//        def mockCreateCommands = [launchCommand: "New-VM -Name vm01"]
+//        def mockRemoveTemplateCommands = ["Remove-Template"]
+//        def mockCreateData = new TaskResult()
+//        mockCreateData.success = true
+//        mockCreateData.error = null
+//        def mockServer = new ComputeServer()
+//        def mockExternalId = "vm-101"
+//        def mockServerCreated = [success: true]
+//        def mockDisks = [id: "disk-1"]
+//        def mockCloudInitIsoPath = "C:\\disks\\vm01\\config.iso"
+//
+//        apiService.initializeServerOptions(opts) >> null
+//        apiService.buildCreateServerCommands(opts) >> mockCreateCommands
+//        apiService.buildRemoveTemplateCommands(mockCreateCommands) >> mockRemoveTemplateCommands
+//        apiService.generateCommandString("New-VM -Name vm01") >> "powershell command"
+//        apiService.wrapExecuteCommand("powershell command", opts) >> mockCreateData
+//        apiService.handleCreateDataErrors(mockCreateData, _) >> {}
+//        apiService.extractServerExternalId(mockCreateData) >> mockExternalId
+//        computeServerService.get(101) >> mockServer
+//        computeServerService.save(mockServer) >> mockServer
+//        apiService.checkServerCreated(opts, mockExternalId) >> mockServerCreated
+//        apiService.removeTemporaryTemplatesAndProfiles(mockRemoveTemplateCommands, opts) >> {}
+//        apiService.loadControllerServer(opts) >> {}
+//        apiService.handleAdditionalDisks(opts) >> {}
+//        apiService.handleClonedVM(opts, _) >> {}
+//        apiService.buildDiskMapping(_) >> mockDisks
+//        apiService.resizeDisks(opts, mockDisks) >> {}
+//        apiService.handleCloudInit(opts, "C:\\disks\\vm01", "vm01") >> mockCloudInitIsoPath
+//        apiService.startAndCheckServer(opts, mockDisks, _) >> {}
+//        apiService.deleteUnattend(opts, _) >> mockCreateData
+//
+//        when:
+//        def result = apiService.createServer(opts)
+//
+//        then:
+//        result instanceof Map
+//        result.deleteDvdOnComplete == [removeIsoFromDvd: true, deleteIso: mockCloudInitIsoPath]
+//    }
+
+
 }
