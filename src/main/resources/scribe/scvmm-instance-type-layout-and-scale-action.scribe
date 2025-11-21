@@ -205,3 +205,29 @@ resource "scale-action" "ubuntu-scvmm-24_04" {
   upAction   = "ubuntu-add-node"
   downAction = "ubuntu-remove-node"
 }
+
+resource "instance-type-layout" "opensuse-scvmm-1_04" {
+  code                     = "opensuse-scvmm-1.04"
+  name                     = "SCVMM VM"
+  sortOrder                = 10
+  serverType               = "vm"
+  supportsConvertToManaged = true
+  instanceVersion          = "15.1"
+  description              = "This will provision a single process with no redundancy"
+  instanceType             = "opensuse"
+  serverCount              = 1
+  portCount                = 1
+  enabled                  = true
+  creatable                = true
+  workloads                = [workload-type-set.opensuse-scvmm-15_1-set]
+  actions                  = ["generic-add-node"]
+  provisionType            = "scvmm"
+}
+
+resource "scale-action" "opensuse-scvmm-1_04" {
+  code       = "opensuse-scvmm-1.04"
+  scaleType  = "action"
+  layout     = instance-type-layout.opensuse-scvmm-1_04
+  upAction   = "generic-add-node"
+  downAction = "generic-remove-node"
+}
