@@ -10,7 +10,6 @@ class ScvmmBackupProvider extends MorpheusBackupProvider {
 
     ScvmmBackupProvider(ScvmmPlugin plugin, MorpheusContext morpheusContext) {
         super(plugin, morpheusContext)
-
         ScvmmBackupTypeProvider backupTypeProvider = new ScvmmBackupTypeProvider(plugin, morpheus)
         plugin.registerProvider(backupTypeProvider)
         addScopedProvider(backupTypeProvider, "scvmm", null)

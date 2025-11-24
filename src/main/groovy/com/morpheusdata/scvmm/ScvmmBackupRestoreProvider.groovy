@@ -127,7 +127,7 @@ class ScvmmBackupRestoreProvider implements BackupRestoreProvider {
         log.info("restoreBackup {}", backupResult)
         ServiceResponse rtn = ServiceResponse.prepare(new BackupRestoreResponse(backupRestore))
         try {
-            ScvmmProvisionProvider provisionProvider = new ScvmmProvisionProvider(plugin, morpheusContext)
+            ScvmmProvisionProvider provisionProvider = createProvisionProvider()
             def config = backupResult.getConfigMap()
             def snapshotId = config.snapshotId
             def vmId = config.vmId
@@ -157,6 +157,10 @@ class ScvmmBackupRestoreProvider implements BackupRestoreProvider {
             rtn.msg = e.getMessage()
         }
         return rtn
+    }
+
+    protected ScvmmProvisionProvider createProvisionProvider() {
+        return new ScvmmProvisionProvider(plugin, morpheusContext)
     }
 
     /**
