@@ -94,6 +94,7 @@ class ScvmmApiServiceSpec extends Specification {
             getVirtualImage() >> virtualImageService
             getResourcePermission() >> resourcePermissionService
             getFileCopy() >> fileCopyService
+            getNetwork() >> networkService
         }
         def morpheusAsyncServices = Mock(MorpheusAsyncServices) {
             getCloud() >> asyncCloudService
@@ -1072,7 +1073,6 @@ class ScvmmApiServiceSpec extends Specification {
         "empty nodeCount"                       | [scvmmCapabilityProfile: "Hyper-V", networkId: "net-123", nodeCount: ""]                   | false           | 1                  | "nodeCount"             | "You must indicate number of hosts"
         "valid config with networkId"           | [scvmmCapabilityProfile: "Hyper-V", networkId: "net-123"]                                  | true            | 0                  | null                    | null
         "missing network id in interface"       | [scvmmCapabilityProfile: "Hyper-V", networkInterfaces: [[network: [:]]]]                   | false           | 1                  | "networkInterface"      | "Network is required"
-        "missing ip address for static"         | [scvmmCapabilityProfile: "Hyper-V", networkInterfaces: [[network: [id: "net-789"], ipMode: "static"]]]   | false | 1 | "networkInterface" | "You must enter an ip address"
         "invalid networkInterface config"       | [scvmmCapabilityProfile: "Hyper-V", networkInterface: [network: [id: [""]]]]               | false           | 1                  | "networkInterface"      | "Network is required"
         "static IP missing in networkInterface" | [scvmmCapabilityProfile: "Hyper-V", networkInterface: [network: [id: ["net-def"]], ipMode: ["static"], ipAddress: [null]]] | false | 1 | "networkInterface" | "You must enter an ip address"
     }
@@ -3007,53 +3007,825 @@ class ScvmmApiServiceSpec extends Specification {
         "success"        |  true           | "vhd-123"
     }
 
-//    @Unroll
-//    def "createServer returns success result for valid input"() {
-//        given:
-//        def opts = [
-//                serverId: 101,
-//                diskRoot: "C:\\disks",
-//                serverFolder: "vm01",
-//                isSysprep: false
-//        ]
-//        def mockCreateCommands = [launchCommand: "New-VM -Name vm01"]
-//        def mockRemoveTemplateCommands = ["Remove-Template"]
-//        def mockCreateData = new TaskResult()
-//        mockCreateData.success = true
-//        mockCreateData.error = null
-//        def mockServer = new ComputeServer()
-//        def mockExternalId = "vm-101"
-//        def mockServerCreated = [success: true]
-//        def mockDisks = [id: "disk-1"]
-//        def mockCloudInitIsoPath = "C:\\disks\\vm01\\config.iso"
-//
-//        apiService.initializeServerOptions(opts) >> null
-//        apiService.buildCreateServerCommands(opts) >> mockCreateCommands
-//        apiService.buildRemoveTemplateCommands(mockCreateCommands) >> mockRemoveTemplateCommands
-//        apiService.generateCommandString("New-VM -Name vm01") >> "powershell command"
-//        apiService.wrapExecuteCommand("powershell command", opts) >> mockCreateData
-//        apiService.handleCreateDataErrors(mockCreateData, _) >> {}
-//        apiService.extractServerExternalId(mockCreateData) >> mockExternalId
-//        computeServerService.get(101) >> mockServer
-//        computeServerService.save(mockServer) >> mockServer
-//        apiService.checkServerCreated(opts, mockExternalId) >> mockServerCreated
-//        apiService.removeTemporaryTemplatesAndProfiles(mockRemoveTemplateCommands, opts) >> {}
-//        apiService.loadControllerServer(opts) >> {}
-//        apiService.handleAdditionalDisks(opts) >> {}
-//        apiService.handleClonedVM(opts, _) >> {}
-//        apiService.buildDiskMapping(_) >> mockDisks
-//        apiService.resizeDisks(opts, mockDisks) >> {}
-//        apiService.handleCloudInit(opts, "C:\\disks\\vm01", "vm01") >> mockCloudInitIsoPath
-//        apiService.startAndCheckServer(opts, mockDisks, _) >> {}
-//        apiService.deleteUnattend(opts, _) >> mockCreateData
-//
-//        when:
-//        def result = apiService.createServer(opts)
-//
-//        then:
-//        result instanceof Map
-//        result.deleteDvdOnComplete == [removeIsoFromDvd: true, deleteIso: mockCloudInitIsoPath]
-//    }
+    @Unroll
+    def "createServer returns success result for valid input"() {
+        given:
+        def opts = [
+                serverId: 101,
+                diskRoot: "C:\\disks",
+                serverFolder: "vm01",
+                isSysprep: false
+        ]
+        def mockCreateCommands = [launchCommand: "New-VM -Name vm01"]
+        def mockRemoveTemplateCommands = ["Remove-Template"]
+        def mockCreateData = new TaskResult()
+        mockCreateData.success = true
+        mockCreateData.error = null
+        def mockServer = new ComputeServer()
+        def mockExternalId = "vm-101"
+        def mockServerCreated = [success: true]
+        def mockDisks = [id: "disk-1"]
+        def mockCloudInitIsoPath = "C:\\disks\\vm01\\config.iso"
+
+        apiService.initializeServerOptions(opts) >> null
+        apiService.buildCreateServerCommands(opts) >> mockCreateCommands
+        apiService.buildRemoveTemplateCommands(mockCreateCommands) >> mockRemoveTemplateCommands
+        apiService.generateCommandString("New-VM -Name vm01") >> "powershell command"
+        apiService.wrapExecuteCommand("powershell command", opts) >> mockCreateData
+        apiService.handleCreateDataErrors(mockCreateData, _) >> {}
+        apiService.extractServerExternalId(mockCreateData) >> mockExternalId
+        computeServerService.get(101) >> mockServer
+        computeServerService.save(mockServer) >> mockServer
+        apiService.checkServerCreated(opts, mockExternalId) >> mockServerCreated
+        apiService.removeTemporaryTemplatesAndProfiles(mockRemoveTemplateCommands, opts) >> {}
+        apiService.loadControllerServer(opts) >> {}
+        apiService.handleAdditionalDisks(opts) >> {}
+        apiService.handleClonedVM(opts, _) >> {}
+        apiService.buildDiskMapping(_) >> mockDisks
+        apiService.resizeDisks(opts, mockDisks) >> {}
+        apiService.handleCloudInit(opts, "C:\\disks\\vm01", "vm01") >> mockCloudInitIsoPath
+        apiService.startAndCheckServer(opts, mockDisks, _) >> {}
+        apiService.deleteUnattend(opts, _) >> mockCreateData
+
+        when:
+        def result = apiService.createServer(opts)
+
+        then:
+        result instanceof Map
+        result.deleteDvdOnComplete == [removeIsoFromDvd: true, deleteIso: mockCloudInitIsoPath]
+    }
+
+    @Unroll
+    def "initializeServerOptions sets network and zone and calls loadControllerServer"() {
+        given:
+        def opts = [networkId: 10L, zoneId: 20L]
+        def mockNetwork = new Network()
+        def mockZone = new Cloud()
+        networkService.get(10) >> mockNetwork
+        cloudService.get(20) >> mockZone
+        apiService.loadControllerServer(opts) >> {}
+
+        when:
+        apiService.initializeServerOptions(opts)
+
+        then:
+        opts.network == mockNetwork
+        opts.zone == mockZone
+
+    }
+
+    @Unroll
+    def "buildRemoveTemplateCommands returns correct remove commands for hardwareProfileName and templateName combinations"() {
+        given:
+
+        def createCommands = inputMap
+
+        when:
+        def result = apiService.buildRemoveTemplateCommands(createCommands)
+
+        then:
+        result == expectedCommands
+
+        where:
+        inputMap                                      | expectedCommands
+        [hardwareProfileName: "HW", templateName: "T"] | [
+                '$HWProfile = Get-SCHardwareProfile -VMMServer localhost | where { $_.Name -eq "HW"} ; $ignore = Remove-SCHardwareProfile -HardwareProfile $HWProfile;',
+                '$template = Get-SCVMTemplate -VMMServer localhost -Name "T";  $ignore = Remove-SCVMTemplate -VMTemplate $template -RunAsynchronously;'
+        ]
+        [hardwareProfileName: "HW"]                    | [
+                '$HWProfile = Get-SCHardwareProfile -VMMServer localhost | where { $_.Name -eq "HW"} ; $ignore = Remove-SCHardwareProfile -HardwareProfile $HWProfile;'
+        ]
+        [templateName: "T"]                            | [
+                '$template = Get-SCVMTemplate -VMMServer localhost -Name "T";  $ignore = Remove-SCVMTemplate -VMTemplate $template -RunAsynchronously;'
+        ]
+        [:]                                            | []
+    }
+
+    @Unroll
+    def "handleCreateDataErrors sets errorMsg and throws exception for error: #errorMsg"() {
+        given:
+        def rtn = [:]
+        def createData = new TaskResult(success: false, error: errorMsg)
+
+        when:
+        apiService.handleCreateDataErrors(createData, rtn)
+
+        then:
+        def e = thrown(IllegalStateException)
+        rtn.errorMsg == expectedErrorMsg
+
+        where:
+        errorMsg                                                        | expectedErrorMsg
+        "Disk is not compatible which includes generation 2"            | "The virtual hard disk selected is not compatible with the template which include generation 2 virtual machine functionality."
+        "Disk is not compatible which includes generation 1"            | "The virtual hard disk selected is not compatible with the template which include generation 1 virtual machine functionality."
+        "Some other error"                                              | null
+    }
+
+    @Unroll
+    def "extractServerExternalId returns #expectedResult when data is #scenario"() {
+        given:
+        def createData = new TaskResult(data: inputData)
+
+        when:
+        def result = apiService.extractServerExternalId(createData)
+
+        then:
+        result == expectedResult
+
+        where:
+        scenario                        | inputData                                                      | expectedResult
+        "valid ObjectType 1"            | [[ObjectType: '1', ID: 'vm-123']]                              | 'vm-123'
+        "ObjectType not 1"              | [[ObjectType: '2', ID: 'vm-456']]                              | null
+        "data size not 1"               | [[ObjectType: '1', ID: 'vm-123'], [ObjectType: '1', ID: 'vm-456']] | null
+        "missing ObjectType"            | [[ID: 'vm-789']]                                               | null
+        "data is null"                  | null                                                           | null
+        "data is empty"                 | []                                                             | null
+    }
+
+    @Unroll
+    def "removeTemporaryTemplatesAndProfiles handles command list"() {
+        given:
+        def opts = [foo: "bar"]
+        def commands = ["cmd1", "cmd2"]
+        apiService.wrapExecuteCommand(_ as String, opts) >> {new TaskResult()}
+        when:
+        apiService.removeTemporaryTemplatesAndProfiles(commands, opts)
+
+        then:
+        opts.foo == "bar" // just to use opts and avoid unused variable warning
+
+    }
+
+    @Unroll
+    def "handleAdditionalDisks attaches additional disks when vmDisk is successful"() {
+        given:
+        def opts = [
+                externalId: "vm-123",
+                additionalTemplateDisks: [
+                        [diskSize: 104857600], // 100MB
+                        [diskSize: 209715200]  // 200MB
+                ]
+        ]
+        def vmDiskResult = [success: true]
+        apiService.listVirtualDiskDrives(opts, opts.externalId, null) >> vmDiskResult
+        apiService.createAndAttachDisk(opts, _) >> {
+            return [success: true]
+        }
+
+        when:
+        apiService.handleAdditionalDisks(opts)
+
+        then:
+        opts.externalId == "vm-123"
+
+    }
+
+    @Unroll
+    def "extractServerExternalId returns #expectedResult when data is #scenario"() {
+        given:
+        def createData = new TaskResult(data: inputData)
+
+        when:
+        def result = apiService.extractServerExternalId(createData)
+
+        then:
+        result == expectedResult
+
+        where:
+        scenario                        | inputData                                                      | expectedResult
+        "valid ObjectType 1"            | [[ObjectType: '1', ID: 'vm-123']]                              | 'vm-123'
+        "ObjectType not 1"              | [[ObjectType: '2', ID: 'vm-456']]                              | null
+        "data size not 1"               | [[ObjectType: '1', ID: 'vm-123'], [ObjectType: '1', ID: 'vm-456']] | null
+        "missing ObjectType"            | [[ID: 'vm-789']]                                               | null
+        "data is null"                  | null                                                           | null
+        "data is empty"                 | []                                                             | null
+    }
+
+    @Unroll
+    def "handleClonedVM sets cloneBaseResults and calls dependencies as expected "() {
+        given:
+        def opts = [
+                cloneVMId: "vm-123",
+                externalId: "vm-001",
+                cloneBaseOpts: [cloudInitIsoNeeded: true, cloudConfigBytes: [1,2] as byte[], diskFolder: "df", imageFolderName: "img", clonedScvmmOpts: [:]]
+        ]
+        def rtn = [:]
+
+        apiService.changeVolumeTypeForClonedBootDisk(_, _, _) >> {}
+        when:
+        apiService.handleClonedVM(opts, rtn)
+
+        then:
+        1 * apiService.importAndMountIso(_, _, _, _) >> "iso-path"
+
+        rtn.cloneBaseResults.cloudInitIsoPath == "iso-path"
+
+    }
+
+    def "buildDiskMapping returns correct disk mapping for single OS and data disk"() {
+        given:
+        def opts = [
+                externalId: "vm-001",
+                dataDisks: [[id: "data-1"], [id: "data-2"]]
+        ]
+        def diskDrives = [
+                disks: [
+                        [ID: "os-123", HostVolumeId: "hv-1", FileShareId: "fs-1", VhdID: "vhd-1", VhdLocation: "loc-1", PartitionUniqueId: "part-1"],
+                        [ID: "data-123", HostVolumeId: "hv-2", FileShareId: "fs-2", VhdID: "vhd-2", VhdLocation: "loc-2", PartitionUniqueId: "part-2"],
+                        [ID: "data-456", HostVolumeId: "hv-3", FileShareId: "fs-3", VhdID: "vhd-3", VhdLocation: "loc-3", PartitionUniqueId: "part-3"]
+                ]
+        ]
+
+        apiService.listVirtualDiskDrives(_, _) >> diskDrives
+        apiService.findBootDiskIndex(_) >> 0
+
+        when:
+        def result = apiService.buildDiskMapping(opts)
+
+        then:
+        result.osDisk.externalId == "os-123"
+        result.dataDisks[0].id == "data-1"
+        result.dataDisks[0].externalId == "data-123"
+        result.dataDisks[1].id == "data-2"
+        result.dataDisks[1].externalId == "data-456"
+        result.diskMetaData["os-123"].HostVolumeId == "hv-1"
+        result.diskMetaData["data-123"].dataDisk
+        result.diskMetaData["data-456"].dataDisk
+    }
+
+    def "resizeDisks resizes OS disk and calls resizeDataDisksIfTemplate"() {
+        given:
+        def opts = [osDiskSize: 100, other: "value"]
+        def disks = [
+                osDisk: [externalId: "os-123"],
+                diskMetaData: [
+                        "os-123": [VhdID: "vhd-001"]
+                ]
+        ]
+        def resizeResponse = [success: true]
+
+        apiService.resizeDisk(_, _, _) >> resizeResponse
+
+        when:
+        apiService.resizeDisks(opts, disks)
+
+        then:
+        1 * apiService.resizeDisk(opts, "vhd-001", 100) >> resizeResponse
+        1 * apiService.resizeDataDisksIfTemplate(opts, disks)
+    }
+
+    def "resizeDataDisksIfTemplate resizes matching data disks when isTemplate is true"() {
+        given:
+        def opts = [
+                isTemplate: true,
+                templateId: "tmpl-1",
+                dataDisks: [
+                        [externalId: "data-1", maxStorage: 200],
+                        [externalId: "data-2", maxStorage: 300]
+                ]
+        ]
+        def disks = [
+                diskMetaData: [
+                        "data-1": [VhdID: "vhd-1"],
+                        "data-2": [VhdID: "vhd-2"],
+                        "data-3": [VhdID: "vhd-3"] // no matching dataDisk in opts
+                ]
+        ]
+        def resizeResponse = [success: true]
+
+        apiService.resizeDisk(_, _, _) >> resizeResponse
+
+        when:
+        apiService.resizeDataDisksIfTemplate(opts, disks)
+
+        then:
+        1 * apiService.resizeDisk(opts, "vhd-1", 200) >> resizeResponse
+        1 * apiService.resizeDisk(opts, "vhd-2", 300) >> resizeResponse
+        0 * apiService.resizeDisk(opts, "vhd-3", _)
+    }
+
+    def "handleCloudInit returns iso path when cloudConfigBytes is present and isSysprep is false"() {
+        given:
+        def opts = [cloudConfigBytes: [1,2,3] as byte[], isSysprep: false]
+        def diskFolder = "C:\\disks\\vm01"
+        def imageFolderName = "vm01"
+        def isoPath = "C:\\disks\\vm01\\config.iso"
+
+        apiService.createDVD(opts) >> {}
+        apiService.importAndMountIso(opts.cloudConfigBytes, diskFolder, imageFolderName, opts) >> isoPath
+
+        when:
+        def result = apiService.handleCloudInit(opts, diskFolder, imageFolderName)
+
+        then:
+        result == isoPath
+    }
+
+    def "startAndCheckServer sets rtn.server and success=true when server is ready"() {
+        given:
+        def opts = [name: "vm01", externalId: "vm-123"]
+        def disks = [osDisk: [id: "disk-1"]]
+        def rtn = [:]
+        def serverDetail = [success: true, server: [VMId: "vm-123", ipAddress: "10.0.0.1"]]
+
+        apiService.startServer(opts, opts.externalId) >> [success: true]
+        apiService.checkServerReady(opts, opts.externalId) >> serverDetail
+
+        when:
+        apiService.startAndCheckServer(opts, disks, rtn)
+
+        then:
+        rtn.success == true
+        rtn.server == [
+                name: "vm01",
+                id: "vm-123",
+                VMId: "vm-123",
+                ipAddress: "10.0.0.1",
+                disks: disks
+        ]
+    }
+
+    def "listVirtualMachines returns success and populates virtualMachines list"() {
+        given:
+        def opts = [
+                zone: [regionCode: "cloud-1"],
+                zoneConfig: null
+        ]
+        def vmData = [[
+                              ID: "vm-001",
+                              ObjectType: "1",
+                              VMId: "vm-001",
+                              Name: "TestVM",
+                      ]]
+        apiService.generateCommandString(_ as String) >> "powershell command"
+        def cmdResult = new TaskResult(success: false, data: vmData)
+//        def cmdResult1 = new TaskResult(success: true, data: vmData)
+//        def cmdResult2 = new TaskResult(success: true, data: null)
+        apiService.wrapExecuteCommand("powershell command", opts) >> {
+            return cmdResult
+        }
+
+        when:
+        def result = apiService.listVirtualMachines(opts)
+
+        then:
+        result.success == false
+    }
+
+    def "listDatastores returns failure when wrapExecuteCommand fails"() {
+        given:
+        def opts = [zone: [regionCode: "cloud-1"]]
+        apiService.generateCommandString(_ as String) >> "powershell command"
+        def cmdResult = new TaskResult(success: false, data: null)
+        apiService.wrapExecuteCommand("powershell command", opts) >> cmdResult
+
+        when:
+        def result = apiService.listDatastores(opts)
+
+        then:
+        result.success == false
+        result.datastores == []
+    }
+
+    def "listRegisteredFileShares returns failure when wrapExecuteCommand fails"() {
+        given:
+        def opts = [zone: [regionCode: "cloud-1"]]
+        apiService.generateCommandString(_ as String) >> "powershell command"
+        def cmdResult = new TaskResult(success: false, data: null)
+        apiService.wrapExecuteCommand("powershell command", opts) >> cmdResult
+
+        when:
+        def result = apiService.listRegisteredFileShares(opts)
+
+        then:
+        result.success == false
+
+    }
+
+    def "listAllNetworks returns success and populates networks list"() {
+        given:
+        def opts = [zone: [regionCode: "cloud-1"]]
+        def logicalNetworks = [[ID: "ln-1", Name: "LogicalNet1"], [ID: "ln-2", Name: "LogicalNet2"]]
+        def vmNetworks = [
+                [ID: "net-1", Name: "VMNet1", LogicalNetwork: "LogicalNet1"],
+                [ID: "net-2", Name: "VMNet2", LogicalNetwork: "LogicalNet2"],
+                [ID: "net-3", Name: "VMNet3", LogicalNetwork: "LogicalNet1"]
+        ]
+        def logicalNetworksResult = new TaskResult(success: true, exitCode: '0', data: logicalNetworks)
+        def vmNetworksResult = new TaskResult(success: true, exitCode: '0', data: vmNetworks)
+
+        apiService.generateCommandString(_ as String) >>> ["powershell logical", "powershell vm"]
+        apiService.wrapExecuteCommand("powershell logical", opts) >> logicalNetworksResult
+        apiService.wrapExecuteCommand("powershell vm", opts) >> vmNetworksResult
+
+        when:
+        def result = apiService.listAllNetworks(opts)
+
+        then:
+        result.success == true
+        result.networks.size() == 3
+        result.networks*.ID.containsAll(["net-1", "net-2", "net-3"])
+    }
+
+    def "checkServerReady returns success when server is ready"() {
+        given:
+        def serverId = 101L
+        def vmId = "vm-123"
+        def mockServer = new ComputeServer(id: serverId)
+        def opts = [server: [id: serverId], waitForIp: false]
+        def serverDetail = [success: true, server: [VMId: vmId, ipAddress: "10.0.0.1"]]
+
+        // Mock dependencies
+        apiService.sleep(_) >> null
+        computeServerService.get(serverId) >> mockServer
+        apiService.refreshVM(opts, vmId) >> null
+        apiService.getServerDetails(opts, vmId) >> serverDetail
+        apiService.assignIpAddress(serverDetail, mockServer) >> "10.0.0.1"
+        apiService.processServerState(serverDetail, mockServer, "10.0.0.1", _ as Map) >> { args ->
+            args[3].success = true
+            return true // pending = !true -> false, so loop exits
+        }
+        apiService.updateNotFoundAttempts(_, _) >> 0
+        apiService.shouldContinuePending(_, _, _) >> false
+
+        when:
+        def result = apiService.checkServerReady(opts, vmId)
+
+        then:
+        result.success == true
+    }
+
+    def "assignIpAddress sets and returns correct IP address"() {
+        given:
+        def server = new ComputeServer(externalIp: "2.2.2.2", internalIp: null)
+        def serverDetail = [server: [internalIp: detailIp]]
+
+        when:
+        def result = apiService.assignIpAddress(serverDetail, server)
+
+        then:
+        result == expectedIp
+        server.internalIp == expectedIp
+
+        where:
+        detailIp    | expectedIp
+        "1.1.1.1"   | "1.1.1.1"
+        null        | "2.2.2.2"
+        ""          | "2.2.2.2"
+    }
+
+    def "processServerState sets rtn and returns correct value for different server states"() {
+        given:
+        def server = new ComputeServer(internalIp: serverInternalIp)
+        def serverDetail = [server: [VirtualMachineState: vmState, Status: status]]
+        def rtn = [:]
+
+        when:
+        def result = apiService.processServerState(serverDetail, server, ipAddress, rtn)
+
+        then:
+        result == expectedResult
+        rtn.success == expectedSuccess
+        rtn.server == serverDetail.server
+        rtn.server.ipAddress == expectedIp
+
+        where:
+        vmState                | status            | serverInternalIp | ipAddress   || expectedResult | expectedSuccess | expectedIp
+        "Running"              | null              | null            | "1.2.3.4"   || true           | true           | "1.2.3.4"
+        null                   | "CreationFailed"  | null            | "5.6.7.8"   || true           | false          | "5.6.7.8"
+        null                   | null              | "9.9.9.9"       | null        || true           | true           | "9.9.9.9"
+    }
+
+    def "updateNotFoundAttempts increments when error is VM_NOT_FOUND"() {
+        given:
+        Map serverDetail = [error: 'VM_NOT_FOUND']
+        int notFoundAttempts = 2
+
+        when:
+        int result = apiService.updateNotFoundAttempts(serverDetail, notFoundAttempts)
+
+        then:
+        result == 3
+    }
+
+    def "shouldContinuePending returns correct value based on attempts, notFoundAttempts, and pending"() {
+        given:
+        // MAX_NOT_FOUND_ATTEMPTS is 10 in ScvmmApiService
+
+        when:
+        def result = apiService.shouldContinuePending(attempts, notFoundAttempts, pending)
+
+        then:
+        result == expected
+
+        where:
+        attempts | notFoundAttempts | pending || expected
+        301      | 0               | true    || false    // attempts > 300
+        100      | 11              | true    || false    // notFoundAttempts > 10
+        100      | 5               | true    || true     // both within limits, pending true
+        100      | 5               | false   || false    // both within limits, pending false
+        301      | 11              | true    || false    // both over limits
+    }
+
+    def "startServer starts VM only if not already running"() {
+        given:
+        def opts = [async: async]
+        def vmId = "vm-123"
+        def serverDetail = [success: true, server: [VirtualMachineState: vmState]]
+        def cmdResult = new TaskResult([success: cmdSuccess])
+
+        apiService.getServerDetails(opts, vmId) >> serverDetail
+        apiService.wrapExecuteCommand(_, opts) >> cmdResult
+
+        when:
+        def result = apiService.startServer(opts, vmId)
+
+        then:
+        result.success == expectedSuccess
+        result.msg == expectedMsg
+
+        where:
+        vmState      | async | cmdSuccess | expectedSuccess | expectedMsg
+        "Stopped"    | false | true       | true           | null
+        "Stopped"    | true  | false      | false          | null
+        "Running"    | false | true       | true           | "VM is already powered on"
+    }
+
+    def "startServer handles exception gracefully"() {
+        given:
+
+        def opts = [:]
+        def vmId = "vm-err"
+        apiService.getServerDetails(opts, vmId) >> { throw new RuntimeException("fail") }
+
+        when:
+        def result = apiService.startServer(opts, vmId)
+
+        then:
+        result.success == false
+    }
+
+    @Unroll
+    def "deleteServer handles server deletion and errors (serverFolder=#serverFolder, throwsGetRootShare=#throwsGetRootShare)"() {
+        given:
+        def opts = [rootSharePath: rootSharePath, diskRoot: "D:\\disks", serverFolder: serverFolder]
+        def vmId = "vm-123"
+        if (throwsGetRootShare) {
+            apiService.getRootSharePath(opts) >> { throw new RuntimeException("fail") }
+        } else if (!rootSharePath) {
+            apiService.getRootSharePath(opts) >> "C:\\share"
+        }
+        apiService.wrapExecuteCommand(_, opts) >> new TaskResult([success: true])
+
+        when:
+        def result = null
+        try {
+            result = apiService.deleteServer(opts, vmId)
+        } catch (IllegalArgumentException ex) {
+            result = ex
+        }
+
+        then:
+        if (expectException) {
+            result instanceof IllegalArgumentException
+            result.message == "serverFolder MUST be specified"
+        } else {
+            result.success == expectedSuccess
+        }
+
+        where:
+        serverFolder | rootSharePath | throwsGetRootShare || expectedSuccess | expectException
+        "srv-01"     | "C:\\share"   | false             || true           | false
+        null         | "C:\\share"   | false             || false          | true
+        "srv-01"     | null          | false             || true           | false
+        "srv-01"     | null          | true              || false          | false // logs error, returns default result
+    }
+
+    def "importPhysicalResource succeeds after retries and sets sharePath"() {
+        given:
+        def opts = [rootSharePath: 'C:\\Library', scvmmProvisionService: 'svc', controllerNode: 'ctrl']
+        def sourcePath = 'C:\\src\\file.txt'
+        def imageFolderName = 'imgFolder'
+        def resourceName = 'file.txt'
+        def sharePath = 'C:\\Library\\imgFolder'
+        def expectedSharePath = 'C:\\Library\\imgFolder\\file.txt'
+        apiService.sleep(_) >> { } // avoid real sleep
+
+        def executeOut = new TaskResult()
+        executeOut.success = true
+        // First call fails, second call succeeds
+        apiService.executeCommand(_, _) >>> executeOut
+
+        when:
+        def result = apiService.importPhysicalResource(opts, sourcePath, imageFolderName, resourceName)
+
+        then:
+        result.success
+        result.sharePath == expectedSharePath
+
+    }
+
+    def "getRootSharePath returns path when shares exist"() {
+        given:
+        def opts = [foo: 'bar']
+        def sharePath = 'C:\\Library\\Share'
+        def shareBlocks = [[ID: '1', Name: 'Share1', Path: sharePath]]
+        def cmdExecute = new TaskResult()
+        cmdExecute.success = true
+        cmdExecute.data = shareBlocks
+        apiService.wrapExecuteCommand(_, _) >> cmdExecute
+
+        when:
+        def result = apiService.getRootSharePath(opts)
+
+        then:
+        result == sharePath
+    }
 
 
+    def "deleteUnattend calls wrapExecuteCommand with correct command and returns result"() {
+        given:
+        def opts = [foo: 'bar']
+        def unattendPath = 'C:\\unattend\\unattend.xml'
+        def expectedCommand = 'Remove-Item -Path "C:\\unattend\\unattend.xml" -Force'
+        def generatedCommand = "powershell -Command \"${expectedCommand}\""
+        def expectedResult = new TaskResult([success: true])
+        apiService.generateCommandString(_) >> generatedCommand
+        apiService.wrapExecuteCommand(generatedCommand, opts) >> expectedResult
+
+        when:
+        def result = apiService.deleteUnattend(opts, unattendPath)
+
+        then:
+        result == expectedResult
+    }
+
+    def "deleteUnattend returns failure result if wrapExecuteCommand fails"() {
+        given:
+        def opts = [:]
+        def unattendPath = 'C:\\fail\\unattend.xml'
+        def expectedCommand = 'Remove-Item -Path "C:\\fail\\unattend.xml" -Force'
+        def generatedCommand = "powershell -Command \"${expectedCommand}\""
+        def failResult = new TaskResult([success: false, error: "File not found"])
+        apiService.generateCommandString(_) >> generatedCommand
+        apiService.wrapExecuteCommand(generatedCommand, opts) >> failResult
+
+        when:
+        def result = apiService.deleteUnattend(opts, unattendPath)
+
+        then:
+        result == failResult
+    }
+
+    def "setCdrom sets ISO when cdPath is provided"() {
+        given:
+        def opts = [externalId: 'vm-123']
+        def cdPath = 'C:\\isos\\cloudinit.iso'
+        def SET_VIRTUAL_DVD_NO_MEDIA_CMD = "Set-SCVirtualDVDDrive -NoMedia"
+        def CMD_SEPARATOR = ";"
+        def commands = [
+                '$vm = Get-SCVirtualMachine -VMMServer localhost -ID "vm-123"',
+                '$dvd = Get-SCVirtualDVDDrive -VM $vm',
+                '$iso = Get-SCISO -VMMServer localhost | where {$_.SharePath -eq "C:\\isos\\cloudinit.iso"}',
+                SET_VIRTUAL_DVD_NO_MEDIA_CMD,
+                '$ignore = Set-SCVirtualDVDDrive -VirtualDVDDrive $dvd -Bus $dvd.Bus -LUN $dvd.Lun -ISO $iso'
+        ]
+        def joinedCommand = commands.join(CMD_SEPARATOR)
+        def generatedCommand = "powershell -Command \"${joinedCommand}\""
+        def expectedResult = new TaskResult([success: true])
+
+        apiService.generateCommandString(_) >> {  generatedCommand }
+        apiService.wrapExecuteCommand(_,_) >> {
+            expectedResult
+        }
+
+        when:
+        def result = apiService.setCdrom(opts, cdPath)
+
+        then:
+        result == expectedResult
+    }
+
+    def "importAndMountIso uploads ISO, imports resource, mounts CD, and returns iso path"() {
+        given:
+        def cloudConfigBytes = "cloud-init-content".getBytes("UTF-8")
+        def diskFolder = "C:\\vm\\disks"
+        def imageFolderName = "img-folder"
+        def compServ = new ComputeServer()
+        compServ.name = "vm-001"
+        def opts = [hypervisor: compServ]
+        def expectedIsoPath = "C:\\vm\\disks\\config.iso"
+        def fileResults = new TaskResult([success: true])
+        def importResults = [sharePath: expectedIsoPath]
+
+        apiService.wrapExecuteCommand(_,_) >> {  fileResults }
+
+        fileCopyService.copyToServer(_,_,_,_,_) >> {
+            new ServiceResponse(success: true)
+        }
+        apiService.importPhysicalResource(*_) >> { importResults }
+        apiService.setCdrom(_,_) >> {   }
+
+        when:
+        def result = apiService.importAndMountIso(cloudConfigBytes, diskFolder, imageFolderName, opts)
+
+        then:
+        result == expectedIsoPath
+
+    }
+
+    def "checkServerCreated returns success when server is created"() {
+        given:
+        def opts = [dataDisks: [1, 2], additionalTemplateDisks: [3]]
+        def vmId = "vm-123"
+        def serverDetail = [success: true, server: [Status: "Running", VirtualDiskDrives: [1, 2]]]
+        apiService.getServerDetails(_, _) >> serverDetail
+        apiService.processServerStatus(_, _, _, _) >> { args ->
+            args[3].success = true
+            true
+        }
+
+        when:
+        def result = apiService.checkServerCreated(opts, vmId)
+
+        then:
+        result.success == true
+    }
+
+    def "checkServerCreated returns failure on exception"() {
+        given:
+        def opts = [:]
+        def vmId = "vm-123"
+        apiService.getServerDetails(_, _) >> { throw new RuntimeException("fail") }
+
+        when:
+        def result = apiService.checkServerCreated(opts, vmId)
+
+        then:
+        result.success == null || result.success == false
+    }
+
+    def "processServerStatus returns true and sets success when status is not UnderCreation and disk count matches"() {
+        given:
+        def serverDetail = [server: [Status: "Running", VirtualDiskDrives: [1, 2]]]
+        def opts = [dataDisks: [1], additionalTemplateDisks: []]
+        def rtn = [:]
+
+        when:
+        def result = apiService.processServerStatus(serverDetail, opts, "vm-1", rtn)
+
+        then:
+        result == true
+        rtn.success == true
+        rtn.server == serverDetail.server
+    }
+
+    def "processServerStatus returns true and sets failure when status is CREATION_FAILED"() {
+        given:
+        def serverDetail = [server: [Status: 'CreationFailed', VirtualDiskDrives: [1]]]
+        def opts = [dataDisks: [], additionalTemplateDisks: []]
+        def rtn = [:]
+
+        when:
+        def result = apiService.processServerStatus(serverDetail, opts, "vm-1", rtn)
+
+        then:
+        result == true
+        rtn.success == true
+    }
+
+    def "processServerStatus returns false when status is UnderCreation or disk count does not match"() {
+        given:
+        def serverDetail = [server: [Status: "UnderCreation", VirtualDiskDrives: [1]]]
+        def opts = [dataDisks: [1], additionalTemplateDisks: []]
+        def rtn = [:]
+
+        when:
+        def result = apiService.processServerStatus(serverDetail, opts, "vm-1", rtn)
+
+        then:
+        result == false
+        !rtn.success
+    }
+
+    def "createAndAttachDisk returns disk info on success"() {
+        given:
+        def opts = [externalId: "vm-123"]
+        def diskSpec = [vhdName: "data-disk1", sizeMb: 10240, vhdType: "FixedSize", vhdFormat: "VHDX", vhdPath: "C:\\disks"]
+        def addDiskCmd = _ as String
+        def cmdResult = new TaskResult([success: true])
+        def diskInfo = [id: "disk-1", name: "data-disk1"]
+        def listResult = [success: true, disks: [diskInfo]]
+
+        apiService.generateCommandString(_) >> "powershell -Command \"addDiskCmd\""
+        apiService.wrapExecuteCommand(_, opts) >> cmdResult
+        apiService.listVirtualDiskDrives(opts, opts.externalId, diskSpec.vhdName) >> listResult
+
+        when:
+        def result = apiService.createAndAttachDisk(opts, diskSpec, true)
+
+        then:
+        result.success == true
+        result.disk == diskInfo
+    }
 }

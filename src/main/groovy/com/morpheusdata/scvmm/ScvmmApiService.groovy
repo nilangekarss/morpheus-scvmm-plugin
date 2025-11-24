@@ -2169,7 +2169,7 @@ For (\$i=0; \$i -le 10; \$i++) {
     String importAndMountIso(byte[] cloudConfigBytes, String diskFolder, String imageFolderName, Map opts) {
         log.debug "importAndMountIso: ${diskFolder}, ${imageFolderName}, ${opts}"
         def cloudInitIsoPath
-        def isoAction = [inline    : true, action: 'rawfile', content: cloudConfigBytes.encodeAsBase64(),
+        def isoAction = [inline    : true, action: 'rawfile', content: cloudConfigBytes.encodeBase64(),
                          targetPath: "${diskFolder}\\config.iso".toString(), opts: [:]]
 
         InputStream inputStream = new ByteArrayInputStream(cloudConfigBytes)
@@ -3284,5 +3284,9 @@ For (\$i=0; \$i -le 10; \$i++) {
         )
                 ? cloud.accountCredentialData?.password
                 : cloud.getConfigProperty('password')
+    }
+
+    LogInterface getLog() {
+        return this.log
     }
 }
