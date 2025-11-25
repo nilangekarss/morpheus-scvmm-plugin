@@ -61,7 +61,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     private MorpheusProcessService processService
     private MorpheusSynchronousWorkloadService workloadService
     private MorpheusSynchronousWorkloadTypeService workloadTypeService
-    // private MorpheusSynchronousProvisionService provisionService
     private MorpheusWorkloadTypeService asyncWorkloadTypeService
     private MorpheusCloudService asyncCloudService
     private MorpheusSynchronousCloudService cloudService
@@ -71,8 +70,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     private MorpheusStorageVolumeService asyncStorageVolumeService
     private MorpheusSynchronousVirtualImageService virtualImageService
     private MorpheusVirtualImageService asyncVirtualImageService
-    //private ComputeServer mockedComputerServer
-    //private WorkloadType mockedWorkloadType
+
     @BeforeEach
     void setup() {
         // Setup mock context and services
@@ -96,7 +94,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         asyncStorageVolumeService = Mock(MorpheusStorageVolumeService)
         virtualImageService = Mock(MorpheusSynchronousVirtualImageService)
         asyncVirtualImageService = Mock(MorpheusVirtualImageService)
-        // provisionService = Mock(MorpheusSynchronousProvisionService)
 
         def morpheusServices = Mock(MorpheusServices) {
             getComputeServer() >> computeServerService
@@ -106,7 +103,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
             getStorageVolume() >> storageVolumeService
             getVirtualImage() >> virtualImageService
             getResourcePermission() >> resourcePermissionService
-            // getProvision() >> provisionService
         }
         def morpheusAsyncServices = Mock(MorpheusAsyncServices) {
             getCloud() >> asyncCloudService
@@ -167,12 +163,9 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
         def opts = [noAgent: true]
 
-
         // Setup required response data
         def scvmmOpts = ProvisionDataHelper.runWorkload_getScvmmOpts(account, cloud)
-
         def controllerServer = ProvisionDataHelper.runWorkload_getControllerServer()
-
         def datastore = new Datastore(id: 5L, name: "datastore1", externalId: "ds-123")
         def node = new ComputeServer(id: 2L, name: "node-01")
         // Add this to your test setup
@@ -190,7 +183,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         def mockedCloudFiles = [mockCloudFile]
         // Create a Single that returns the list
         def mockFilesSingle = Single.just(mockedCloudFiles)
-
 
         provisionProvider.getHostAndDatastore(_, _, _, _, _, _, _, _, _) >> {
                 return hostAndDatastoreResponse
@@ -322,22 +314,10 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         def asyncComputeServerInterfaceService = Mock(MorpheusComputeServerInterfaceService)
         asyncComputeServerService.getComputeServerInterface() >> asyncComputeServerInterfaceService
         // For case with privateIp, mock the server interface create/save methods
-        def macAddress = "00:11:22:33:44:55"
-        // def updatedServer = new ComputeServer(id: 100L)
-        def savedInterface = new ComputeServerInterface(
-                id: 1L,
-                name: "eth0",
-                ipAddress: "192.168.1.100",
-                publicIpAddress: "10.0.0.100",
-                macAddress: macAddress,
-                primaryInterface: true,
-                displayOrder: 1,
-                addresses: [new NetAddress(type: NetAddress.AddressType.IPV4, address: "192.168.1.100")]
-        )
+        def savedInterface = ProvisionDataHelper.runWorkload_savedInterface()
         asyncComputeServerInterfaceService.create(_, _) >> {
             return  Single.just([savedInterface])
         }
-
 
         when:
         def response = provisionProvider.runWorkload(workload, workloadRequest, opts)
@@ -390,7 +370,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         def mockedStorageVolTypeService =  Mock(MorpheusStorageVolumeTypeService)
         asyncStorageVolumeService.getStorageVolumeType() >> mockedStorageVolTypeService
         mockedStorageVolTypeService.list(_) >> Observable.fromIterable(mockStorageTypes)
-        //storageVolumeService.listStorageVolumeTypes() >> mockStorageTypes
 
         when:
         def result = provisionProvider.getRootVolumeStorageTypes()
@@ -407,7 +386,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         def mockedStorageVolTypeService =  Mock(MorpheusStorageVolumeTypeService)
         asyncStorageVolumeService.getStorageVolumeType() >> mockedStorageVolTypeService
         mockedStorageVolTypeService.list(_) >> Observable.fromIterable(mockStorageTypes)
-
 
         when:
         def result = provisionProvider.getDataVolumeStorageTypes()
@@ -503,46 +481,9 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         provisionProvider.createDefaultInstanceType() == false
     }
 
-//    @Unroll
-//    def "validateHost should #scenario"() {
-//        given:
-//        def server = Mock(ComputeServer) {
-//            getComputeServerType() >> Mock(ComputeServerType) {
-//                isVmHypervisor() >> isVmHypervisor
-//            }
-//        }
-//        mockApiService.validateServerConfig(expectedApiArgs) >> {
-//            return apiResponse
-//        }
-//
-//        when:
-//        def response = provisionProvider.validateHost(server, opts)
-//
-//        then:
-//        if (apiCallExpected) {
-//            1 * mockApiService.validateServerConfig(expectedApiArgs)
-//            response.success == expectedSuccess
-//        }
-//
-//        if (errorCheck) {
-//            response.errors == validationErrors
-//        }
-//
-//        where:
-//        scenario                                    | isVmHypervisor | opts                                              | apiCallExpected | expectedApiArgs                                                         | apiResponse                                                         | expectedSuccess | errorCheck | validationErrors
-//        "return success when server is a VM hypervisor" | true           | [networkInterfaces:[[network:[id:123L]]], config:[scvmmCapabilityProfile:"Hyper-V", nodeCount:1]]                                              | false           | null                                                                   | null                                                                | true           | false      | null
-//        //"validate server config when not VM hypervisor"  | false          | [networkInterfaces:[[network:[id:123L]]], config:[scvmmCapabilityProfile:"Hyper-V", nodeCount:1]] | true            | [networkId:123L, scvmmCapabilityProfile:"Hyper-V", nodeCount:1]        | ServiceResponse.success()                                           | true           | false      | null
-//        //"handle network ID from interface field"         | false          | [networkInterface:[network:[id:123L]]]           | true            | [networkId:123L, scvmmCapabilityProfile:null, nodeCount:null]           | ServiceResponse.success()                                           | true           | false      | null
-//        //"handle network ID from config field"            | false          | [config:[networkInterface:[network:[id:123L]]]]  | true            | [networkId:123L, scvmmCapabilityProfile:null, nodeCount:null]           | ServiceResponse.success()                                           | true           | false      | null
-//        //"handle network ID from interfaces array"        | false          | [networkInterfaces:[[network:[id:123L]]]]        | true            | [networkId:123L, scvmmCapabilityProfile:null, nodeCount:null]           | ServiceResponse.success()                                           | true           | false      | null
-//        //"return error when validation fails"             | false          | [networkInterfaces:[[network:[id:123L]]]]        | true            | [networkId:123L, scvmmCapabilityProfile:null, nodeCount:null]           | new ServiceResponse(success:false, errors:[error:"Invalid configuration"]) | false          | true       | [error:"Invalid configuration"]
-//        //"handle exceptions gracefully"                   | false          | [networkInterfaces:[[network:[id:123L]]]]        | true            | [networkId:123L, scvmmCapabilityProfile:null, nodeCount:null]           | { throw new RuntimeException("Test exception") }                    | true           | false      | null
-//    }
-
     @Unroll
     def "getVolumePathForDatastore should return #expectedPath for datastore #datastoreDescription"() {
         given:
-
         def datastore = datastoreInput ? new Datastore(id: 123L, name: "test-datastore") : null
 
         // Mock the storage volume response
@@ -590,7 +531,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
                 (datastoreParam == 'datastore2' ? datastore2 : null)
 
         // Setup computeServer/node
-
         def nodes = ProvisionDataHelper.getHostAndDatastore_ComuteServerNodes(cloud)
         def node1 = nodes[0]
         def node2 = nodes[1]
@@ -611,7 +551,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         if (mockVolumePathDatastore) {
             def dsForPath = mockVolumePathDatastore == 'datastore1' ? datastore1 : datastore2
             provisionProvider.getVolumePathForDatastore(dsForPath) >> "\\\\server\\path\\to\\volume"
-           // provisionProvider.getVolumePathForDatastore(mockVolumePathDatastore) >> "\\\\server\\path\\to\\volume"
         }
 
         // Configure mocks based on test scenario
@@ -626,7 +565,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         }
 
         if (searchForDatastores) {
-
             // Create proper list of datastore objects instead of using string
             def datastoreList = []
             if (datastoreResults == '[datastore1]') {
@@ -1495,12 +1433,10 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         workload.setConfigProperty("scvmmCapabilityProfile", "Hyper-V")
 
         // Mock the cloud network service get method
-        //def cloudNetworkService = Mock(MorpheusCloudNetworkService)
         cloudService.getNetwork() >> networkService
         networkService.get(1L) >> {
             return network
         }
-        //cloudService.getNetwork() >> cloudNetworkService
 
         // Mock the methods used in getScvmmContainerOpts
         provisionProvider.getContainerRootSize(workload) >> {
@@ -1558,29 +1494,11 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         )
 
         // Mock the various option methods
-        def cloudOpts = [
-                cloud: 1L,
-                cloudName: "test-cloud",
-                zoneId: 1L
-        ]
+        def cloudOpts = ProvisionDataHelper.DEFAULT_CLOUD_OPTS.clone()
 
-        def controllerOpts = [
-                controller: 10L,
-                sshHost: "10.0.0.5",
-                sshUsername: "admin",
-                sshPassword: "password123"
-        ]
+        def controllerOpts = ProvisionDataHelper.DEFAULT_CONTROLLER_OPTS.clone()
 
-        def containerOpts = [
-                vmId: "vm-123",
-                name: "vm-123",
-                memory: 4294967296L,
-                maxCpu: 1,
-                maxCores: 2,
-                hostname: "testVM",
-                networkId: 1L,
-                platform: "linux"
-        ]
+        def containerOpts = ProvisionDataHelper.DEFAULT_CONTAINER_OPTS.clone()
 
         // Mock the methods that are called inside getAllScvmmOpts
         provisionProvider.pickScvmmController(cloud) >> controllerServer
@@ -1834,29 +1752,11 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         )
 
         // Mock the various option methods
-        def cloudOpts = [
-                cloud: 1L,
-                cloudName: "test-cloud",
-                zoneId: 1L
-        ]
+        def cloudOpts = ProvisionDataHelper.DEFAULT_CLOUD_OPTS.clone()
 
-        def controllerOpts = [
-                controller: 10L,
-                sshHost: "10.0.0.5",
-                sshUsername: "admin",
-                sshPassword: "password123"
-        ]
+        def controllerOpts = ProvisionDataHelper.DEFAULT_CONTROLLER_OPTS.clone()
 
-        def serverOpts = [
-                vmId: "vm-123",
-                name: "vm-123",
-                memory: 4294967296L,
-                maxCpu: 1,
-                maxCores: 2,
-                hostname: "testVM",
-                networkId: 1L,
-                platform: "linux"
-        ]
+        def serverOpts = ProvisionDataHelper.DEFAULT_CONTAINER_OPTS.clone()
 
         // Mock the methods that are called inside getAllScvmmServerOpts
         provisionProvider.pickScvmmController(cloud) >> controllerServer
@@ -2087,20 +1987,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     def "test cloneParentCleanup successfully cleans up parent VM"() {
         given:
         // Create basic options map with all necessary nested properties
-        def scvmmOpts = [
-                cloneVMId: 'vm-123',
-                cloneContainerId: 100,
-                startClonedVM: true,
-                cloneBaseOpts: [
-                        clonedScvmmOpts: [
-                                controller: 1,
-                                hostId: 2
-                        ]
-                ],
-                deleteDvdOnComplete: [
-                        deleteIso: 'iso-file.iso'
-                ]
-        ]
+        def scvmmOpts = ProvisionDataHelper.cloneParentCleanup_getScvmmOpts()
 
         def serviceResponse = new ServiceResponse(success: true)
 
@@ -2139,9 +2026,6 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         asyncComputeServerService.updatePowerState(_, _) >> {
             return Single.just(dummyWorkload)
         }
-
-
-        // Verify all API methods were called exactly once
 
         when:
         provisionProvider.cloneParentCleanup(scvmmOpts, serviceResponse)

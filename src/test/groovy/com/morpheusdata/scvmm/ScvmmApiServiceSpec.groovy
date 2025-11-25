@@ -62,6 +62,13 @@ class ScvmmApiServiceSpec extends Specification {
     private MorpheusVirtualImageService asyncVirtualImageService
     private MorpheusSynchronousFileCopyService fileCopyService
 
+    static final Map DEFAULT_OPTS = [
+            sshHost    : 'scvmm-server',
+            sshUsername: 'admin',
+            sshPassword: 'password',
+            winrmPort  : '5985'
+    ]
+
     @BeforeEach
     void setup() {
         // Setup mock context and services
@@ -361,12 +368,8 @@ class ScvmmApiServiceSpec extends Specification {
         given:
         def originalVMId = "vm-original-123"
         def newVMId = "vm-new-456"
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+
+        def opts = DEFAULT_OPTS.clone()
 
         // Mock the command execution with a successful result
         morpheusContext.executeWindowsCommand(*_) >> Single.just([
@@ -632,20 +635,8 @@ class ScvmmApiServiceSpec extends Specification {
     def "getScvmmControllerOpts correctly extracts controller options from server"() {
         given:
         def cloud = new Cloud(id: 1L)
-        def server = new ComputeServer(
-                id: 10L,
-                name: "controller-01",
-                internalIp: "10.0.0.10",
-                sshUsername: "admin",
-                sshPassword: "securepass123",
-                sshHost: "10.0.0.10"
-        )
 
-        // Set the hypervisorConfig with the actual paths that match the implementation
-        server.setConfigProperty("hypervisorConfig", [
-                workingPath: "D:\\Working",
-                diskPath: "D:\\Disks"
-        ])
+        def server = ApiServiceDataHelper.scvmmControllerOpts_getServer()
 
         when:
         def result = apiService.getScvmmControllerOpts(cloud, server)
@@ -664,20 +655,11 @@ class ScvmmApiServiceSpec extends Specification {
         def cloud = new Cloud(id: 200L, name: "test-cloud")
         def hypervisor = new ComputeServer(id: 300L, name: "test-hypervisor")
 
-        // Mock the return values for the two component methods
-        def cloudOpts = [
-                zoneId: 200L,
-                cloudName: "test-cloud",
-                regionCode: "us-east-1",
-                rootSharePath: "\\\\server\\share"
-        ]
+        def cloudOpts = [zoneId: 200L, cloudName: "test-cloud", regionCode: "us-east-1",
+                         rootSharePath: "\\\\server\\share"]
 
         def controllerOpts = [
-                sshHost: "10.0.0.10",
-                sshUsername: "admin",
-                sshPassword: "password123",
-                hypervisor: hypervisor
-        ]
+                sshHost: "10.0.0.10", sshUsername: "admin", sshPassword: "password123", hypervisor: hypervisor]
 
         // Mock the methods that are called inside getScvmmZoneAndHypervisorOpts
         apiService.getScvmmCloudOpts(_, _, _) >> {
@@ -898,13 +880,7 @@ class ScvmmApiServiceSpec extends Specification {
     def "test deleteImage uses defaultRoot when zoneRoot is not provided"() {
         given:
         def imageName = "test-image"
-        def opts = [
-                // No zoneRoot specified
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         // Set the defaultRoot value
         apiService.defaultRoot = "C:\\MorpheusData"
@@ -1016,12 +992,7 @@ class ScvmmApiServiceSpec extends Specification {
     def "test updateServer handles different update scenarios correctly for #scenario"() {
         given:
         def vmId = "vm-12345"
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
         def updates = providedUpdates
 
         // Set up mocks for the command execution
@@ -1250,27 +1221,8 @@ class ScvmmApiServiceSpec extends Specification {
         given:
         def mockCloudFile = Mock(CloudFile)
         mockCloudFile.getName() >> "ubuntu-22.04.vhdx"
-
-        def containerImage = [
-                name          : "test-image",
-                minDisk       : 5,
-                minRam        : 512 * ComputeUtility.ONE_MEGABYTE,
-                virtualImageId: 42L,
-                tags          : 'morpheus, ubuntu',
-                imageType     : 'vhd',
-                containerType : 'vhd',
-                cloudFiles    : mockCloudFile
-        ]
-
-
-        def opts = [
-                image: containerImage,
-                rootSharePath: "\\\\server\\share",
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = ApiServiceDataHelper.insertContainerImage_getContainerImageNOpts()
+        opts.cloudFiles = mockCloudFile
 
         // Mock existing VHD in library
         def existingVhdData = '[{"ID": "vhd-12345"}]'
@@ -1342,12 +1294,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test getServerDetails #scenario"() {
         given:
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         // Setup mocks based on scenario
         if (shouldThrowException) {
@@ -1401,12 +1348,7 @@ class ScvmmApiServiceSpec extends Specification {
     def "test refreshVM successfully refreshes VM data"() {
         given:
         def externalId = "vm-12345"
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         // Mock the command execution with a successful result
         def commandOutput = [success: true, exitCode: '0', data: '{"Status":"Success"}']
@@ -1432,12 +1374,7 @@ class ScvmmApiServiceSpec extends Specification {
     def "test discardSavedState successfully discards VM saved state"() {
         given:
         def externalId = "vm-12345"
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         // Mock the command execution with a successful result
         def commandOutput = [success: true, exitCode: '0', data: '{"Status":"Success"}']
@@ -1465,12 +1402,7 @@ class ScvmmApiServiceSpec extends Specification {
     def "test discardSavedState handles exception gracefully"() {
         given:
         def externalId = "vm-12345"
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         when:
         def result = apiService.discardSavedState(opts, externalId)
@@ -1565,12 +1497,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test getScvmmServerInfo successfully retrieves server information"() {
         given:
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         // Mock executeCommand responses for each command
         def hostnameResponse = [success: true, data: 'SCVMM-SERVER-01']
@@ -1656,12 +1583,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test getCapabilityProfiles successfully retrieves capability profiles"() {
         given:
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         // Mock capability profiles data response
         def capabilityProfilesData = [
@@ -1700,12 +1622,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test listClouds successfully retrieves list of clouds"() {
         given:
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         // Mock clouds data response
         def cloudsData = [
@@ -1751,12 +1668,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test listTemplates successfully retrieves VM templates and VHDs"() {
         given:
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         // Mock template data response
         def templatesData = ApiServiceDataHelper.listTemplates_getTemplateData
@@ -1861,12 +1773,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test internalListHostGroups successfully retrieves host groups"() {
         given:
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         // Mock host groups data response
         def hostGroupsData = ApiServiceDataHelper.internalListHostGroups_getHostGroupData
@@ -1912,12 +1819,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test listLibraryShares successfully retrieves library shares"() {
         given:
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         // Mock library shares data response
         def librarySharesData = ApiServiceDataHelper.listLibraryShares_getLibraryShareData
@@ -2069,12 +1971,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test listHosts handles command execution failure"() {
         given:
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         // Mock generateCommandString
         apiService.generateCommandString(_) >> "powershell command"
@@ -2107,12 +2004,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test removeOrphanedResourceLibraryItems successfully removes orphaned ISOs and Scripts"() {
         given:
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         // Mock the command execution with a successful result
         def commandOutput = [success: true, exitCode: '0', data: '{"Status":"Success"}']
@@ -2349,12 +2241,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test listNetworkIPPools successfully retrieves IP pools and network mapping"() {
         given:
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         // Mock IP pools data response
         def ipPoolsData = ApiServiceDataHelper.listNetworkPools_getIpPoolsData
@@ -2423,12 +2310,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test reserveIPAddress with scenario: #scenario"() {
         given:
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         when:
         def result = apiService.reserveIPAddress(opts, poolId)
@@ -2470,12 +2352,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test releaseIPAddress with scenario: #scenario"() {
         given:
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         when:
         def result = apiService.releaseIPAddress(opts, poolId, ipId)
@@ -2518,12 +2395,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test listVirtualDiskDrives with scenario: #scenario"() {
         given:
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         when:
         def result = apiService.listVirtualDiskDrives(opts, externalId, vhdName)
@@ -2621,13 +2493,6 @@ class ScvmmApiServiceSpec extends Specification {
                 winrmPort: '5985'
         ]
 
-//        def cmdOut_success_rem_disk = new TaskResult([success: true, exitCode: '0'])
-//        def cmdOut_vm_not_found = new TaskResult([success: false, exitCode: '1', error: "VM not found"])
-//        def cmdOut_disk_not_found = new TaskResult([success: false, exitCode: '1', error: "Disk not found"])
-//        def cmdOut_exec_failure = new TaskResult([success: false, exitCode: '1', error: "Execution failed"])
-//        def cmdOut_success_diff_ids = new TaskResult([success: true, exitCode: '0'])
-//        def cmdOut_guid_disk_id = new TaskResult([success: true, exitCode: '0'])
-
         when:
         TaskResult result = apiService.removeDisk(opts, diskId)
 
@@ -2665,12 +2530,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test getJob with scenario: #scenario"() {
         given:
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         when:
         def result = apiService.getJob(opts, jobId)
@@ -2724,12 +2584,7 @@ class ScvmmApiServiceSpec extends Specification {
     @Unroll
     def "test waitForJobToComplete with scenario: #scenario"() {
         given:
-        def opts = [
-                sshHost: 'scvmm-server',
-                sshUsername: 'admin',
-                sshPassword: 'password',
-                winrmPort: '5985'
-        ]
+        def opts = DEFAULT_OPTS.clone()
 
         when:
         def result = apiService.waitForJobToComplete(opts, jobId)
@@ -3359,8 +3214,6 @@ class ScvmmApiServiceSpec extends Specification {
                       ]]
         apiService.generateCommandString(_ as String) >> "powershell command"
         def cmdResult = new TaskResult(success: false, data: vmData)
-//        def cmdResult1 = new TaskResult(success: true, data: vmData)
-//        def cmdResult2 = new TaskResult(success: true, data: null)
         apiService.wrapExecuteCommand("powershell command", opts) >> {
             return cmdResult
         }

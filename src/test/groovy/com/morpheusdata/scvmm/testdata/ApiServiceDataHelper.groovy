@@ -1,5 +1,9 @@
 package com.morpheusdata.scvmm.testdata
 
+import com.bertramlabs.plugins.karman.CloudFile
+import com.morpheusdata.core.util.ComputeUtility
+import com.morpheusdata.model.ComputeServer
+
 class ApiServiceDataHelper {
     static def buildCreateServerCommands_getPowerShellOpts =  [
             // Basic VM configuration
@@ -317,4 +321,45 @@ class ApiServiceDataHelper {
                     IPAddressRangeEnd: "10.0.1.150"
             ]
     ]
+
+    static ComputeServer scvmmControllerOpts_getServer() {
+        def server = new ComputeServer(
+                id: 10L,
+                name: "controller-01",
+                internalIp: "10.0.0.10",
+                sshUsername: "admin",
+                sshPassword: "securepass123",
+                sshHost: "10.0.0.10"
+        )
+
+        // Set the hypervisorConfig with the actual paths that match the implementation
+        server.setConfigProperty("hypervisorConfig", [
+                workingPath: "D:\\Working",
+                diskPath: "D:\\Disks"
+        ])
+        return server
+    }
+
+    static Map insertContainerImage_getContainerImageNOpts() {
+        def containerImage = [
+                name          : "test-image",
+                minDisk       : 5,
+                minRam        : 512 * ComputeUtility.ONE_MEGABYTE,
+                virtualImageId: 42L,
+                tags          : 'morpheus, ubuntu',
+                imageType     : 'vhd',
+                containerType : 'vhd',
+        ]
+
+
+        def opts = [
+                image: containerImage,
+                rootSharePath: "\\\\server\\share",
+                sshHost: 'scvmm-server',
+                sshUsername: 'admin',
+                sshPassword: 'password',
+                winrmPort: '5985'
+        ]
+        return opts
+    }
 }

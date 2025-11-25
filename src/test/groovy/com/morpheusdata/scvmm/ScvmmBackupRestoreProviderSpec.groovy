@@ -216,8 +216,6 @@ class ScvmmBackupRestoreProviderSpec extends Specification {
 
         mockApiService.getScvmmZoneAndHypervisorOpts(morpheusContext, computeServer.cloud, node) >> restoreOpts
         mockApiService.restoreServer(restoreOpts, "vm-1", "snap-1") >> restoreResults
-//        def mockGroovyStaticMethods = Mock(DefaultGroovyStaticMethods)
-//        mockGroovyStaticMethods.sleep(_,_) >> {}
 
         when:
         def resp = bkpRestoreProvider.restoreBackup(backupRestore, backupResult, backup, opts)

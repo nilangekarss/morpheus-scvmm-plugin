@@ -622,4 +622,59 @@ class ProvisionDataHelper {
                 rootVolume: rootVolume
         ]
     }
+
+    static ComputeServerInterface runWorkload_savedInterface() {
+        def savedInterface = new ComputeServerInterface(
+                id: 1L,
+                name: "eth0",
+                ipAddress: "192.168.1.100",
+                publicIpAddress: "10.0.0.100",
+                macAddress: "00:11:22:33:44:55",
+                primaryInterface: true,
+                displayOrder: 1,
+                addresses: [new NetAddress(type: NetAddress.AddressType.IPV4, address: "192.168.1.100")]
+        )
+        return savedInterface
+    }
+
+    static Map DEFAULT_CLOUD_OPTS = [
+            cloud: 1L,
+            cloudName: "test-cloud",
+            zoneId: 1L
+    ]
+
+    static Map DEFAULT_CONTROLLER_OPTS = [
+            controller: 10L,
+            sshHost: "10.0.0.5",
+            sshUsername: "admin",
+            sshPassword: "password123"
+    ]
+
+    static Map DEFAULT_CONTAINER_OPTS = [
+            vmId: "vm-123",
+            name: "vm-123",
+            memory: 4294967296L,
+            maxCpu: 1,
+            maxCores: 2,
+            hostname: "testVM",
+            networkId: 1L,
+            platform: "linux"
+    ]
+
+    static Map cloneParentCleanup_getScvmmOpts() {
+        return [
+                cloneVMId: 'vm-123',
+                cloneContainerId: 100,
+                startClonedVM: true,
+                cloneBaseOpts: [
+                        clonedScvmmOpts: [
+                                controller: 1,
+                                hostId: 2
+                        ]
+                ],
+                deleteDvdOnComplete: [
+                        deleteIso: 'iso-file.iso'
+                ]
+        ]
+    }
 }
