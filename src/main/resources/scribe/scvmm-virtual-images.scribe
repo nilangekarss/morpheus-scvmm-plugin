@@ -388,6 +388,27 @@ resource "virtual-image" "scvmm-image-morpheus-ubuntu-24-04-20250218" {
   zoneType           = "scvmm"
 }
 
+resource "virtual-image" "scvmm-image-morpheus-opensuse-15-1-v1" {
+  code         = "scvmm.image.morpheus.opensuse.15.1-v1.opensuse.15.1.amd64"
+  category     = "scvmm.image.morpheus.opensuse"
+  sshUsername  = "cloud-user"
+  sshPassword  = null
+  name         = "Morpheus openSUSE 15.1 v1"
+  imageType    = "vhd"
+  remotePath   = "https://s3-us-west-1.amazonaws.com/morpheus-images/hyperv/opensuse/opensuse-15_1-v1-amd64/morpheus-opensuse-15_1-v1-amd64.vhd.tar.gz"
+  imagePath    = "hyperv/opensuse/opensuse-15_1-v1-amd64"
+  systemImage  = true
+  installAgent = true
+  isCloudInit  = true
+  osType = {
+    code  = "suse.15.64"
+    owner = null
+  }
+  active   = true
+  delete   = false
+  zoneType = "scvmm"
+}
+
 resource "os-type-image" "scvmm-morpheus-almalinux-9" {
   code          = "scvmm-morpheus-almalinux-9"
   provisionType = "scvmm"
