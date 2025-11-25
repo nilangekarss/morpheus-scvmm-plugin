@@ -69,7 +69,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
     }
 
     @SuppressWarnings('MethodParameterTypeRequired')
-    private Cloud loadCloudFromZoneId(params, config, password) {
+    protected Cloud loadCloudFromZoneId(params, config, password) {
         Cloud cloud = morpheusContext.services.cloud.get(params.zoneId.toLong())
         if (params.credential?.type != CRED_LOCAL) {
             if (params.credential) {
@@ -89,7 +89,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
     }
 
     @SuppressWarnings('MethodParameterTypeRequired')
-    private Cloud createNewCloud(params, config, password) {
+    protected Cloud createNewCloud(params, config, password) {
         Cloud cloud = new Cloud()
         if (params.credential && params.credential?.type != CRED_LOCAL) {
             def credentials = morpheusContext.services.accountCredential.loadCredentialConfig(params.credential, config)
@@ -103,7 +103,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
     }
 
     @SuppressWarnings(['MethodParameterTypeRequired', 'ParameterReassignment'])
-    private Map extractConfigAndPassword(params) {
+    protected Map extractConfigAndPassword(params) {
         params = params instanceof Object[] ? params[(0)] : params
         def config = [
                 host     : params.config?.host ?: params["config[host]"],
@@ -129,7 +129,7 @@ class ScvmmOptionSourceProvider extends AbstractOptionSourceProvider {
         cloud.regionCode = params.config?.cloud ?: params["config[cloud]"]
         cloud.cloudType = morpheusContext.services.cloud.type.find(new DataQuery().withFilter('code', 'scvmm'))
 
-        def apiProxyId = params.config?.apiProxy ? params.config.long('apiProxy') : null
+        def apiProxyId = params.config?.apiProxy ? params.config.apiProxy.toLong() : null
         cloud.apiProxy = apiProxyId ? morpheusContext.services.network.networkProxy.get(apiProxyId) : null
 
         return cloud

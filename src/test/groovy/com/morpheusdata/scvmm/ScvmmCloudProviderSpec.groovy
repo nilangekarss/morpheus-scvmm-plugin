@@ -36,7 +36,6 @@ import com.morpheusdata.request.ValidateCloudRequest
 import com.morpheusdata.response.ServiceResponse
 import com.morpheusdata.core.providers.ProvisionProvider
 import com.morpheusdata.scvmm.helper.morpheus.types.StorageVolumeTypeHelper
-import com.morpheusdata.scvmm.ScvmmProvisionProvider
 import com.morpheusdata.scvmm.sync.CloudCapabilityProfilesSync
 import com.morpheusdata.scvmm.sync.ClustersSync
 import com.morpheusdata.scvmm.sync.DatastoresSync
@@ -48,7 +47,6 @@ import com.morpheusdata.scvmm.sync.RegisteredStorageFileSharesSync
 import com.morpheusdata.scvmm.sync.TemplatesSync
 import com.morpheusdata.scvmm.sync.VirtualMachineSync
 import io.reactivex.rxjava3.core.Maybe
-import io.reactivex.rxjava3.core.Single
 import org.junit.jupiter.api.BeforeEach
 import spock.lang.Specification
 import spock.lang.Unroll
@@ -74,8 +72,7 @@ class ScvmmCloudProviderSpec  extends Specification {
     private MorpheusSynchronousVirtualImageService virtualImageService
     private MorpheusVirtualImageService asyncVirtualImageService
     private MorpheusAsyncServices morpheusAsyncServices
-    //private ComputeServer mockedComputerServer
-    //private WorkloadType mockedWorkloadType
+
     @BeforeEach
     void setup() {
         // Setup mock context and services
@@ -119,11 +116,8 @@ class ScvmmCloudProviderSpec  extends Specification {
             getOsType() >> asyncOsTypeService
         }
 
-        // Configure context mocks
-        //morpheusContext.getProcess() >> processService
         morpheusContext.getAsync() >> morpheusAsyncServices
         morpheusContext.getServices() >> morpheusServices
-
 
         mockApiService = Mock(ScvmmApiService)
         cloudProvider = Spy(ScvmmCloudProvider, constructorArgs: [plugin, morpheusContext])
@@ -135,70 +129,29 @@ class ScvmmCloudProviderSpec  extends Specification {
     def "validate returns success response when all validations pass"() {
         given:
         // Create cloud info with basic configuration
-        def cloudInfo = new Cloud(
-                id: 1L,
-                name: "test-scvmm-cloud"
-        )
-
-        ValidateCloudRequest validateCloudRequest = new ValidateCloudRequest("testuser", "testpass","password", [:])
-
-        // Mock zone configuration
-        def zoneConfig = [
-                host: "scvmm-host.example.com",
-                workingPath: "/var/morpheus/scvmm",
-                diskPath: "/var/morpheus/scvmm/disks",
-                libraryShare: "\\\\server\\share",
-                installAgent: "true"
-        ]
-
-        // Mock SCVMM options returned by API service
-        def scvmmOpts = [
-                controller: 1L,
-                zoneId: cloudInfo.id,
-                cloudName: cloudInfo.name
-        ]
-
-        // Mock successful cloud list response
-        def vmSwitchesResponse = [
-                success: true,
-                data: [
-                        [id: "switch-1", name: "External Switch"],
-                        [id: "switch-2", name: "Internal Switch"]
-                ]
-        ]
-
-        // Mock successful controller validation
-        def controllerValidationResult = [
-                success: true
-        ]
-
-        // Setup mocks
+        def cloudInfo = new Cloud(id: 1L, name: "test-scvmm-cloud")
+        ValidateCloudRequest validateCloudRequest = new ValidateCloudRequest("testuser",
+                "testpass","password", [:])
+        def zoneConfig = [host: "scvmm-host.example.com", workingPath: "/var/morpheus/scvmm",
+                          diskPath: "/var/morpheus/scvmm/disks", libraryShare: "\\\\server\\share", installAgent: "true"]
+        def scvmmOpts = [controller: 1L, zoneId: cloudInfo.id, cloudName: cloudInfo.name]
+        def vmSwitchesResponse = [success: true, data: [[id: "switch-1", name: "External Switch"],
+                        [id: "switch-2", name: "Internal Switch"]]]
+        def controllerValidationResult = [success: true]
         cloudInfo.setConfigMap(zoneConfig)
-
         mockApiService.getScvmmZoneOpts(_, _) >> {
             return scvmmOpts
         }
-
-        // Mock static method calls
         GroovyMock(MorpheusUtils, global: true)
         MorpheusUtils.parseBooleanConfig("true") >> {
             return true
         }
-
-        // Mock provider methods
-        cloudProvider.validateRequiredConfigFields(
-                ['host', 'workingPath', 'diskPath', 'libraryShare'],
-                zoneConfig
-        ) >> {
+        cloudProvider.validateRequiredConfigFields(['host', 'workingPath', 'diskPath', 'libraryShare'], zoneConfig) >> {
             return [:]
         }
-
         cloudProvider.validateSharedController(cloudInfo) >> controllerValidationResult
 
-        // Mock API service listClouds call
-        mockApiService.listClouds(_ as LinkedHashMap) >> {
-            return vmSwitchesResponse
-        }
+        mockApiService.listClouds(_ as LinkedHashMap) >> {return vmSwitchesResponse}
 
         when:
         def result = cloudProvider.validate(cloudInfo, validateCloudRequest)
@@ -209,7 +162,6 @@ class ScvmmCloudProviderSpec  extends Specification {
         result.msg == null
         result.errors.size() == 0
         result.data.size() == 0
-
 
         // Verify API calls were made
         1 * mockApiService.getScvmmZoneOpts(_, _) >> scvmmOpts
@@ -238,20 +190,10 @@ class ScvmmCloudProviderSpec  extends Specification {
                 enabled: false
         ) : null)
 
-        // Mock initializeHypervisor response
-        def initHypervisorResponse = [
-                success: initHypervisorSuccess
-        ]
+        def initHypervisorResponse = [success: initHypervisorSuccess]
 
-        // Mock refresh method to avoid actual implementation
-        cloudProvider.refresh(_) >> {
-            // Do nothing - just mock the call
-        }
-
-        // Setup method mocks
-        cloudProvider.initializeHypervisor(_) >> {
-            return initHypervisorResponse
-        }
+        cloudProvider.refresh(_) >> {}
+        cloudProvider.initializeHypervisor(_) >> {return initHypervisorResponse}
 
         when:
         def result = cloudProvider.initializeCloud(cloudInfo)
@@ -284,12 +226,7 @@ class ScvmmCloudProviderSpec  extends Specification {
     @Unroll
     def "initializeCloud handles exceptions gracefully"() {
         given:
-        def cloudInfo = new Cloud(
-                id: 1L,
-                name: "test-scvmm-cloud",
-                code: "test-scvmm",
-                enabled: true
-        )
+        def cloudInfo = new Cloud(id: 1L, name: "test-scvmm-cloud", code: "test-scvmm", enabled: true)
 
         // Mock initializeHypervisor to throw an exception
         cloudProvider.initializeHypervisor(_) >> {
@@ -314,11 +251,7 @@ class ScvmmCloudProviderSpec  extends Specification {
     @Unroll
     def "initializeHypervisor returns #expectedResult for #scenario"() {
         given:
-        def cloud = new Cloud(
-                id: 1L,
-                name: "test-scvmm-cloud",
-                account: new Account(id: 100L)
-        )
+        def cloud = new Cloud(id: 1L, name: "test-scvmm-cloud", account: new Account(id: 100L))
 
         // Set cloud config properties
         cloud.setConfigProperty('sharedController', sharedController)
@@ -327,11 +260,7 @@ class ScvmmCloudProviderSpec  extends Specification {
         cloud.setConfigProperty('diskPath', '/var/morpheus/scvmm/disks')
 
         // Mock API service responses
-        def initializationOpts = [
-                controller: 1L,
-                zoneId: cloud.id,
-                host: 'scvmm-host.example.com'
-        ]
+        def initializationOpts = [controller: 1L, zoneId: cloud.id, host: 'scvmm-host.example.com']
 
         def serverInfo = serverInfoSuccess ? [
                 success: true,
@@ -348,17 +277,9 @@ class ScvmmCloudProviderSpec  extends Specification {
         def maxMemory = 17179869184L // 16GB
 
         // Mock compute server type and OS type
-        def computeServerType = new ComputeServerType(
-                id: 200L,
-                code: 'scvmmController',
-                name: 'SCVMM Controller'
-        )
+        def computeServerType = new ComputeServerType(id: 200L, code: 'scvmmController', name: 'SCVMM Controller')
 
-        def osType = new OsType(
-                id: 300L,
-                code: versionCode,
-                name: 'Windows Server 2019'
-        )
+        def osType = new OsType(id: 300L, code: versionCode, name: 'Windows Server 2019')
 
         // Create existing server if needed for test scenario
         def existingServer = existingServerFound ? new ComputeServer(
@@ -370,13 +291,9 @@ class ScvmmCloudProviderSpec  extends Specification {
         ) : null
 
         // Create new server for creation scenario
-        def newServer = new ComputeServer(
-                id: existingServerFound ? 400L : 500L,
-                account: cloud.account,
-                cloud: cloud,
-                computeServerType: computeServerType,
-                name: serverInfo.hostname ?: 'scvmm-controller-01'
-        )
+        def newServer = new ComputeServer(id: existingServerFound ? 400L : 500L,
+                account: cloud.account, cloud: cloud, computeServerType: computeServerType,
+                name: serverInfo.hostname ?: 'scvmm-controller-01')
 
         // Mock hypervisor service
         def hypervisorService = Mock(MorpheusHypervisorService)
@@ -1041,9 +958,6 @@ class ScvmmCloudProviderSpec  extends Specification {
         given:
         def mockProvider = Mock(ProvisionProvider)
         mockProvider.getCode() >> "scvmm"
-//        cloudProvider.getProvisionProvider("scvmm") >> {
-//            return mockProvider
-//        }
         cloudProvider.getAvailableProvisionProviders() >>{
             return [mockProvider]
         }
