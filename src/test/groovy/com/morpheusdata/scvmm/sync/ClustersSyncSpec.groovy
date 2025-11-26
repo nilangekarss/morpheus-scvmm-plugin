@@ -22,12 +22,6 @@ import io.reactivex.rxjava3.core.Single
 import spock.lang.Specification
 import spock.lang.Unroll
 
-/**
- * Unit tests for ClustersSync class following the pattern from VirtualMachineSyncSpec.
- * Tests cover the main functionality including execute, updateMatchedResourcePools,
- * addMissingResourcePools, removeMissingResourcePools, chooseOwnerPoolDefaults,
- * and error handling scenarios.
- */
 class ClustersSyncSpec extends Specification {
 
     private ClustersSync clustersSync

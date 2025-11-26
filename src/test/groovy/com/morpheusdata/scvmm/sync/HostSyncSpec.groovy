@@ -19,10 +19,6 @@ import spock.lang.Specification
 import spock.lang.Unroll
 import java.lang.reflect.InvocationTargetException
 
-/**
- * Comprehensive unit tests for HostSync class, testing each method directly with proper assertions.
- * Tests cover public and private methods, error handling scenarios, and edge cases.
- */
 class HostSyncSpec extends Specification {
 
     private HostSync hostSync

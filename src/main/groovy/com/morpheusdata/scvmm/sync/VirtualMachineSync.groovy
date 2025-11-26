@@ -100,7 +100,7 @@ class VirtualMachineSync {
         }
     }
 
-    private Map initializeExecutionContext() {
+    protected Map initializeExecutionContext() {
         def now = Instant.now()
         def consoleEnabled = cloud.getConfigProperty('enableVnc') ? true : false
         def scvmmOpts = apiService.getScvmmZoneAndHypervisorOpts(context, cloud, node)
@@ -168,7 +168,7 @@ class VirtualMachineSync {
         }.withLoadObjectDetails { List<SyncTask.UpdateItemDto<ComputeServerIdentityProjection, Map>> updateItems ->
             Map<Long, SyncTask.UpdateItemDto<ComputeServerIdentityProjection, Map>> updateItemMap =
                     updateItems.collectEntries { item -> [(item.existingItem.id): item] }
-            context.async.computeServer.listById(updateItems*.id).map { ComputeServer server ->
+            context.async.computeServer.listById(updateItems*.existingItem.id).map { ComputeServer server ->
                 SyncTask.UpdateItemDto<ComputeServerIdentityProjection, Map> matchItem = updateItemMap[server.id]
                 new SyncTask.UpdateItem<ComputeServer, Map>(existingItem: server, masterItem: matchItem.masterItem)
             }
@@ -207,7 +207,7 @@ class VirtualMachineSync {
         }
     }
 
-    private ComputeServer createNewVirtualMachine(Map cloudItem, Collection<ServicePlan> availablePlans,
+    protected ComputeServer createNewVirtualMachine(Map cloudItem, Collection<ServicePlan> availablePlans,
                                                   ServicePlan fallbackPlan,
                                                   Collection<ResourcePermission> availablePlanPermissions,
                                                   List hosts, Boolean consoleEnabled,
@@ -226,14 +226,14 @@ class VirtualMachineSync {
         return add
     }
 
-    private void configureServerResources(ComputeServer server, Map cloudItem) {
+    protected void configureServerResources(ComputeServer server, Map cloudItem) {
         server.maxStorage = (cloudItem.TotalSize?.toDouble() ?: 0)
         server.usedStorage = (cloudItem.UsedSize?.toDouble() ?: 0)
         server.maxMemory = (cloudItem.Memory?.toLong() ?: 0) * BYTES_PER_MB
         server.maxCores = cloudItem.CPUCount.toLong() ?: 1
     }
 
-    private void configureServerNetwork(ComputeServer server, Map cloudItem) {
+    protected void configureServerNetwork(ComputeServer server, Map cloudItem) {
         if (cloudItem.IpAddress) {
             server.externalIp = cloudItem.IpAddress
         }
@@ -243,18 +243,18 @@ class VirtualMachineSync {
         server.sshHost = server.internalIp ?: server.externalIp
     }
 
-    private void configureServerParent(ComputeServer server, Map cloudItem, List hosts) {
+    protected void configureServerParent(ComputeServer server, Map cloudItem, List hosts) {
         server.parentServer = hosts?.find { host -> host.externalId == cloudItem.HostId }
     }
 
-    private void configureServerPlan(ComputeServer server, Collection<ServicePlan> availablePlans,
+    protected void configureServerPlan(ComputeServer server, Collection<ServicePlan> availablePlans,
                                       ServicePlan fallbackPlan,
                                       Collection<ResourcePermission> availablePlanPermissions) {
         server.plan = SyncUtils.findServicePlanBySizing(availablePlans, server.maxMemory, server.maxCores,
                 null, fallbackPlan, null, cloud.account, availablePlanPermissions)
     }
 
-    private void configureServerOperatingSystem(ComputeServer server, Map cloudItem) {
+    protected void configureServerOperatingSystem(ComputeServer server, Map cloudItem) {
         def osTypeCode = apiService.getMapScvmmOsType(cloudItem.OperatingSystem, true, 'Other Linux (64 bit)')
         def osTypeCodeStr = osTypeCode ?: OTHER
         def osType = context.services.osType.find(new DataQuery().withFilter(CODE, osTypeCodeStr))
@@ -265,7 +265,7 @@ class VirtualMachineSync {
         }
     }
 
-    private void configureServerConsole(ComputeServer server, Boolean consoleEnabled) {
+    protected void configureServerConsole(ComputeServer server, Boolean consoleEnabled) {
         if (consoleEnabled) {
             server.consoleType = VMRDP
             server.consoleHost = server.parentServer?.name
@@ -278,7 +278,7 @@ class VirtualMachineSync {
         }
     }
 
-    private void configureServerCapacity(ComputeServer server) {
+    protected void configureServerCapacity(ComputeServer server) {
         server.capacityInfo = new ComputeCapacityInfo(maxCores: server.maxCores, maxMemory: server.maxMemory,
                 maxStorage: server.maxStorage)
     }
@@ -301,7 +301,7 @@ class VirtualMachineSync {
         }
     }
 
-    private Map loadMatchedServers(List<SyncTask.UpdateItem<ComputeServer, Map>> updateList) {
+    protected Map loadMatchedServers(List<SyncTask.UpdateItem<ComputeServer, Map>> updateList) {
         return context.services.computeServer.list(new DataQuery()
                 .withFilter(ID, IN, updateList.collect { up -> up.existingItem.id })
                 .withJoins(['account', 'zone', 'computeServerType', 'plan', 'chassis', 'serverOs', 'sourceImage',
@@ -312,7 +312,7 @@ class VirtualMachineSync {
                 .collectEntries { server -> [(server.id): server] }
     }
 
-    private List<ComputeServer> processServerUpdates(List<SyncTask.UpdateItem<ComputeServer, Map>> updateList,
+    protected List<ComputeServer> processServerUpdates(List<SyncTask.UpdateItem<ComputeServer, Map>> updateList,
                                                      Map matchedServers,
                                                      Collection availablePlans, ServicePlan fallbackPlan,
                                                      List<ComputeServer> hosts, Boolean consoleEnabled,
@@ -342,7 +342,7 @@ class VirtualMachineSync {
         return saves
     }
 
-    private Boolean updateSingleServer(ComputeServer currentServer, Map masterItem, List<ComputeServer> hosts,
+    protected Boolean updateSingleServer(ComputeServer currentServer, Map masterItem, List<ComputeServer> hosts,
                                        Boolean consoleEnabled, ComputeServerType defaultServerType,
                                        Collection availablePlans, ServicePlan fallbackPlan) {
         try {
@@ -366,7 +366,7 @@ class VirtualMachineSync {
         }
     }
 
-    private Boolean updateBasicServerProperties(ComputeServer currentServer, Map masterItem,
+    protected Boolean updateBasicServerProperties(ComputeServer currentServer, Map masterItem,
                                                ComputeServerType defaultServerType) {
         Boolean save = false
 
@@ -386,7 +386,7 @@ class VirtualMachineSync {
         return save
     }
 
-    private Boolean updateNetworkProperties(ComputeServer currentServer, Map masterItem) {
+    protected Boolean updateNetworkProperties(ComputeServer currentServer, Map masterItem) {
         Boolean save = false
 
         if (masterItem.IpAddress && currentServer.externalIp != masterItem.IpAddress) {
@@ -420,7 +420,7 @@ class VirtualMachineSync {
         return save
     }
 
-    private Boolean updateResourceProperties(ComputeServer currentServer, Map masterItem) {
+    protected Boolean updateResourceProperties(ComputeServer currentServer, Map masterItem) {
         Boolean save = false
 
         def maxCores = masterItem.CPUCount.toLong() ?: 1
@@ -442,7 +442,7 @@ class VirtualMachineSync {
         return save
     }
 
-    private Boolean updateParentServer(ComputeServer currentServer, Map masterItem, List<ComputeServer> hosts) {
+    protected Boolean updateParentServer(ComputeServer currentServer, Map masterItem, List<ComputeServer> hosts) {
         def parentServer = hosts?.find { host -> host.externalId == masterItem.HostId }
         if (parentServer != null && currentServer.parentServer != parentServer) {
             currentServer.parentServer = parentServer
@@ -452,7 +452,7 @@ class VirtualMachineSync {
         }
     }
 
-    private Boolean updateConsoleProperties(ComputeServer currentServer, Boolean consoleEnabled) {
+    protected Boolean updateConsoleProperties(ComputeServer currentServer, Boolean consoleEnabled) {
         Boolean save = false
 
         def consoleConfig = buildConsoleConfiguration(consoleEnabled, currentServer)
@@ -468,7 +468,7 @@ class VirtualMachineSync {
         return save
     }
 
-    private Map buildConsoleConfiguration(boolean consoleEnabled, ComputeServer currentServer) {
+    protected Map buildConsoleConfiguration(boolean consoleEnabled, ComputeServer currentServer) {
         if (consoleEnabled) {
             def username = extractConsoleUsername()
             def password = cloud.accountCredentialData?.password ?: cloud.getConfigProperty(PASSWORD)
@@ -485,12 +485,12 @@ class VirtualMachineSync {
         }
     }
 
-    private String extractConsoleUsername() {
+    protected String extractConsoleUsername() {
         def username = cloud.accountCredentialData?.username ?: cloud.getConfigProperty(USERNAME) ?: DUNNO
         return username.contains(BACKSLASH) ? username.tokenize(BACKSLASH)[1] : username
     }
 
-    private Boolean updateConsoleType(ComputeServer server, String consoleType) {
+    protected Boolean updateConsoleType(ComputeServer server, String consoleType) {
         if (server.consoleType != consoleType) {
             server.consoleType = consoleType
             true
@@ -499,7 +499,7 @@ class VirtualMachineSync {
         }
     }
 
-    private Boolean updateConsoleHost(ComputeServer server, String consoleHost) {
+    protected Boolean updateConsoleHost(ComputeServer server, String consoleHost) {
         if (server.consoleHost != consoleHost) {
             server.consoleHost = consoleHost
             true
@@ -508,7 +508,7 @@ class VirtualMachineSync {
         }
     }
 
-    private Boolean updateConsolePort(ComputeServer server, Integer consolePort) {
+    protected Boolean updateConsolePort(ComputeServer server, Integer consolePort) {
         if (server.consolePort != consolePort) {
             server.consolePort = consolePort
             true
@@ -517,7 +517,7 @@ class VirtualMachineSync {
         }
     }
 
-    private Boolean updateConsoleCredentials(ComputeServer server, String username, String password) {
+    protected Boolean updateConsoleCredentials(ComputeServer server, String username, String password) {
         Boolean save = false
 
         if (username != server.sshUsername) {
@@ -533,7 +533,7 @@ class VirtualMachineSync {
         return save
     }
 
-    private Boolean updateOperatingSystem(ComputeServer currentServer, Map masterItem) {
+    protected Boolean updateOperatingSystem(ComputeServer currentServer, Map masterItem) {
         def osTypeCode = apiService.getMapScvmmOsType(masterItem.OperatingSystem, true,
                 masterItem.OperatingSystemWindows?.toString() == TRUE_STRING ? 'windows' : null)
         def osTypeCodeStr = osTypeCode ?: OTHER
@@ -549,7 +549,7 @@ class VirtualMachineSync {
         }
     }
 
-    private Boolean updatePowerState(ComputeServer currentServer, Map masterItem) {
+    protected Boolean updatePowerState(ComputeServer currentServer, Map masterItem) {
         def powerState = masterItem.VirtualMachineState == RUNNING ?
                 ComputeServer.PowerState.on : ComputeServer.PowerState.off
         if (powerState != currentServer.powerState) {
@@ -572,7 +572,7 @@ class VirtualMachineSync {
         }
     }
 
-    private Boolean updateServicePlan(ComputeServer currentServer, Collection availablePlans,
+    protected Boolean updateServicePlan(ComputeServer currentServer, Collection availablePlans,
                                       ServicePlan fallbackPlan) {
         ServicePlan plan = SyncUtils.findServicePlanBySizing(availablePlans, currentServer.maxMemory,
                 currentServer.maxCores, null, fallbackPlan, currentServer.plan, currentServer.account, [])
@@ -584,7 +584,7 @@ class VirtualMachineSync {
         }
     }
 
-    private void updateVolumes(ComputeServer currentServer, Map masterItem) {
+    protected void updateVolumes(ComputeServer currentServer, Map masterItem) {
         if (masterItem.Disks) {
             if (currentServer.status != RESIZING && currentServer.status != PROVISIONING) {
                 syncVolumes(currentServer, masterItem.Disks)
@@ -592,7 +592,7 @@ class VirtualMachineSync {
         }
     }
 
-    private void updateWorkloadAndInstanceStatuses(ComputeServer server, Workload.Status workloadStatus,
+    protected void updateWorkloadAndInstanceStatuses(ComputeServer server, Workload.Status workloadStatus,
                                                    String instanceStatus,
                                                    List<String> additionalExcludedStatuses = []) {
         // Update workloads
@@ -805,7 +805,8 @@ class VirtualMachineSync {
         return hasChanges
     }
 
-    protected Map processVolumeUpdate(Map updateMap, ComputeServer server, int index) {
+    protected Map processVolumeUpdate(SyncTask.UpdateItem<StorageVolume, Map> updateMap, ComputeServer server,
+                                      int index) {
         StorageVolume volume = updateMap.existingItem
         def masterItem = updateMap.masterItem
         def masterDiskSize = masterItem?.TotalSize?.toLong() ?: 0
@@ -898,13 +899,13 @@ class VirtualMachineSync {
         return storageVolume
     }
 
-    private void configureStorageVolumeBasics(StorageVolume storageVolume, Map volume) {
+    protected void configureStorageVolumeBasics(StorageVolume storageVolume, Map volume) {
         storageVolume.maxStorage = volume?.maxStorage?.toLong() ?: volume?.size?.toLong()
         storageVolume.type = resolveStorageType(volume)
         storageVolume.rootVolume = volume.rootVolume == true
     }
 
-    private Object resolveStorageType(Map volume) {
+    protected Object resolveStorageType(Map volume) {
         if (volume?.storageType) {
             context.async.storageVolume.storageVolumeType.get(volume.storageType?.toLong()).blockingGet()
         } else {
@@ -912,7 +913,7 @@ class VirtualMachineSync {
         }
     }
 
-    private void configureDatastore(StorageVolume storageVolume, Map volume) {
+    protected void configureDatastore(StorageVolume storageVolume, Map volume) {
         if (!volume.datastoreId) {
             return
         }
@@ -928,7 +929,7 @@ class VirtualMachineSync {
         storageVolume.refId = volume.datastoreId?.toLong()
     }
 
-    private void configureIdentifiers(StorageVolume storageVolume, Map volume) {
+    protected void configureIdentifiers(StorageVolume storageVolume, Map volume) {
         if (volume.externalId) {
             storageVolume.externalId = volume.externalId
         }
@@ -937,11 +938,11 @@ class VirtualMachineSync {
         }
     }
 
-    private void configureCloudId(StorageVolume storageVolume, ComputeServer server) {
+    protected void configureCloudId(StorageVolume storageVolume, ComputeServer server) {
         storageVolume.cloudId = determineCloudId(server)
     }
 
-    private Long determineCloudId(ComputeServer server) {
+    protected Long determineCloudId(ComputeServer server) {
         if (server.hasProperty('cloud') && server.cloud) {
             server.cloud.id
         } else if (server.hasProperty(REF_TYPE) && server.refType == COMPUTE_ZONE) {
@@ -951,7 +952,7 @@ class VirtualMachineSync {
         }
     }
 
-    private void configureVolumeProperties(StorageVolume storageVolume, Map volume, ComputeServer server) {
+    protected void configureVolumeProperties(StorageVolume storageVolume, Map volume, ComputeServer server) {
         storageVolume.deviceName = volume.deviceName
         storageVolume.removable = storageVolume.rootVolume != true
         storageVolume.displayOrder = volume.displayOrder ?: server?.volumes?.size() ?: 0

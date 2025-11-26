@@ -19,10 +19,6 @@ import io.reactivex.rxjava3.core.Single
 import spock.lang.Specification
 import spock.lang.Unroll
 
-/**
- * Tests for NetworkSync class that focus on basic functionality
- * and error handling scenarios.
- */
 class NetworkSyncSpec extends Specification {
 
     private NetworkSync networkSync
@@ -187,7 +183,108 @@ class NetworkSyncSpec extends Specification {
         noExceptionThrown()
     }
 
-    // Tests for processNetworksWithSubnets
+    @Unroll
+    def "addMissingNetworks should create networks and process subnets successfully"() {
+        given: "Valid network data and dependencies"
+        def networkType = new NetworkType(code: 'scvmmNetwork')
+        def subnetType = new NetworkSubnetType(code: 'scvmm')
+        def server = new ComputeServer(id: 2L, name: "test-server")
+
+        def addList = [
+                [ID: "net-1", Name: "Network1", VLanID: 100, Subnets: [[Subnet: "192.168.1.0/24"]]],
+                [ID: "net-2", Name: "Network2", VLanID: 200, Subnets: [[Subnet: "10.0.1.0/24"]]]
+        ]
+
+        and: "Mock bulk create result"
+        def createdNetwork1 = new Network(id: 1L, name: "Network1", externalId: "net-1")
+        def createdNetwork2 = new Network(id: 2L, name: "Network2", externalId: "net-2")
+        def bulkCreateResult = [persistedItems: [createdNetwork1, createdNetwork2]]
+
+        when: "addMissingNetworks is called"
+        networkSync.addMissingNetworks(addList, networkType, subnetType, server)
+
+        then: "networks are created with correct configuration"
+        1 * networkService.bulkCreate({ List<Network> networks ->
+            assert networks.size() == 2
+
+            def network1 = networks.find { it.externalId == "net-1" }
+            assert network1.name == "Network1"
+            assert network1.code == "scvmm.network.${cloud.id}.${server.id}.net-1"
+            assert network1.category == "scvmm.network.${cloud.id}.${server.id}"
+            assert network1.cloud == cloud
+            assert network1.dhcpServer == true
+            assert network1.uniqueId == "net-1"
+            assert network1.type == networkType
+            assert network1.refType == "ComputeZone"
+            assert network1.refId == cloud.id
+            assert network1.owner == cloud.owner
+            assert network1.active == cloud.defaultNetworkSyncActive
+
+            def network2 = networks.find { it.externalId == "net-2" }
+            assert network2.name == "Network2"
+            assert network2.code == "scvmm.network.${cloud.id}.${server.id}.net-2"
+            assert network2.category == "scvmm.network.${cloud.id}.${server.id}"
+
+            true
+        }) >> Single.just(bulkCreateResult)
+
+        and: "subnets are processed for created networks"
+        1 * networkSubnetService.create(_, createdNetwork1) >> Single.just([success: true])
+        1 * networkSubnetService.create(_, createdNetwork2) >> Single.just([success: true])
+    }
+
+    @Unroll
+    def "addMissingNetworks should handle empty add list gracefully"() {
+        given: "Empty add list"
+        def networkType = new NetworkType(code: 'scvmmNetwork')
+        def subnetType = new NetworkSubnetType(code: 'scvmm')
+        def server = new ComputeServer(id: 2L, name: "test-server")
+        def addList = []
+
+        when: "addMissingNetworks is called"
+        networkSync.addMissingNetworks(addList, networkType, subnetType, server)
+
+        then: "no networks are created"
+        0 * networkService.bulkCreate(_)
+        0 * networkSubnetService.create(_, _)
+    }
+
+    @Unroll
+    def "addMissingNetworks should handle null add list gracefully"() {
+        given: "Null add list"
+        def networkType = new NetworkType(code: 'scvmmNetwork')
+        def subnetType = new NetworkSubnetType(code: 'scvmm')
+        def server = new ComputeServer(id: 2L, name: "test-server")
+        def addList = null
+
+        when: "addMissingNetworks is called"
+        networkSync.addMissingNetworks(addList, networkType, subnetType, server)
+
+        then: "no networks are created"
+        0 * networkService.bulkCreate(_)
+        0 * networkSubnetService.create(_, _)
+    }
+
+    @Unroll
+    def "addMissingNetworks should handle exceptions in network creation gracefully"() {
+        given: "Valid data but bulk create fails"
+        def networkType = new NetworkType(code: 'scvmmNetwork')
+        def subnetType = new NetworkSubnetType(code: 'scvmm')
+        def server = new ComputeServer(id: 2L, name: "test-server")
+        def addList = [
+                [ID: "net-1", Name: "Network1", VLanID: 100, Subnets: [[Subnet: "192.168.1.0/24"]]]
+        ]
+
+        when: "addMissingNetworks is called and exception occurs"
+        networkSync.addMissingNetworks(addList, networkType, subnetType, server)
+
+        then: "exception is caught and logged"
+        1 * networkService.bulkCreate(_) >> { throw new RuntimeException("Database error") }
+
+        and: "no exception is propagated"
+        noExceptionThrown()
+    }
+
     def "processNetworksWithSubnets should create networks and process subnets when networks exist"() {
         given: "A list of networks to add"
         def network1 = new Network(id: 1L, name: "Network1")
@@ -196,8 +293,8 @@ class NetworkSyncSpec extends Specification {
 
         and: "Cloud items with subnet data"
         def addList = [
-            [Name: "Network1", ID: "net-1", VLanID: 100, Subnets: [[Subnet: "192.168.1.0/24"]]],
-            [Name: "Network2", ID: "net-2", VLanID: 200, Subnets: [[Subnet: "10.0.1.0/24"]]]
+                [Name: "Network1", ID: "net-1", VLanID: 100, Subnets: [[Subnet: "192.168.1.0/24"]]],
+                [Name: "Network2", ID: "net-2", VLanID: 200, Subnets: [[Subnet: "10.0.1.0/24"]]]
         ]
 
         and: "Mock network subnet type"
@@ -229,7 +326,6 @@ class NetworkSyncSpec extends Specification {
         0 * networkSubnetService.create(_, _)
     }
 
-    // Tests for processSubnetsForNetworks
     def "processSubnetsForNetworks should process subnets for matching networks"() {
         given: "Networks and matching cloud items"
         def network1 = new Network(id: 1L, name: "TestNetwork")
@@ -237,8 +333,8 @@ class NetworkSyncSpec extends Specification {
         def networks = [network1, network2]
 
         def addList = [
-            [Name: "TestNetwork", ID: "net-1", VLanID: 100, Subnets: [[Subnet: "192.168.1.0/24"]]],
-            [Name: "UnmatchedNetwork", ID: "net-3", VLanID: 300, Subnets: [[Subnet: "172.16.1.0/24"]]]
+                [Name: "TestNetwork", ID: "net-1", VLanID: 100, Subnets: [[Subnet: "192.168.1.0/24"]]],
+                [Name: "UnmatchedNetwork", ID: "net-3", VLanID: 300, Subnets: [[Subnet: "172.16.1.0/24"]]]
         ]
 
         def subnetType = new NetworkSubnetType(code: 'scvmm')
@@ -256,7 +352,7 @@ class NetworkSyncSpec extends Specification {
         def network1 = new Network(id: 1L, name: "OrphanNetwork")
         def networks = [network1]
         def addList = [
-            [Name: "DifferentNetwork", ID: "net-1", VLanID: 100, Subnets: [[Subnet: "192.168.1.0/24"]]]
+                [Name: "DifferentNetwork", ID: "net-1", VLanID: 100, Subnets: [[Subnet: "192.168.1.0/24"]]]
         ]
         def subnetType = new NetworkSubnetType(code: 'scvmm')
 
@@ -267,23 +363,22 @@ class NetworkSyncSpec extends Specification {
         0 * networkSubnetService.create(_, _)
     }
 
-    // Tests for addSubnetToNetwork
     def "addSubnetToNetwork should create subnet with correct configuration"() {
         given: "A network and cloud item with subnet data"
         def network = new Network(id: 1L, name: "TestNetwork")
         def cloudItem = [
-            Name: "TestNetwork",
-            ID: "net-1",
-            VLanID: 100,
-            Subnets: [[Subnet: "192.168.1.0/24"]]
+                Name: "TestNetwork",
+                ID: "net-1",
+                VLanID: 100,
+                Subnets: [[Subnet: "192.168.1.0/24"]]
         ]
         def subnetType = new NetworkSubnetType(code: 'scvmm')
 
         and: "Mock NetworkUtility response"
         GroovyMock(NetworkUtility, global: true)
         def mockNetworkCidr = [
-            config: [netmask: "255.255.255.0"],
-            ranges: [[startAddress: "192.168.1.10", endAddress: "192.168.1.254"]]
+                config: [netmask: "255.255.255.0"],
+                ranges: [[startAddress: "192.168.1.10", endAddress: "192.168.1.254"]]
         ]
         NetworkUtility.getNetworkCidrConfig("192.168.1.0/24") >> mockNetworkCidr
 
@@ -311,10 +406,10 @@ class NetworkSyncSpec extends Specification {
         given: "A network and cloud item with no subnet data"
         def network = new Network(id: 1L, name: "TestNetwork")
         def cloudItem = [
-            Name: "TestNetwork",
-            ID: "net-1",
-            VLanID: 100,
-            Subnets: null
+                Name: "TestNetwork",
+                ID: "net-1",
+                VLanID: 100,
+                Subnets: null
         ]
         def subnetType = new NetworkSubnetType(code: 'scvmm')
 
@@ -351,12 +446,11 @@ class NetworkSyncSpec extends Specification {
         noExceptionThrown()
     }
 
-    // Tests for addMissingNetworkSubnet
     def "addMissingNetworkSubnet should create multiple subnets correctly"() {
         given: "List of SCVMM subnets to add"
         def addList = [
-            [ID: "subnet-1", Name: "Subnet1", Subnet: "192.168.1.0/24"],
-            [ID: "subnet-2", Name: "Subnet2", Subnet: "10.0.1.0/24"]
+                [ID: "subnet-1", Name: "Subnet1", Subnet: "192.168.1.0/24"],
+                [ID: "subnet-2", Name: "Subnet2", Subnet: "10.0.1.0/24"]
         ]
         def subnetType = new NetworkSubnetType(code: 'scvmm')
         def network = new Network(id: 1L, name: "TestNetwork")
@@ -364,12 +458,12 @@ class NetworkSyncSpec extends Specification {
         and: "Mock NetworkUtility"
         GroovyMock(NetworkUtility, global: true)
         NetworkUtility.getNetworkCidrConfig("192.168.1.0/24") >> [
-            config: [netmask: "255.255.255.0"],
-            ranges: [[startAddress: "192.168.1.10", endAddress: "192.168.1.254"]]
+                config: [netmask: "255.255.255.0"],
+                ranges: [[startAddress: "192.168.1.10", endAddress: "192.168.1.254"]]
         ]
         NetworkUtility.getNetworkCidrConfig("10.0.1.0/24") >> [
-            config: [netmask: "255.255.255.0"],
-            ranges: [[startAddress: "10.0.1.10", endAddress: "10.0.1.254"]]
+                config: [netmask: "255.255.255.0"],
+                ranges: [[startAddress: "10.0.1.10", endAddress: "10.0.1.254"]]
         ]
 
         when: "addMissingNetworkSubnet is called"
@@ -451,13 +545,12 @@ class NetworkSyncSpec extends Specification {
         result == false
     }
 
-    // Tests for updateSubnetNetworkProperties
     def "updateSubnetNetworkProperties should update network-related properties"() {
         given: "A subnet with outdated network properties"
         def subnet = new NetworkSubnet(
-            cidr: "192.168.1.0/24",
-            subnetAddress: "192.168.1.0/24",
-            netmask: "255.255.255.0"
+                cidr: "192.168.1.0/24",
+                subnetAddress: "192.168.1.0/24",
+                netmask: "255.255.255.0"
         )
         subnet.setConfigProperty("subnetCidr", "192.168.1.0/24")
 
@@ -478,9 +571,9 @@ class NetworkSyncSpec extends Specification {
     def "updateSubnetNetworkProperties should return false when properties are current"() {
         given: "A subnet with current network properties"
         def subnet = new NetworkSubnet(
-            cidr: "192.168.1.0/24",
-            subnetAddress: "192.168.1.0/24",
-            netmask: "255.255.255.0"
+                cidr: "192.168.1.0/24",
+                subnetAddress: "192.168.1.0/24",
+                netmask: "255.255.255.0"
         )
         subnet.setConfigProperty("subnetCidr", "192.168.1.0/24")
 
@@ -494,16 +587,15 @@ class NetworkSyncSpec extends Specification {
         result == false
     }
 
-    // Tests for updateSubnetDhcpProperties
     def "updateSubnetDhcpProperties should update DHCP range properties"() {
         given: "A subnet with outdated DHCP properties"
         def subnet = new NetworkSubnet(
-            dhcpStart: "192.168.1.10",
-            dhcpEnd: "192.168.1.254"
+                dhcpStart: "192.168.1.10",
+                dhcpEnd: "192.168.1.254"
         )
 
         def networkCidr = [
-            ranges: [[startAddress: "10.0.1.50", endAddress: "10.0.1.200"]]
+                ranges: [[startAddress: "10.0.1.50", endAddress: "10.0.1.200"]]
         ]
 
         when: "updateSubnetDhcpProperties is called"
@@ -518,8 +610,8 @@ class NetworkSyncSpec extends Specification {
     def "updateSubnetDhcpProperties should handle missing ranges gracefully"() {
         given: "A subnet with DHCP properties and networkCidr without ranges"
         def subnet = new NetworkSubnet(
-            dhcpStart: "192.168.1.10",
-            dhcpEnd: "192.168.1.254"
+                dhcpStart: "192.168.1.10",
+                dhcpEnd: "192.168.1.254"
         )
 
         def networkCidr = [ranges: null]
@@ -536,12 +628,12 @@ class NetworkSyncSpec extends Specification {
     def "updateSubnetDhcpProperties should return false when properties are current"() {
         given: "A subnet with current DHCP properties"
         def subnet = new NetworkSubnet(
-            dhcpStart: "192.168.1.10",
-            dhcpEnd: "192.168.1.254"
+                dhcpStart: "192.168.1.10",
+                dhcpEnd: "192.168.1.254"
         )
 
         def networkCidr = [
-            ranges: [[startAddress: "192.168.1.10", endAddress: "192.168.1.254"]]
+                ranges: [[startAddress: "192.168.1.10", endAddress: "192.168.1.254"]]
         ]
 
         when: "updateSubnetDhcpProperties is called"
@@ -550,4 +642,86 @@ class NetworkSyncSpec extends Specification {
         then: "false is returned as no changes were made"
         result == false
     }
+
+    @Unroll
+    def "createNetworkEntities should create network entities with correct configuration"() {
+        given: "Network data and dependencies"
+        def networkType = new NetworkType(code: 'scvmmNetwork')
+        def server = new ComputeServer(id: 5L, name: "test-server")
+        def addList = [
+                [ID: "network-123", Name: "Production Network", VLanID: 500],
+                [ID: "network-456", Name: "Development Network", VLanID: 501]
+        ]
+
+        when: "createNetworkEntities is called"
+        def result = networkSync.createNetworkEntities(addList, networkType, server)
+
+        then: "correct number of networks are created"
+        result.size() == 2
+
+        and: "first network has correct properties"
+        def network1 = result.find { it.externalId == "network-123" }
+        network1.name == "Production Network"
+        network1.code == "scvmm.network.${cloud.id}.${server.id}.network-123"
+        network1.category == "scvmm.network.${cloud.id}.${server.id}"
+        network1.cloud == cloud
+        network1.dhcpServer == true
+        network1.uniqueId == "network-123"
+        network1.externalId == "network-123"
+        network1.type == networkType
+        network1.refType == "ComputeZone"
+        network1.refId == cloud.id
+        network1.owner == cloud.owner
+        network1.active == cloud.defaultNetworkSyncActive
+
+        and: "second network has correct properties"
+        def network2 = result.find { it.externalId == "network-456" }
+        network2.name == "Development Network"
+        network2.code == "scvmm.network.${cloud.id}.${server.id}.network-456"
+        network2.uniqueId == "network-456"
+    }
+
+    @Unroll
+    def "createNetworkEntities should handle empty list and return empty result"() {
+        given: "Empty add list"
+        def networkType = new NetworkType(code: 'scvmmNetwork')
+        def server = new ComputeServer(id: 5L, name: "test-server")
+        def addList = []
+
+        when: "createNetworkEntities is called"
+        def result = networkSync.createNetworkEntities(addList, networkType, server)
+
+        then: "empty list is returned"
+        result.isEmpty()
+    }
+
+    @Unroll
+    def "createNetworkEntities should handle null list and return empty result"() {
+        given: "Null add list"
+        def networkType = new NetworkType(code: 'scvmmNetwork')
+        def server = new ComputeServer(id: 5L, name: "test-server")
+        def addList = null
+
+        when: "createNetworkEntities is called"
+        def result = networkSync.createNetworkEntities(addList, networkType, server)
+
+        then: "empty list is returned"
+        result.isEmpty()
+    }
+
+    def "updateMatchedNetworks should do nothing for null list"() {
+        given:
+        def subnetType = new NetworkSubnetType(code: 'scvmm')
+
+        when:
+        networkSync.updateMatchedNetworks(null, subnetType)
+
+        then:
+        0 * networkSubnetService.list(_)
+        0 * networkSync.addMissingNetworkSubnet(_, _, _)
+        0 * networkSync.updateMatchedNetworkSubnet(_)
+        0 * networkSubnetService.remove(_)
+        0 * networkSubnetService.listById(_)
+    }
+
 }

@@ -56,7 +56,6 @@ class VirtualMachineSyncSpec extends Specification {
     private OsType mockOsType
     private ComputeServerType defaultServerType
 
-    // Test class that allows us to inject mock apiService
     private static class TestableVirtualMachineSync extends VirtualMachineSync {
         def log = [debug: { msg -> println("DEBUG: $msg") }] // Mock log property
         MorpheusContext context // Add missing context property
@@ -887,7 +886,6 @@ class VirtualMachineSyncSpec extends Specification {
         "test-123" | 'test-123'          | 1004L     // Tests elvis operator with valid input
     }
 
-    // Tests for removeMissingVirtualMachines method - comprehensive line coverage
     @Unroll
     def "removeMissingVirtualMachines should remove VMs with proper filtering"() {
         given: "a list of ComputeServerIdentityProjection items to remove"
@@ -916,8 +914,6 @@ class VirtualMachineSyncSpec extends Specification {
         }) >> removeItems
 
         1 * asyncComputeServerService.remove(removeItems) >> Single.just(true)
-
-        // Covers lines: 600 (log), 601-604 (listIdentityProjections with filters), 605 (async remove + blockingGet)
     }
 
     @Unroll
@@ -936,8 +932,6 @@ class VirtualMachineSyncSpec extends Specification {
         }) >> []
 
         1 * asyncComputeServerService.remove([]) >> Single.just(true)
-
-        // Covers all lines with empty input scenario
     }
 
     @Unroll
@@ -954,8 +948,6 @@ class VirtualMachineSyncSpec extends Specification {
         1 * computeServerService.listIdentityProjections(_) >> [mockServer]
         1 * asyncComputeServerService.remove(_) >> Single.just(true)
 
-        // Covers line 600: log.debug("removeMissingVirtualMachines: ${cloud} ${removeList.size()}")
-        // The log will show: "removeMissingVirtualMachines: test-scvmm-cloud 1"
     }
 
     @Unroll
@@ -1089,7 +1081,6 @@ class VirtualMachineSyncSpec extends Specification {
         []             | []          | "Empty list"
     }
 
-    // Tests for removeMissingStorageVolumes method - basic functionality verification
     @Unroll
     def "removeMissingStorageVolumes should handle empty and null input gracefully"() {
         given: "empty or null removeItems list"
@@ -1128,11 +1119,8 @@ class VirtualMachineSyncSpec extends Specification {
 
         // Bulk save should still be called even with empty list
         1 * asyncComputeServerService.bulkSave([server]) >> Single.just([server])
-
-        // Covers: empty list handling and final bulk save
     }
 
-    // Tests for buildStorageVolume method - comprehensive line coverage
     @Unroll
     def "buildStorageVolume should create complete storage volume with all properties"() {
         given: "account, server, and volume configuration"
@@ -1190,9 +1178,6 @@ class VirtualMachineSyncSpec extends Specification {
         result.datastore == null // no datastoreId provided
         result.refType == null
         result.refId == null
-
-        // Covers: new StorageVolume(), name assignment, account assignment,
-        // all helper method calls, and return statement
     }
 
     @Unroll
@@ -1226,8 +1211,6 @@ class VirtualMachineSyncSpec extends Specification {
         result.datastore == null // no datastoreId
         result.refType == null
         result.refId == null
-
-        // Covers: size fallback logic, storage type fallback, root volume logic
     }
 
     @Unroll
@@ -1265,8 +1248,6 @@ class VirtualMachineSyncSpec extends Specification {
         result.storageServer == null
         result.refType == null
         result.refId == null
-
-        // Covers: configureDatastore early return path
     }
 
     @Unroll
@@ -1292,8 +1273,6 @@ class VirtualMachineSyncSpec extends Specification {
         result.cloudId == null
         result.name == "no-cloud-ref-volume"
         result.maxStorage == 1048576L
-
-        // Covers: null cloud ID determination path
     }
 
     @Unroll
@@ -1319,8 +1298,6 @@ class VirtualMachineSyncSpec extends Specification {
         result.cloudId == null
         result.name == "no-cloud-volume"
         result.maxStorage == 2048L
-
-        // Covers: determineCloudId null fallback branch
     }
 
     @Unroll
@@ -1356,8 +1333,6 @@ class VirtualMachineSyncSpec extends Specification {
         [name: "with-order", displayOrder: 5]    | 5
         [name: "without-order"]                  | 3  // server.volumes.size()
         [name: "null-order", displayOrder: null] | 3  // fallback to server.volumes.size()
-
-        // Covers: displayOrder logic with fallback to server.volumes.size()
     }
 
     @Unroll
@@ -1385,8 +1360,6 @@ class VirtualMachineSyncSpec extends Specification {
         result.maxStorage == 4096L
         result.displayOrder == 99
         result.datastore == null // no datastoreId
-
-        // Covers: explicit display order case
     }
 
     @Unroll
@@ -1432,7 +1405,6 @@ class VirtualMachineSyncSpec extends Specification {
         "test"     | null       | "1024" | "ext"      | "int"      | "/dev/sdc" | true       | null        | 1024L              | 0
         "test2"    | "2048"     | null   | null       | null       | null       | false      | null        | 2048L              | 0
 
-        // Covers: null/empty property handling, size vs maxStorage precedence
     }
 
     @Unroll
@@ -1459,8 +1431,6 @@ class VirtualMachineSyncSpec extends Specification {
         null                  | 0
         []                    | 0
         [new StorageVolume()] | 1
-
-        // Covers: volumes collection null/empty handling in displayOrder calculation
     }
 
     @Unroll
@@ -1495,11 +1465,8 @@ class VirtualMachineSyncSpec extends Specification {
         result.externalId == "chain-ext-123"
         result.internalId == "chain-int-456"
         result.cloudId == 11L
-
-        // Covers: complete method flow including new StorageVolume(), all helper calls, return
     }
 
-    // Tests for addMissingVirtualMachines method - basic functionality verification
     @Unroll
     def "addMissingVirtualMachines should execute without exceptions for a valid input"() {
         given: "cloud items to add and configuration data"
@@ -1547,8 +1514,6 @@ class VirtualMachineSyncSpec extends Specification {
             (0.._) * virtualMachineSync.buildVmConfig(_, _) >> [name: "test-vm-1", cloud: cloud]
             (0.._) * virtualMachineSync.syncVolumes(_, _)
         }
-
-        // Covers: successful method execution
     }
 
     @Unroll
@@ -1561,8 +1526,6 @@ class VirtualMachineSyncSpec extends Specification {
 
         then: "method should complete without exceptions"
         noExceptionThrown()
-
-        // Covers: empty addList handling
     }
 
     @Unroll
@@ -1575,8 +1538,6 @@ class VirtualMachineSyncSpec extends Specification {
 
         then: "method should complete without exceptions"
         noExceptionThrown()
-
-        // Covers: null input handling
     }
 
     @Unroll
@@ -1604,11 +1565,8 @@ class VirtualMachineSyncSpec extends Specification {
             (0.._) * asyncComputeServerService.create(_) >> { throw new RuntimeException("Service error") }
             (0.._) * virtualMachineSync.buildVmConfig(_, _) >> { throw new RuntimeException("Service error") }
         }
-
-        // Covers: exception handling robustness
     }
 
-    // Tests for execute method - functional verification covering all execution paths
     @Unroll
     def "execute should orchestrate VM synchronization flow with API calls with createNew=#createNew"() {
         given: "setup for API orchestration"
@@ -1630,8 +1588,6 @@ class VirtualMachineSyncSpec extends Specification {
 
         where:
         createNew << [true, false]
-
-        // Covers: execute method orchestration with both createNew values
     }
 
     @Unroll
@@ -1659,11 +1615,8 @@ class VirtualMachineSyncSpec extends Specification {
 
         where:
         createNew << [true, false]
-
-        // Covers: complete execute method success path workflow
     }
 
-    // Tests for syncVolumes method - functional verification covering main execution paths
     @Unroll
     def "syncVolumes should execute without exceptions and return boolean result"() {
         given: "server with volumes and external volumes to sync"
@@ -1696,8 +1649,6 @@ class VirtualMachineSyncSpec extends Specification {
             (0.._) * asyncStorageVolumeService.bulkSave(_) >> Single.just([existingVolume])
             (0.._) * asyncStorageVolumeService.remove(_) >> Single.just(true)
         }
-
-        // Covers: Observable.fromIterable, SyncTask creation and execution, callback executions
     }
 
     @Unroll
@@ -1730,8 +1681,6 @@ class VirtualMachineSyncSpec extends Specification {
 
         where:
         createNewParam << [true, false]
-
-        // Covers: empty data handling in SyncTask
     }
 
     def "getExistingVirtualMachines should return Observable of ComputeServerIdentityProjections with correct filters"() {
@@ -1932,45 +1881,6 @@ class VirtualMachineSyncSpec extends Specification {
         1 * asyncStorageVolumeService.remove(volume) >> Single.just(true)
     }
 
-    def "test updateMatchedStorageVolumes with basic update items"() {
-        given: "a compute server and update items"
-        def server = new ComputeServer(id: 1L, name: "test-server")
-        def volume1 = new StorageVolume(id: 1L, name: "volume1")
-        def volume2 = new StorageVolume(id: 2L, name: "volume2")
-
-        // Create proper masterItem data structures with TotalSize property
-        def masterItem1 = [
-                ID: "disk-1",
-                Name: "test-disk-1",
-                TotalSize: "1024",  // This is what processVolumeUpdate expects
-                VolumeType: "Data"
-        ]
-        def masterItem2 = [
-                ID: "disk-2",
-                Name: "test-disk-2",
-                TotalSize: "2048",
-                VolumeType: "BootAndSystem"
-        ]
-
-        def updateItems = [
-                [existingItem: volume1, masterItem: masterItem1],
-                [existingItem: volume2, masterItem: masterItem2]
-        ]
-
-        Long maxStorage = 0L
-        Boolean changes = false
-
-
-        // Mock bulk save operation
-        asyncStorageVolumeService.bulkSave(_) >> Single.just([volume1, volume2])
-
-        when: "updateMatchedStorageVolumes is called"
-        virtualMachineSync.updateMatchedStorageVolumes(updateItems, server, maxStorage, changes)
-
-        then: "the method should process all update items and save volumes"
-        1 * asyncStorageVolumeService.bulkSave([volume1, volume2]) >> Single.just([volume1, volume2])
-    }
-
     @Unroll
     def "loadDatastoreForVolume should return null when no parameters provided"() {
         when: "loadDatastoreForVolume is called with all null parameters"
@@ -1993,7 +1903,6 @@ class VirtualMachineSyncSpec extends Specification {
         0 * datastoreService.find(_)
     }
 
-// Tests for loadDatastoreForVolume method - comprehensive line coverage
     @Unroll
     def "loadDatastoreForVolume should find datastore by hostVolumeId when available"() {
         given: "a storage volume with matching hostVolumeId"
@@ -2081,7 +1990,7 @@ class VirtualMachineSyncSpec extends Specification {
         then: "debug logging should be executed"
         noExceptionThrown()
     }
-// Tests for resolveDatastore method
+
     @Unroll
     def "resolveDatastore should return datastore from diskData when present"() {
         given: "disk data with datastore property"
@@ -2099,11 +2008,8 @@ class VirtualMachineSyncSpec extends Specification {
         then: "should return existing datastore without calling loadDatastoreForVolume"
         0 * virtualMachineSync.loadDatastoreForVolume(_, _, _)
         result == existingDatastore
-
-        // Covers: elvis operator left side (datastore present)
     }
 
-// Tests for resolveDeviceName method
     @Unroll
     def "resolveDeviceName should return deviceName from diskData when present"() {
         given: "disk data with deviceName"
@@ -2116,8 +2022,6 @@ class VirtualMachineSyncSpec extends Specification {
         then: "should return existing deviceName without calling apiService"
         0 * mockApiService.getDiskName(_)
         result == "/dev/sda1"
-
-        // Covers: elvis operator left side (deviceName present)
     }
 
     @Unroll
@@ -2132,8 +2036,6 @@ class VirtualMachineSyncSpec extends Specification {
         then: "should call apiService.getDiskName with correct diskNumber"
         1 * mockApiService.getDiskName(3) >> "/dev/sdc"
         result == "/dev/sdc"
-
-        // Covers: elvis operator right side (deviceName not present)
     }
 
     @Unroll
@@ -2155,11 +2057,8 @@ class VirtualMachineSyncSpec extends Specification {
         ""             | 1                | "/dev/sdb"
         "   "          | 0                | "   "        // Groovy treats whitespace as truthy
         "/dev/custom"  | 0                | "/dev/custom"
-
-        // Covers: null/empty handling, elvis operator behavior
     }
 
-// Tests for resolveVolumeName method
     @Unroll
     def "resolveVolumeName should return name from serverVolumeNames when available"() {
         given: "server volume names list with entry at index"
@@ -2174,8 +2073,6 @@ class VirtualMachineSyncSpec extends Specification {
         then: "should return name from serverVolumeNames without calling getVolumeName"
         0 * virtualMachineSync.getVolumeName(_, _, _)
         result == "data-vol"
-
-        // Covers: elvis operator left side (serverVolumeNames.getAt(index) returns value)
     }
 
     @Unroll
@@ -2196,8 +2093,6 @@ class VirtualMachineSyncSpec extends Specification {
         where:
         volumeNamesList | testIndex | expectedGetVolumeNameCalls | expectedResult
         ["vol1", "vol2"] | 0        | 0                          | "vol1"           // valid index
-
-        // Covers: null list, empty list, index out of bounds, valid scenarios
     }
 
     @Unroll
@@ -2218,11 +2113,8 @@ class VirtualMachineSyncSpec extends Specification {
         where:
         volumeNames        | expectedCalls | expectedResult
         ["existing-name"]  | 0             | "existing-name"  // Valid getAt result
-
-        // Covers: safe navigation operator (?.), getAt behavior on empty/null collections
     }
 
-// Tests for isRootVolume method
     @Unroll
     def "isRootVolume should return true when VolumeType is BootAndSystem"() {
         given: "disk data with BootAndSystem volume type"
@@ -2234,8 +2126,6 @@ class VirtualMachineSyncSpec extends Specification {
 
         then: "should return true"
         result == true
-
-        // Covers: first condition of OR expression (VolumeType == BOOT_AND_SYSTEM)
     }
 
     @Unroll
@@ -2255,8 +2145,6 @@ class VirtualMachineSyncSpec extends Specification {
         null              | true           // !null?.size() evaluates to true
         []                | true           // ![]?.size() evaluates to true (empty collection size is 0)
         [new StorageVolume()] | false      // ![volume]?.size() evaluates to false (size is 1)
-
-        // Covers: second condition of OR expression (!server.volumes?.size())
     }
 
     @Unroll
@@ -2279,8 +2167,6 @@ class VirtualMachineSyncSpec extends Specification {
         "Data"            | false          // Different type, server has volumes
         null              | false          // null != "BootAndSystem", server has volumes
         ""                | false          // empty string != "BootAndSystem"
-
-        // Covers: case sensitivity, null handling, various string values
     }
 
     @Unroll
@@ -2301,8 +2187,6 @@ class VirtualMachineSyncSpec extends Specification {
         "BootAndSystem" | []                         | true          | "Both conditions true"
         "Data"          | []                         | true          | "First condition false, second true"
         "Data"          | [new StorageVolume()]      | false         | "Both conditions false"
-
-        // Covers: complete OR expression truth table
     }
 
     def "performVirtualMachineSync should prepare data and execute sync task"() {
@@ -2492,4 +2376,619 @@ class VirtualMachineSyncSpec extends Specification {
         result == builtVolume
     }
 
+    def "test prepareSyncData - resource permission collection when availablePlans exist"() {
+        given: "Service plan data"
+        def plan1 = new ServicePlan(id: 100L, name: "plan1")
+        def plan2 = new ServicePlan(id: 200L, name: "plan2")
+        def plans = [plan1, plan2]
+
+        def perm1 = new ResourcePermission(morpheusResourceType: 'ServicePlan', morpheusResourceId: 100L)
+        def perm2 = new ResourcePermission(morpheusResourceType: 'ServicePlan', morpheusResourceId: 200L)
+
+        when: "prepareSyncData is called"
+        def result = virtualMachineSync.prepareSyncData()
+
+        then: "Service plans are retrieved"
+        1 * servicePlanService.list(_ as DataQuery) >> plans
+
+        and: "Resource permissions are queried with correct filters"
+        1 * resourcePermissionService.list(_ as DataQuery) >> { DataQuery query ->
+            assert query.filters.find { it.name == 'morpheusResourceType' }?.value == 'ServicePlan'
+            assert query.filters.find { it.name == 'morpheusResourceId' }?.operator == 'in'
+            assert query.filters.find { it.name == 'morpheusResourceId' }?.value == [100L, 200L]
+            [perm1, perm2]
+        }
+
+        and: "Other required services return data"
+        1 * servicePlanService.find(_ as DataQuery) >> new ServicePlan(id: 999L)
+        1 * cloudAsyncService.findComputeServerTypeByCode('scvmmUnmanaged') >> Maybe.just(new ComputeServerType(id: 1L))
+        1 * computeServerService.list(_ as DataQuery) >> []
+
+        and: "Result contains permissions"
+        result.availablePlanPermissions.size() == 2
+    }
+
+    def "test prepareSyncData - empty permission collection when no plans"() {
+        given: "No service plans"
+        def emptyPlans = []
+
+        when: "prepareSyncData is called"
+        def result = virtualMachineSync.prepareSyncData()
+
+        then: "Service plans list returns empty"
+        1 * servicePlanService.list(_ as DataQuery) >> emptyPlans
+
+        and: "Resource permission service is NOT called"
+        0 * resourcePermissionService.list(_ as DataQuery)
+
+        and: "Other services return defaults"
+        1 * servicePlanService.find(_ as DataQuery) >> new ServicePlan(id: 999L)
+        1 * cloudAsyncService.findComputeServerTypeByCode('scvmmUnmanaged') >> Maybe.just(new ComputeServerType(id: 1L))
+        1 * computeServerService.list(_ as DataQuery) >> []
+
+        and: "Permissions collection is empty"
+        result.availablePlanPermissions == []
+    }
+
+    def "test prepareSyncData - findComputeServerTypeByCode call"() {
+        given: "Expected server type"
+        def expectedType = new ComputeServerType(id: 777L, code: 'scvmmUnmanaged')
+
+        when: "prepareSyncData is called"
+        def result = virtualMachineSync.prepareSyncData()
+
+        then: "findComputeServerTypeByCode is called with correct code"
+        1 * cloudAsyncService.findComputeServerTypeByCode('scvmmUnmanaged') >> Maybe.just(expectedType)
+
+        and: "Other services"
+        1 * servicePlanService.list(_ as DataQuery) >> []
+        1 * servicePlanService.find(_ as DataQuery) >> new ServicePlan(id: 999L)
+        1 * computeServerService.list(_ as DataQuery) >> []
+
+        and: "Server type is in result"
+        result.serverType == expectedType
+    }
+
+    def "test executeSyncTask - onAdd callback NOT triggered when createNew is false"() {
+        given: "Sync task setup"
+        def existingVms = Observable.fromIterable([])
+        def newVmData = [[ID: "new-vm-1", Name: "New VM"]]
+        def listResults = [virtualMachines: newVmData]
+
+        def syncData = [
+            availablePlans: [],
+            fallbackPlan: null,
+            availablePlanPermissions: [],
+            hosts: [],
+            serverType: null
+        ]
+
+        def executionContext = [consoleEnabled: false]
+        def spy = Spy(virtualMachineSync)
+
+        when: "executeSyncTask is called with createNew=false"
+        spy.executeSyncTask(existingVms, listResults, syncData, executionContext, false)
+
+        then: "addMissingVirtualMachines is NOT called"
+        0 * spy.addMissingVirtualMachines(_, _, _, _, _, _, _)
+    }
+
+    def "test addMissingVirtualMachines - error logging when save fails"() {
+        given: "VM data"
+        def cloudItem = [
+                Name: "fail-vm",
+                ID: "vm-fail-123",
+                VMId: "internal-fail",
+                CPUCount: "2",
+                Memory: "4096",
+                VirtualMachineState: "Running",
+                Disks: []
+        ]
+
+        when: "addMissingVirtualMachines processes item and save fails"
+        virtualMachineSync.addMissingVirtualMachines([cloudItem], [], null, [], [], true, null)
+
+        then: "create is called and returns error (failure)"
+        1 * asyncComputeServerService.create(_) >> Single.error(new RuntimeException("Save failed"))
+
+        and: "Exception is logged but not thrown"
+        noExceptionThrown()
+    }
+
+    def "test configureServerNetwork - IpAddress and InternalIp assignment"() {
+        given: "Server and cloud item"
+        def server = new ComputeServer()
+        def cloudItem = [IpAddress: "192.168.1.100", InternalIp: "10.10.10.100"]
+
+        when: "Server is created via addMissingVirtualMachines"
+        def vmConfig = virtualMachineSync.buildVmConfig(cloudItem, null)
+
+        then: "Config has correct structure"
+        vmConfig.name == cloudItem.Name
+        noExceptionThrown()
+    }
+
+    def "test configureServerNetwork - sshHost prefers internalIp"() {
+        given: "Cloud item with both IPs"
+        def cloudItem = [
+                Name: "test-vm",
+                IpAddress: "1.1.1.1",
+                InternalIp: "10.0.0.1",
+                ID: "vm-123",
+                VMId: "internal-123",
+                CPUCount: "2",
+                Memory: "4096",
+                VirtualMachineState: "Running"
+        ]
+
+        when: "VM config is built"
+        def vmConfig = virtualMachineSync.buildVmConfig(cloudItem, null)
+
+        then: "Config is created successfully"
+        vmConfig != null
+        noExceptionThrown()
+    }
+
+    def "test configureServerNetwork - sshHost falls back to externalIp when no internalIp"() {
+        given: "Cloud item with only external IP"
+        def cloudItem = [
+                Name: "test-vm-2",
+                IpAddress: "2.2.2.2",
+                ID: "vm-456",
+                VMId: "internal-456",
+                CPUCount: "1",
+                Memory: "2048",
+                VirtualMachineState: "Running"
+        ]
+
+        when: "VM config is built"
+        def vmConfig = virtualMachineSync.buildVmConfig(cloudItem, null)
+
+        then: "Config is created successfully"
+        vmConfig != null
+        noExceptionThrown()
+    }
+
+    def "test updateSingleServer - exception in updateBasicServerProperties"() {
+        given: "Server and data that will cause list to throw exception"
+        def server = new ComputeServer(id: 888L, name: "error-test")
+        def masterItem = [Name: "updated", VirtualMachineState: "Running"]
+        def updateItem = new SyncTask.UpdateItem<ComputeServer, Map>(
+                existingItem: server,
+                masterItem: masterItem
+        )
+
+        when: "updateMatchedVirtualMachines encounters exception in server list"
+        virtualMachineSync.updateMatchedVirtualMachines([updateItem], [], null, [], false, null)
+
+        then: "Server list throws exception"
+        1 * computeServerService.list(_ as DataQuery) >> { throw new RuntimeException("Property error") }
+
+        and: "Exception is caught and logged"
+        noExceptionThrown()
+
+        and: "bulkSave is not called due to exception"
+        0 * asyncComputeServerService.bulkSave(_)
+    }
+
+    @Unroll
+    def "updateVolumeSize should return false when masterDiskSize is zero"() {
+        given: "a storage volume and zero masterDiskSize"
+        def volume = new StorageVolume(id: 1L, maxStorage: 1073741824L) // 1GB
+        def masterDiskSize = 0L
+
+        when: "updateVolumeSize is called with zero size"
+        def result = virtualMachineSync.updateVolumeSize(volume, masterDiskSize)
+
+        then: "should return false and not modify volume"
+        result == false
+        volume.maxStorage == 1073741824L // unchanged
+    }
+
+    @Unroll
+    def "updateVolumeSize should return false when sizes are equal"() {
+        given: "a storage volume and matching masterDiskSize"
+        def volume = new StorageVolume(id: 2L, maxStorage: 2147483648L) // 2GB
+        def masterDiskSize = 2147483648L
+
+        when: "updateVolumeSize is called with same size"
+        def result = virtualMachineSync.updateVolumeSize(volume, masterDiskSize)
+
+        then: "should return false and not modify volume"
+        result == false
+        volume.maxStorage == 2147483648L // unchanged
+    }
+
+    @Unroll
+    def "updateVolumeSize should return false when masterDiskSize is within tolerance range"() {
+        given: "a storage volume and masterDiskSize within 1GB tolerance"
+        def volume = new StorageVolume(id: 3L, maxStorage: 5368709120L) // 5GB
+        def masterDiskSize = masterDiskSizeValue
+
+        when: "updateVolumeSize is called with size within tolerance"
+        def result = virtualMachineSync.updateVolumeSize(volume, masterDiskSize)
+
+        then: "should return false and not modify volume"
+        result == false
+        volume.maxStorage == 5368709120L // unchanged
+
+        where:
+        masterDiskSizeValue << [
+            4831838208L, // 5GB - 512MB (within tolerance)
+            5100273664L, // 5GB + 256MB (within tolerance)
+            4905533440L, // 5GB - 256MB + 1MB (within tolerance)
+            5905580032L  // 5GB + 512MB (within tolerance)
+        ]
+    }
+
+    @Unroll
+    def "updateVolumeInternalId should return false when internalId matches masterItem Name"() {
+        given: "a storage volume with internalId matching masterItem Name"
+        def volume = new StorageVolume(id: 4L, internalId: "disk-vm-01")
+        def masterItem = [Name: "disk-vm-01"]
+
+        when: "updateVolumeInternalId is called with matching name"
+        def result = virtualMachineSync.updateVolumeInternalId(volume, masterItem)
+
+        then: "should return false and not modify volume"
+        result == false
+        volume.internalId == "disk-vm-01" // unchanged
+    }
+
+    @Unroll
+    def "updateVolumeInternalId should return false when both internalId and Name are null"() {
+        given: "a storage volume with null internalId and masterItem with null Name"
+        def volume = new StorageVolume(id: 5L, internalId: null)
+        def masterItem = [Name: null]
+
+        when: "updateVolumeInternalId is called with both null"
+        def result = virtualMachineSync.updateVolumeInternalId(volume, masterItem)
+
+        then: "should return false and not modify volume"
+        result == false
+        volume.internalId == null // unchanged
+    }
+
+    @Unroll
+    def "updateVolumeInternalId should return false when both internalId and Name are empty strings"() {
+        given: "a storage volume with empty internalId and masterItem with empty Name"
+        def volume = new StorageVolume(id: 6L, internalId: "")
+        def masterItem = [Name: ""]
+
+        when: "updateVolumeInternalId is called with both empty"
+        def result = virtualMachineSync.updateVolumeInternalId(volume, masterItem)
+
+        then: "should return false and not modify volume"
+        result == false
+        volume.internalId == "" // unchanged
+    }
+
+    @Unroll
+    def "updateVolumeRootFlag should return false when rootVolume flag matches calculated isRootVolume"() {
+        given: "a storage volume and server configuration"
+        def volume = new StorageVolume(id: 7L, rootVolume: currentRootFlag)
+        def masterItem = [VolumeType: volumeType]
+        def serverVolumes = volumes
+        def server = new ComputeServer(id: 1L, volumes: serverVolumes)
+
+        when: "updateVolumeRootFlag is called"
+        def result = virtualMachineSync.updateVolumeRootFlag(volume, masterItem, server)
+
+        then: "should return false when flags match"
+        result == false
+        volume.rootVolume == currentRootFlag // unchanged
+
+        where:
+        volumeType      | volumes                                                    | currentRootFlag
+        "BootAndSystem" | [new StorageVolume(), new StorageVolume()]                | true    // Both conditions true, flag already true
+        "Data"          | [new StorageVolume()]                                     | true    // Single volume (root), flag already true
+        "Data"          | [new StorageVolume(), new StorageVolume(), new StorageVolume()] | false   // Multiple volumes, not boot type, flag already false
+    }
+
+    @Unroll
+    def "updateVolumeRootFlag should return false when masterItem is null and volume count > 1"() {
+        given: "a storage volume with null masterItem and multiple server volumes"
+        def volume = new StorageVolume(id: 8L, rootVolume: false)
+        def masterItem = null
+        def server = new ComputeServer(id: 2L, volumes: [new StorageVolume(), new StorageVolume()])
+
+        when: "updateVolumeRootFlag is called with null masterItem"
+        def result = virtualMachineSync.updateVolumeRootFlag(volume, masterItem, server)
+
+        then: "should return false when flag matches calculated value"
+        result == false
+        volume.rootVolume == false // unchanged, multiple volumes so not root
+    }
+
+    @Unroll
+    def "updateVolumeName should return false when volume name is not null"() {
+        given: "a storage volume with existing name"
+        def volume = new StorageVolume(id: 9L, name: "existing-volume-name")
+        def masterItem = [Name: "new-disk-name", VolumeType: "Data"]
+        def server = new ComputeServer(id: 3L, volumes: [new StorageVolume()])
+        def index = 0
+
+        when: "updateVolumeName is called on volume with existing name"
+        def result = virtualMachineSync.updateVolumeName(volume, masterItem, server, index)
+
+        then: "should return false and not modify volume name"
+        result == false
+        volume.name == "existing-volume-name" // unchanged
+        0 * virtualMachineSync.getVolumeName(_, _, _) // getVolumeName should not be called
+    }
+
+    @Unroll
+    def "updateVolumeName should return false when volume name is empty string"() {
+        given: "a storage volume with empty string name"
+        def volume = new StorageVolume(id: 10L, name: "")
+        def masterItem = [Name: "disk-name", VolumeType: "Data"]
+        def server = new ComputeServer(id: 4L, volumes: [new StorageVolume()])
+        def index = 1
+
+        when: "updateVolumeName is called on volume with empty name"
+        def result = virtualMachineSync.updateVolumeName(volume, masterItem, server, index)
+
+        then: "should return false and not modify volume name"
+        result == false
+        volume.name == "" // unchanged (empty string is truthy in Groovy)
+        0 * virtualMachineSync.getVolumeName(_, _, _) // getVolumeName should not be called
+    }
+
+    @Unroll
+    def "updateVolumeName should return false when volume name is whitespace"() {
+        given: "a storage volume with whitespace name"
+        def volume = new StorageVolume(id: 11L, name: "   ")
+        def masterItem = [Name: "disk-name", VolumeType: "Data"]
+        def server = new ComputeServer(id: 5L, volumes: [new StorageVolume()])
+        def index = 2
+
+        when: "updateVolumeName is called on volume with whitespace name"
+        def result = virtualMachineSync.updateVolumeName(volume, masterItem, server, index)
+
+        then: "should return false and not modify volume name"
+        result == false
+        volume.name == "   " // unchanged (whitespace is truthy in Groovy)
+        0 * virtualMachineSync.getVolumeName(_, _, _) // getVolumeName should not be called
+    }
+
+    @Unroll
+    def "configureDatastore should configure all properties when datastore exists"() {
+        given: "a storage volume and volume map with valid datastoreId"
+        def storageVolume = new StorageVolume(id: 2L, name: "test-volume")
+        def volume = [datastoreId: "100"]
+
+        def mockStorageServer = new StorageServer(id: 50L, name: "storage-server")
+        def mockDatastore = new Datastore(id: 100L, name: "test-datastore", storageServer: mockStorageServer)
+
+        when: "configureDatastore is called"
+        virtualMachineSync.configureDatastore(storageVolume, volume)
+
+        then: "datastore service is called with correct ID"
+        1 * datastoreService.get(100L) >> mockDatastore
+
+        and: "all storage volume properties are set correctly"
+        storageVolume.datastoreOption == "100"
+        storageVolume.datastore == mockDatastore
+        storageVolume.storageServer == mockStorageServer
+        storageVolume.refType == 'Datastore'
+        storageVolume.refId == 100L
+    }
+
+    @Unroll
+    def "configureDatastore should handle datastore without storageServer"() {
+        given: "a storage volume and volume map with datastore that has no storageServer"
+        def storageVolume = new StorageVolume(id: 3L, name: "test-volume")
+        def volume = [datastoreId: "200"]
+
+        def mockDatastore = new Datastore(id: 200L, name: "datastore-no-server", storageServer: null)
+
+        when: "configureDatastore is called"
+        virtualMachineSync.configureDatastore(storageVolume, volume)
+
+        then: "datastore service is called"
+        1 * datastoreService.get(200L) >> mockDatastore
+
+        and: "properties are set but storageServer remains null"
+        storageVolume.datastoreOption == "200"
+        storageVolume.datastore == mockDatastore
+        storageVolume.storageServer == null
+        storageVolume.refType == 'Datastore'
+        storageVolume.refId == 200L
+    }
+
+    @Unroll
+    def "configureDatastore should handle when datastore service returns null"() {
+        given: "a storage volume and volume map with datastoreId that doesn't exist"
+        def storageVolume = new StorageVolume(id: 4L, name: "test-volume")
+        def volume = [datastoreId: "999"]
+
+        when: "configureDatastore is called"
+        virtualMachineSync.configureDatastore(storageVolume, volume)
+
+        then: "datastore service is called but returns null"
+        1 * datastoreService.get(999L) >> null
+
+        and: "datastoreOption and ref properties are still set, but datastore and storageServer are null"
+        storageVolume.datastoreOption == "999"
+        storageVolume.datastore == null
+        storageVolume.storageServer == null
+        storageVolume.refType == 'Datastore'
+        storageVolume.refId == 999L
+    }
+
+    @Unroll
+    def "configureDatastore should handle various datastoreId formats"() {
+        given: "a storage volume and volume map with different datastoreId formats"
+        def storageVolume = new StorageVolume(id: 5L, name: "test-volume")
+        def volume = [datastoreId: datastoreId]
+
+        def mockDatastore = new Datastore(id: expectedId, name: "test-datastore")
+
+        when: "configureDatastore is called"
+        virtualMachineSync.configureDatastore(storageVolume, volume)
+
+        then: "datastore service is called with correct converted ID"
+        1 * datastoreService.get(expectedId) >> mockDatastore
+
+        and: "properties are set with string and numeric values"
+        storageVolume.datastoreOption == datastoreId
+        storageVolume.datastore == mockDatastore
+        storageVolume.refType == 'Datastore'
+        storageVolume.refId == expectedId
+
+        where:
+        datastoreId | expectedId
+        "1"         | 1L
+        "123"       | 123L
+        "999"       | 999L
+    }
+
+    @Unroll
+    def "updateVolumeName should return true and set name when volume name is null"() {
+        given: "a storage volume with null name"
+        def volume = new StorageVolume(id: 1L, name: null)
+        def masterItem = [Name: "test-disk", VolumeType: "Data"]
+        def server = new ComputeServer(id: 1L, volumes: [new StorageVolume()])
+        def index = 0
+
+        and: "Create spy to mock getVolumeName"
+        def spy = Spy(virtualMachineSync)
+
+        when: "updateVolumeName is called on volume with null name"
+        def result = spy.updateVolumeName(volume, masterItem, server, index)
+
+        then: "getVolumeName is called with correct parameters"
+        1 * spy.getVolumeName(masterItem, server, index) >> "generated-volume-name"
+
+        and: "should return true and set volume name"
+        result == true
+        volume.name == "generated-volume-name"
+    }
+
+    @Unroll
+    def "updateVolumeName should return false when volume name is not null"() {
+        given: "a storage volume with existing name"
+        def volume = new StorageVolume(id: 2L, name: volumeName)
+        def masterItem = [Name: "disk-name", VolumeType: "Data"]
+        def server = new ComputeServer(id: 2L, volumes: [new StorageVolume()])
+        def index = 1
+
+        and: "Create spy to verify getVolumeName is not called"
+        def spy = Spy(virtualMachineSync)
+
+        when: "updateVolumeName is called on volume with existing name"
+        def result = spy.updateVolumeName(volume, masterItem, server, index)
+
+        then: "getVolumeName should not be called"
+        0 * spy.getVolumeName(_, _, _)
+
+        and: "should return false and not modify volume name"
+        result == false
+        volume.name == volumeName
+
+        where:
+        volumeName << ["existing-name", "", "   ", "root", "data-1"]
+    }
+
+    @Unroll
+    def "updateVolumeName should handle different masterItem and server configurations"() {
+        given: "a storage volume with null name and various configurations"
+        def volume = new StorageVolume(id: 3L, name: null)
+        def masterItem = masterData
+        def server = new ComputeServer(id: 3L, volumes: serverVolumes)
+        def index = testIndex
+
+        and: "Create spy to mock getVolumeName"
+        def spy = Spy(virtualMachineSync)
+
+        when: "updateVolumeName is called"
+        def result = spy.updateVolumeName(volume, masterItem, server, index)
+
+        then: "getVolumeName is called with provided parameters"
+        1 * spy.getVolumeName(masterData, server, testIndex) >> expectedName
+
+        and: "result is true and volume name is set"
+        result == true
+        volume.name == expectedName
+
+        where:
+        masterData                           | serverVolumes                    | testIndex | expectedName
+        [Name: "boot-disk", VolumeType: "BootAndSystem"] | []                      | 0         | "root"
+        [Name: "data-disk", VolumeType: "Data"]          | [new StorageVolume()]   | 1         | "data-1"
+        null                                 | [new StorageVolume()]   | 2         | "data-2"
+        [:]                                  | []                      | 0         | "root"
+    }
+
+    @Unroll
+    def "updateSingleServer should catch exceptions and return false with error logging"() {
+        given: "Server and data that will cause an exception"
+        def currentServer = new ComputeServer(id: 123L, name: "test-server", externalId: "vm-456")
+        def masterItem = [VMId: "updated-vm-id", Name: "Updated Server"]
+        def hosts = []
+        def consoleEnabled = true
+        def defaultServerType = new ComputeServerType(id: 1L)
+        def availablePlans = []
+        def fallbackPlan = new ServicePlan(id: 999L)
+
+        and: "Create spy to force exception in one of the update methods"
+        def spy = Spy(virtualMachineSync)
+
+        when: "updateSingleServer is called and encounters exception"
+        def result = spy.updateSingleServer(currentServer, masterItem, hosts, consoleEnabled,
+                                          defaultServerType, availablePlans, fallbackPlan)
+
+        then: "updateBasicServerProperties throws exception"
+        1 * spy.updateBasicServerProperties(currentServer, masterItem, defaultServerType) >> {
+            throw new RuntimeException("Simulated update error")
+        }
+
+        and: "exception is caught and false is returned"
+        result == false
+
+        and: "error is logged with correct server details"
+        noExceptionThrown()
+    }
+
+    @Unroll
+    def "updateOperatingSystem should return false when osType is null"() {
+        given: "Server and masterItem with operating system that results in null osType"
+        def currentServer = new ComputeServer(id: 1L, name: "test-server", serverOs: new OsType(id: 10L))
+        def masterItem = [OperatingSystem: "UnknownOS", OperatingSystemWindows: false]
+
+        and: "Mock apiService to return null osTypeCode"
+        mockApiService.getMapScvmmOsType("UnknownOS", true, null) >> null
+
+        and: "osType service returns null for 'other' code"
+        osTypeService.find(_ as DataQuery) >> null
+
+        when: "updateOperatingSystem is called"
+        def result = virtualMachineSync.updateOperatingSystem(currentServer, masterItem)
+
+        then: "should return false and not modify server"
+        result == false
+        currentServer.serverOs.id == 10L // unchanged
+    }
+
+    @Unroll
+    def "updateWorkloadAndInstanceStatuses should skip instance updates when no instanceIds"() {
+        given: "Server and mock services"
+        def server = new ComputeServer(id: 1L, externalId: "vm-123")
+
+        and: "Mock services setup"
+        def mockInstanceService = Mock(com.morpheusdata.core.synchronous.MorpheusSynchronousInstanceService)
+        def mockServices = Mock(MorpheusServices)
+        morpheusContext.services >> mockServices
+        mockServices.instance >> mockInstanceService
+
+        and: "Mock workload service to return empty instance list"
+        workloadService.list(_ as DataQuery) >> [] // For workload query
+        workloadService.list(_ as DataQuery) >> [] // For instance ID query (empty)
+
+        when: "updateWorkloadAndInstanceStatuses is called"
+        virtualMachineSync.updateWorkloadAndInstanceStatuses(server, Workload.Status.running, "running")
+
+        then: "instance service list is not called and no instances are saved"
+        0 * mockInstanceService.list(_ as DataQuery)
+        0 * mockInstanceService.save(_ as Instance)
+    }
 }

@@ -102,15 +102,15 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
 
         // Create test objects
         mockCloud = new Cloud(
-            id: 1L,
-            name: "test-cloud",
-            owner: new Account(id: 1L)
+                id: 1L,
+                name: "test-cloud",
+                owner: new Account(id: 1L)
         )
 
         mockNode = new ComputeServer(
-            id: 2L,
-            name: "test-node",
-            externalId: "node-123"
+                id: 2L,
+                name: "test-node",
+                externalId: "node-123"
         )
 
         // Create testable sync instance
@@ -121,15 +121,15 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
         given: "Mock API service returns successful file shares list"
         def scvmmOpts = [host: "test-host", username: "test-user"]
         def fileSharesData = [
-            [
-                ID: "share-1",
-                Name: "FileShare1",
-                Capacity: 1000000000,
-                FreeSpace: 500000000,
-                IsAvailableForPlacement: true,
-                ClusterAssociations: [[HostID: "host-1"]],
-                HostAssociations: [[HostID: "host-2"]]
-            ]
+                [
+                        ID                     : "share-1",
+                        Name                   : "FileShare1",
+                        Capacity               : 1000000000,
+                        FreeSpace              : 500000000,
+                        IsAvailableForPlacement: true,
+                        ClusterAssociations    : [[HostID: "host-1"]],
+                        HostAssociations       : [[HostID: "host-2"]]
+                ]
         ]
         def listResults = [success: true, datastores: fileSharesData]
 
@@ -174,22 +174,22 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "updateMatchedFileShares should update existing datastores"() {
         given: "List of file shares to update"
         def existingDatastore = new Datastore(
-            id: 1L,
-            name: "OldName",
-            online: false,
-            freeSpace: 100000,
-            storageSize: 200000
+                id: 1L,
+                name: "OldName",
+                online: false,
+                freeSpace: 100000,
+                storageSize: 200000
         )
         def updateItem = new SyncTask.UpdateItem<Datastore, Map>(
-            existingItem: existingDatastore,
-            masterItem: [
-                ID: "share-1",
-                Name: "NewName",
-                IsAvailableForPlacement: true,
-                FreeSpace: 150000,
-                Capacity: 300000,
-                ClusterAssociations: [[HostID: "host-1"]]
-            ]
+                existingItem: existingDatastore,
+                masterItem: [
+                        ID                     : "share-1",
+                        Name                   : "NewName",
+                        IsAvailableForPlacement: true,
+                        FreeSpace              : 150000,
+                        Capacity               : 300000,
+                        ClusterAssociations    : [[HostID: "host-1"]]
+                ]
         )
         def updateList = [updateItem]
         def objList = []
@@ -205,6 +205,355 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
         existingDatastore.online
         existingDatastore.freeSpace == 150000
         existingDatastore.storageSize == 300000
+    }
+
+    def "syncVolumesForSingleHost should sync volumes for host with volumes to add"() {
+        given: "Host with no existing volumes and master volume IDs to add"
+        def host = new ComputeServer(
+                id: 1L,
+                externalId: "host-1",
+                volumes: []
+        )
+        def hostToShareMap = [
+                "host-1": ["share-1", "share-2"] as Set
+        ]
+        def datastore1 = new Datastore(
+                id: 1L,
+                externalId: "share-1",
+                name: "DS1",
+                storageSize: 1000L,
+                freeSpace: 300L
+        )
+        def datastore2 = new Datastore(
+                id: 2L,
+                externalId: "share-2",
+                name: "DS2",
+                storageSize: 2000L,
+                freeSpace: 500L
+        )
+        def morphDatastores = [datastore1, datastore2]
+        def findMountPath = { id -> "\\\\server\\${id}" }
+        def volumeType = new StorageVolumeType(code: "scvmm-registered-file-share-datastore")
+
+        and: "Mock volume type lookup"
+        mockStorageVolumeTypeService.find(_) >> volumeType
+
+        when: "syncVolumesForSingleHost is called"
+        sync.syncVolumesForSingleHost(host, hostToShareMap, morphDatastores, findMountPath)
+
+        then: "New volumes are created for the host"
+        2 * mockAsyncStorageVolumeService.create(_, host) >> Single.just([])
+        2 * mockAsyncComputeServerService.save(host) >> Single.just(host)
+    }
+
+    def "syncVolumesForSingleHost should handle empty volumes list"() {
+        given: "Host with no existing volumes and empty master list"
+        def host = new ComputeServer(
+                id: 1L,
+                externalId: "host-1",
+                volumes: []
+        )
+        def hostToShareMap = [
+                "host-1": [] as Set
+        ]
+        def morphDatastores = []
+        def findMountPath = { id -> null }
+        def volumeType = new StorageVolumeType(code: "scvmm-registered-file-share-datastore")
+
+        and: "Mock volume type lookup"
+        mockStorageVolumeTypeService.find(_) >> volumeType
+
+        when: "syncVolumesForSingleHost is called"
+        sync.syncVolumesForSingleHost(host, hostToShareMap, morphDatastores, findMountPath)
+
+        then: "No volumes are created or removed"
+        0 * mockAsyncStorageVolumeService.create(_, _)
+        0 * mockAsyncStorageVolumeService.save(_)
+        0 * mockAsyncStorageVolumeService.remove(_)
+    }
+
+    def "syncVolumeForEachHosts should iterate through all hosts and sync volumes"() {
+        given: "Multiple hosts with volume mappings"
+        def host1 = new ComputeServer(
+                id: 1L,
+                externalId: "host-1",
+                volumes: []
+        )
+        def host2 = new ComputeServer(
+                id: 2L,
+                externalId: "host-2",
+                volumes: []
+        )
+        def hostToShareMap = [
+                "host-1": ["share-1"] as Set,
+                "host-2": ["share-2"] as Set
+        ]
+        def datastore1 = new Datastore(
+                id: 1L,
+                externalId: "share-1",
+                name: "DS1",
+                storageSize: 1000L,
+                freeSpace: 300L
+        )
+        def datastore2 = new Datastore(
+                id: 2L,
+                externalId: "share-2",
+                name: "DS2",
+                storageSize: 2000L,
+                freeSpace: 500L
+        )
+        def objList = [
+                [ID: "share-1", MountPoints: ["\\\\server\\share1"]],
+                [ID: "share-2", MountPoints: ["\\\\server\\share2"]]
+        ]
+        def volumeType = new StorageVolumeType(code: "scvmm-registered-file-share-datastore")
+
+        and: "Mock services"
+        mockComputeServerService.list(_) >> [host1, host2]
+        mockCloudService.datastore.list(_) >> [datastore1, datastore2]
+        mockStorageVolumeTypeService.find(_) >> volumeType
+
+        when: "syncVolumeForEachHosts is called"
+        sync.syncVolumeForEachHosts(hostToShareMap, objList)
+
+        then: "Volumes are created for each host"
+        2 * mockAsyncStorageVolumeService.create(_, _) >> Single.just([])
+        2 * mockAsyncComputeServerService.save(_) >> Single.just(new ComputeServer())
+    }
+
+    def "syncVolumeForEachHosts should handle empty host list gracefully"() {
+        given: "Empty host list"
+        def hostToShareMap = ["host-1": ["share-1"] as Set]
+        def objList = [[ID: "share-1", MountPoints: ["\\\\server\\share1"]]]
+
+        and: "Mock empty host list"
+        mockComputeServerService.list(_) >> []
+        mockCloudService.datastore.list(_) >> []
+
+        when: "syncVolumeForEachHosts is called"
+        sync.syncVolumeForEachHosts(hostToShareMap, objList)
+
+        then: "No volumes are created"
+        0 * mockAsyncStorageVolumeService.create(_, _)
+        0 * mockAsyncComputeServerService.save(_)
+    }
+
+    def "updateMatchedFileShares should process multiple updates correctly"() {
+        given: "Multiple file shares to update"
+        def existingDatastore1 = new Datastore(
+                id: 1L,
+                name: "OldName1",
+                online: false,
+                freeSpace: 100000,
+                storageSize: 200000
+        )
+        def existingDatastore2 = new Datastore(
+                id: 2L,
+                name: "OldName2",
+                online: true,
+                freeSpace: 150000,
+                storageSize: 300000
+        )
+        def masterItem1 = [
+                ID: "share-1",
+                Name: "NewName1",
+                IsAvailableForPlacement: true,
+                FreeSpace: 120000,
+                Capacity: 250000,
+                ClusterAssociations: [[HostID: "host-1"]]
+        ]
+        def masterItem2 = [
+                ID: "share-2",
+                Name: "NewName2",
+                IsAvailableForPlacement: false,
+                FreeSpace: 180000,
+                Capacity: 350000,
+                HostAssociations: [[HostID: "host-2"]]
+        ]
+        def updateItem1 = new SyncTask.UpdateItem<Datastore, Map>(
+                existingItem: existingDatastore1,
+                masterItem: masterItem1
+        )
+        def updateItem2 = new SyncTask.UpdateItem<Datastore, Map>(
+                existingItem: existingDatastore2,
+                masterItem: masterItem2
+        )
+        def updateList = [updateItem1, updateItem2]
+        def objList = []
+
+        and: "Mock services"
+        mockAsyncCloudService.datastore.bulkSave(_) >> Single.just([])
+        mockComputeServerService.list(_) >> []
+        mockCloudService.datastore.list(_) >> []
+
+        when: "updateMatchedFileShares is called"
+        sync.updateMatchedFileShares(updateList, objList)
+
+        then: "Both datastores are updated"
+        1 * mockAsyncCloudService.datastore.bulkSave({ List items ->
+            items.size() == 2 &&
+                    items[0].name == "NewName1" &&
+                    items[1].name == "NewName2"
+        }) >> Single.just([])
+        existingDatastore1.name == "NewName1"
+        existingDatastore1.online
+        existingDatastore2.name == "NewName2"
+        !existingDatastore2.online
+    }
+
+    def "syncVolumesForSingleHost should handle host with no master volume IDs"() {
+        given: "Host with no master volume IDs in map"
+        def host = new ComputeServer(
+                id: 1L,
+                externalId: "host-1",
+                volumes: []
+        )
+        def hostToShareMap = [:]  // Empty map - no entries for host-1
+        def morphDatastores = []
+        def findMountPath = { id -> null }
+        def volumeType = new StorageVolumeType(code: "scvmm-registered-file-share-datastore")
+        def mockSyncTask = Mock(SyncTask) {
+            start() >> null
+        }
+
+        and: "Mock volume type lookup"
+        mockStorageVolumeTypeService.find(_) >> volumeType
+        // Spy on the sync object to mock the createStorageVolumeSyncTask method
+        def spySync = Spy(sync)
+        spySync.createStorageVolumeSyncTask(_, null, _, _, _) >> mockSyncTask
+
+        when: "syncVolumesForSingleHost is called"
+        spySync.syncVolumesForSingleHost(host, hostToShareMap, morphDatastores, findMountPath)
+
+        then: "No volumes are created or removed and sync task is started"
+        1 * mockSyncTask.start()
+        0 * mockAsyncStorageVolumeService.create(_, _)
+        0 * mockAsyncStorageVolumeService.save(_)
+        0 * mockAsyncStorageVolumeService.remove(_)
+    }
+
+    def "execute should handle complete sync flow with successful API response"() {
+        given: "Mock API service returns successful file shares list"
+        def scvmmOpts = [host: "test-host", username: "test-user"]
+        def fileSharesData = [
+                [
+                        ID: "share-1",
+                        Name: "FileShare1",
+                        Capacity: 1000000000,
+                        FreeSpace: 500000000,
+                        IsAvailableForPlacement: true,
+                        ClusterAssociations: [[HostID: "host-1"]],
+                        HostAssociations: [[HostID: "host-2"]]
+                ],
+                [
+                        ID: "share-2",
+                        Name: "FileShare2",
+                        Capacity: 2000000000,
+                        FreeSpace: 800000000,
+                        IsAvailableForPlacement: false,
+                        ClusterAssociations: [[HostID: "host-3"]]
+                ]
+        ]
+        def listResults = [success: true, datastores: fileSharesData]
+
+        // Mock existing datastore for update scenario
+        def existingDatastore = Mock(DatastoreIdentity) {
+            getId() >> 1L
+            getExternalId() >> "share-1"
+        }
+        def domainRecords = Observable.just(existingDatastore)
+
+        when: "execute is called"
+        sync.execute()
+
+        then: "API service is called and sync process completes"
+        1 * mockApiService.getScvmmZoneAndHypervisorOpts(mockContext, mockCloud, mockNode) >> scvmmOpts
+        1 * mockApiService.listRegisteredFileShares(scvmmOpts) >> listResults
+        1 * mockAsyncCloudService.datastore.listIdentityProjections(_) >> domainRecords
+        // Allow for datastore operations during sync
+        (0.._) * mockAsyncCloudService.datastore._
+        (0.._) * mockComputeServerService._
+        (0.._) * mockCloudService._
+    }
+
+    def "execute should handle API response with empty datastores list"() {
+        given: "Mock API service returns empty datastores list"
+        def scvmmOpts = [host: "test-host", username: "test-user"]
+        def listResults = [success: true, datastores: []]
+
+        when: "execute is called"
+        sync.execute()
+
+        then: "API service is called but no sync operations occur"
+        1 * mockApiService.getScvmmZoneAndHypervisorOpts(mockContext, mockCloud, mockNode) >> scvmmOpts
+        1 * mockApiService.listRegisteredFileShares(scvmmOpts) >> listResults
+        // Empty datastores list means the condition fails and listIdentityProjections is not called
+        0 * mockAsyncCloudService.datastore.listIdentityProjections(_)
+        0 * mockAsyncCloudService.datastore.remove(_)
+        0 * mockAsyncCloudService.datastore.bulkCreate(_)
+        0 * mockAsyncCloudService.datastore.bulkSave(_)
+    }
+
+
+    def "execute should handle API response with null datastores"() {
+        given: "Mock API service returns null datastores"
+        def scvmmOpts = [host: "test-host", username: "test-user"]
+        def listResults = [success: true, datastores: null]
+
+        when: "execute is called"
+        sync.execute()
+
+        then: "API service is called but sync process is skipped"
+        1 * mockApiService.getScvmmZoneAndHypervisorOpts(mockContext, mockCloud, mockNode) >> scvmmOpts
+        1 * mockApiService.listRegisteredFileShares(scvmmOpts) >> listResults
+        0 * mockAsyncCloudService.datastore.listIdentityProjections(_)
+    }
+
+    def "execute should handle exception during API call gracefully"() {
+        given: "Mock API service throws exception"
+        def scvmmOpts = [host: "test-host", username: "test-user"]
+
+        when: "execute is called"
+        sync.execute()
+
+        then: "Exception is caught and logged"
+        1 * mockApiService.getScvmmZoneAndHypervisorOpts(mockContext, mockCloud, mockNode) >> scvmmOpts
+        1 * mockApiService.listRegisteredFileShares(scvmmOpts) >> { throw new RuntimeException("API Error") }
+        0 * mockAsyncCloudService.datastore._
+        // Test should not throw exception due to try-catch
+        noExceptionThrown()
+    }
+
+    def "execute should handle exception during sync task execution"() {
+        given: "Mock API service returns data but sync fails"
+        def scvmmOpts = [host: "test-host", username: "test-user"]
+        def fileSharesData = [
+                [ID: "share-1", Name: "FileShare1", Capacity: 1000000000, FreeSpace: 500000000]
+        ]
+        def listResults = [success: true, datastores: fileSharesData]
+
+        when: "execute is called"
+        sync.execute()
+
+        then: "Exception during sync is caught"
+        1 * mockApiService.getScvmmZoneAndHypervisorOpts(mockContext, mockCloud, mockNode) >> scvmmOpts
+        1 * mockApiService.listRegisteredFileShares(scvmmOpts) >> listResults
+        1 * mockAsyncCloudService.datastore.listIdentityProjections(_) >> { throw new RuntimeException("Sync Error") }
+        noExceptionThrown()
+    }
+
+    def "addMissingFileShares should skip bulkCreate when no datastores to add"() {
+        given: "Empty add list"
+        def addList = []
+        def objList = []
+
+        when: "addMissingFileShares is called"
+        sync.addMissingFileShares(addList, objList)
+
+        then: "No datastores are created but volume sync still occurs"
+        0 * mockAsyncCloudService.datastore.bulkCreate(_)
+        1 * mockComputeServerService.list(_) >> []
+        1 * mockCloudService.datastore.list(_) >> []
     }
 
     def "updateDatastoreOnlineStatus should update online status when different"() {
@@ -288,9 +637,9 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "mapHostToShares should correctly map cluster and host associations"() {
         given: "Master item with associations"
         def masterItem = [
-            ID: "share-1",
-            ClusterAssociations: [[HostID: "cluster-host-1"]],
-            HostAssociations: [[HostID: "direct-host-1"]]
+                ID                 : "share-1",
+                ClusterAssociations: [[HostID: "cluster-host-1"]],
+                HostAssociations   : [[HostID: "direct-host-1"]]
         ]
         def hostToShareMap = [:]
 
@@ -305,8 +654,8 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "getExistingHosts should return correct hosts"() {
         given: "Mock compute server service with hosts"
         def expectedHosts = [
-            new ComputeServer(id: 1L, name: "host1"),
-            new ComputeServer(id: 2L, name: "host2")
+                new ComputeServer(id: 1L, name: "host1"),
+                new ComputeServer(id: 2L, name: "host2")
         ]
 
         when: "getExistingHosts is called"
@@ -320,8 +669,8 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "getMorphDatastores should return correct datastores"() {
         given: "Mock datastore service with datastores"
         def expectedDatastores = [
-            new Datastore(id: 1L, name: "ds1"),
-            new Datastore(id: 2L, name: "ds2")
+                new Datastore(id: 1L, name: "ds1"),
+                new Datastore(id: 2L, name: "ds2")
         ]
 
         when: "getMorphDatastores is called"
@@ -335,8 +684,8 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "createMountPathFinder should return correct mount path finder"() {
         given: "Object list with mount points"
         def objList = [
-            [ID: "share-1", MountPoints: ["\\\\server\\share1"]],
-            [ID: "share-2", MountPoints: ["\\\\server\\share2"]]
+                [ID: "share-1", MountPoints: ["\\\\server\\share1"]],
+                [ID: "share-2", MountPoints: ["\\\\server\\share2"]]
         ]
 
         when: "createMountPathFinder is called"
@@ -408,11 +757,11 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
 
         where:
         property      | oldValue | newValue | expectedResult | expectedValue
-        "maxStorage"  | 100L     | 200L     | true          | 200L
-        "maxStorage"  | 100L     | 100L     | false         | 100L
-        "usedStorage" | 50L      | 75L      | true          | 75L
-        "name"        | "old"    | "new"    | true          | "new"
-        "name"        | "same"   | "same"   | false         | "same"
+        "maxStorage"  | 100L     | 200L     | true           | 200L
+        "maxStorage"  | 100L     | 100L     | false          | 100L
+        "usedStorage" | 50L      | 75L      | true           | 75L
+        "name"        | "old"    | "new"    | true           | "new"
+        "name"        | "same"   | "same"   | false          | "same"
     }
 
     def "updateDatastoreProperty should update datastore when different"() {
@@ -445,9 +794,9 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "createNewStorageVolume should create volume with correct properties"() {
         given: "Datastore, external ID, and mount path finder"
         def datastore = new Datastore(
-            storageSize: 1000L,
-            freeSpace: 300L,
-            name: "TestDatastore"
+                storageSize: 1000L,
+                freeSpace: 300L,
+                name: "TestDatastore"
         )
         def externalId = "vol-123"
         def mountPath = "\\\\server\\share"
@@ -475,23 +824,23 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "processDatastoreUpdate should update datastore and map hosts when changes detected"() {
         given: "Update item with changes"
         def existingDatastore = new Datastore(
-            id: 1L,
-            name: "OldName",
-            online: false,
-            freeSpace: 100000,
-            storageSize: 200000
+                id: 1L,
+                name: "OldName",
+                online: false,
+                freeSpace: 100000,
+                storageSize: 200000
         )
         def masterItem = [
-            ID: "share-1",
-            Name: "NewName",
-            IsAvailableForPlacement: true,
-            FreeSpace: 150000,
-            Capacity: 300000,
-            ClusterAssociations: [[HostID: "host-1"]]
+                ID                     : "share-1",
+                Name                   : "NewName",
+                IsAvailableForPlacement: true,
+                FreeSpace              : 150000,
+                Capacity               : 300000,
+                ClusterAssociations    : [[HostID: "host-1"]]
         ]
         def updateItem = new SyncTask.UpdateItem<Datastore, Map>(
-            existingItem: existingDatastore,
-            masterItem: masterItem
+                existingItem: existingDatastore,
+                masterItem: masterItem
         )
         def itemsToUpdate = []
         def hostToShareMap = [:]
@@ -512,16 +861,16 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "updateDatastoreProperties should return true when any property is updated"() {
         given: "Datastore and master item with different values"
         def datastore = new Datastore(
-            name: "OldName",
-            online: false,
-            freeSpace: 100000,
-            storageSize: 200000
+                name: "OldName",
+                online: false,
+                freeSpace: 100000,
+                storageSize: 200000
         )
         def masterItem = [
-            Name: "NewName",
-            IsAvailableForPlacement: true,
-            FreeSpace: 150000,
-            Capacity: 300000
+                Name                   : "NewName",
+                IsAvailableForPlacement: true,
+                FreeSpace              : 150000,
+                Capacity               : 300000
         ]
 
         when: "updateDatastoreProperties is called"
@@ -538,16 +887,16 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "updateDatastoreProperties should return false when no properties need updating"() {
         given: "Datastore and master item with same values"
         def datastore = new Datastore(
-            name: "SameName",
-            online: true,
-            freeSpace: 150000,
-            storageSize: 300000
+                name: "SameName",
+                online: true,
+                freeSpace: 150000,
+                storageSize: 300000
         )
         def masterItem = [
-            Name: "SameName",
-            IsAvailableForPlacement: true,
-            FreeSpace: "150000",
-            Capacity: "300000"
+                Name                   : "SameName",
+                IsAvailableForPlacement: true,
+                FreeSpace              : "150000",
+                Capacity               : "300000"
         ]
 
         when: "updateDatastoreProperties is called"
@@ -608,10 +957,10 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "processClusterAssociations should add external ID to host entries"() {
         given: "Master item with cluster associations and host entry getter"
         def masterItem = [
-            ClusterAssociations: [
-                [HostID: "cluster-host-1"],
-                [HostID: "cluster-host-2"]
-            ]
+                ClusterAssociations: [
+                        [HostID: "cluster-host-1"],
+                        [HostID: "cluster-host-2"]
+                ]
         ]
         def externalId = "share-1"
         def hostToShareMap = [:]
@@ -633,10 +982,10 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "processHostAssociations should add external ID to host entries"() {
         given: "Master item with host associations and host entry getter"
         def masterItem = [
-            HostAssociations: [
-                [HostID: "direct-host-1"],
-                [HostID: "direct-host-2"]
-            ]
+                HostAssociations: [
+                        [HostID: "direct-host-1"],
+                        [HostID: "direct-host-2"]
+                ]
         ]
         def externalId = "share-1"
         def hostToShareMap = [:]
@@ -696,10 +1045,10 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
         given: "Volume with controller and datastore references"
         def host = new ComputeServer(id: 1L)
         def volume = new StorageVolume(
-            id: 1L,
-            name: "vol1",
-            controller: new StorageController(id: 1L),
-            datastore: new Datastore(id: 1L)
+                id: 1L,
+                name: "vol1",
+                controller: new StorageController(id: 1L),
+                datastore: new Datastore(id: 1L)
         )
 
         when: "removeStorageVolume is called"
@@ -718,16 +1067,16 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "updateStorageVolumes calls updateSingleStorageVolume for each item"() {
         given: "List of volumes to update"
         def datastore = new Datastore(
-            id: 1L,
-            externalId: "share-1",
-            name: "DS1",
-            storageSize: 1000L,
-            freeSpace: 300L
+                id: 1L,
+                externalId: "share-1",
+                name: "DS1",
+                storageSize: 1000L,
+                freeSpace: 300L
         )
         def volume = new StorageVolume(id: 1L, name: "OldName", maxStorage: 500L, usedStorage: 200L)
         def updateItem = [
-            existingItem: volume,
-            masterItem: "share-1"
+                existingItem: volume,
+                masterItem  : "share-1"
         ]
         def updateItems = [updateItem]
         def morphDatastores = [datastore]
@@ -745,21 +1094,21 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "updateSingleStorageVolume should update volume properties"() {
         given: "Volume and matching datastore"
         def datastore = new Datastore(
-            id: 1L,
-            externalId: "share-1",
-            name: "NewName",
-            storageSize: 1000L,
-            freeSpace: 300L
+                id: 1L,
+                externalId: "share-1",
+                name: "NewName",
+                storageSize: 1000L,
+                freeSpace: 300L
         )
         def volume = new StorageVolume(
-            id: 1L,
-            name: "OldName",
-            maxStorage: 500L,
-            usedStorage: 200L
+                id: 1L,
+                name: "OldName",
+                maxStorage: 500L,
+                usedStorage: 200L
         )
         def updateMap = [
-            existingItem: volume,
-            masterItem: "share-1"
+                existingItem: volume,
+                masterItem  : "share-1"
         ]
         def morphDatastores = [datastore]
         def findMountPath = { id -> "\\\\server\\${id}" }
@@ -777,18 +1126,18 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "updateStorageVolumeProperties should update all changed properties"() {
         given: "Volume and datastore with different values"
         def datastore = new Datastore(
-            id: 1L,
-            externalId: "share-1",
-            name: "NewName",
-            storageSize: 2000L,
-            freeSpace: 500L
+                id: 1L,
+                externalId: "share-1",
+                name: "NewName",
+                storageSize: 2000L,
+                freeSpace: 500L
         )
         def volume = new StorageVolume(
-            id: 1L,
-            name: "OldName",
-            maxStorage: 1000L,
-            usedStorage: 700L,
-            volumePath: "\\\\old\\path"
+                id: 1L,
+                name: "OldName",
+                maxStorage: 1000L,
+                usedStorage: 700L,
+                volumePath: "\\\\old\\path"
         )
         def findMountPath = { id -> "\\\\server\\${id}" }
 
@@ -807,19 +1156,19 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "updateStorageVolumeProperties should return false when no changes needed"() {
         given: "Volume and datastore with same values"
         def datastore = new Datastore(
-            id: 1L,
-            externalId: "share-1",
-            name: "SameName",
-            storageSize: 1000L,
-            freeSpace: 300L
+                id: 1L,
+                externalId: "share-1",
+                name: "SameName",
+                storageSize: 1000L,
+                freeSpace: 300L
         )
         def volume = new StorageVolume(
-            id: 1L,
-            name: "SameName",
-            maxStorage: 1000L,
-            usedStorage: 700L,
-            volumePath: "\\\\server\\share-1",
-            datastore: datastore
+                id: 1L,
+                name: "SameName",
+                maxStorage: 1000L,
+                usedStorage: 700L,
+                volumePath: "\\\\server\\share-1",
+                datastore: datastore
         )
         def findMountPath = { id -> "\\\\server\\${id}" }
 
@@ -853,18 +1202,18 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
         given: "Collection of external IDs, datastores, mount path finder, and host"
         def itemsToAdd = ["share-1", "share-2", "share-3"]
         def datastore1 = new Datastore(
-            id: 1L,
-            externalId: "share-1",
-            name: "DS1",
-            storageSize: 1000L,
-            freeSpace: 300L
+                id: 1L,
+                externalId: "share-1",
+                name: "DS1",
+                storageSize: 1000L,
+                freeSpace: 300L
         )
         def datastore2 = new Datastore(
-            id: 2L,
-            externalId: "share-2",
-            name: "DS2",
-            storageSize: 2000L,
-            freeSpace: 500L
+                id: 2L,
+                externalId: "share-2",
+                name: "DS2",
+                storageSize: 2000L,
+                freeSpace: 500L
         )
         def morphDatastores = [datastore1, datastore2]
         def findMountPath = { id -> "\\\\server\\${id}" }
@@ -916,11 +1265,11 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
         given: "External ID with matching datastore"
         def dsExternalId = "share-1"
         def matchingDatastore = new Datastore(
-            id: 1L,
-            externalId: "share-1",
-            name: "DS1",
-            storageSize: 1000L,
-            freeSpace: 300L
+                id: 1L,
+                externalId: "share-1",
+                name: "DS1",
+                storageSize: 1000L,
+                freeSpace: 300L
         )
         def morphDatastores = [matchingDatastore]
         def findMountPath = { id -> "\\\\server\\${id}" }
@@ -936,9 +1285,9 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
         then: "New storage volume is created and saved"
         1 * mockAsyncStorageVolumeService.create({ List volumes ->
             volumes.size() == 1 &&
-            volumes[0].externalId == dsExternalId &&
-            volumes[0].name == "DS1" &&
-            volumes[0].maxStorage == 1000L
+                    volumes[0].externalId == dsExternalId &&
+                    volumes[0].name == "DS1" &&
+                    volumes[0].maxStorage == 1000L
         }, host) >> Single.just([])
         1 * mockAsyncComputeServerService.save(host) >> Single.just(host)
     }
@@ -979,9 +1328,9 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
         then: "Correct datastore is matched and volume is created"
         1 * mockAsyncStorageVolumeService.create({ List volumes ->
             volumes.size() == 1 &&
-            volumes[0].externalId == dsExternalId &&
-            volumes[0].name == "DS2" &&
-            volumes[0].maxStorage == 2000L
+                    volumes[0].externalId == dsExternalId &&
+                    volumes[0].name == "DS2" &&
+                    volumes[0].maxStorage == 2000L
         }, host) >> Single.just([])
         1 * mockAsyncComputeServerService.save(host) >> Single.just(host)
     }
@@ -989,10 +1338,10 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "saveNewStorageVolume should create volume and save host"() {
         given: "New storage volume and host"
         def newVolume = new StorageVolume(
-            id: null,
-            name: "NewVolume",
-            externalId: "share-1",
-            maxStorage: 1000L
+                id: null,
+                name: "NewVolume",
+                externalId: "share-1",
+                maxStorage: 1000L
         )
         def host = new ComputeServer(id: 1L, externalId: "host-1")
 
@@ -1007,17 +1356,17 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
     def "saveNewStorageVolume should handle creation and save in sequence"() {
         given: "New storage volume and host"
         def newVolume = new StorageVolume(
-            id: null,
-            name: "TestVolume",
-            externalId: "share-test",
-            maxStorage: 500L
+                id: null,
+                name: "TestVolume",
+                externalId: "share-test",
+                maxStorage: 500L
         )
         def host = new ComputeServer(id: 2L, externalId: "host-2")
         def createdVolume = new StorageVolume(
-            id: 1L,
-            name: "TestVolume",
-            externalId: "share-test",
-            maxStorage: 500L
+                id: 1L,
+                name: "TestVolume",
+                externalId: "share-test",
+                maxStorage: 500L
         )
 
         when: "saveNewStorageVolume is called"
@@ -1026,6 +1375,114 @@ class RegisteredStorageFileSharesSyncSpec extends Specification {
         then: "Volume creation is called first, then host save"
         1 * mockAsyncStorageVolumeService.create([newVolume], host) >> Single.just([createdVolume])
         1 * mockAsyncComputeServerService.save(host) >> Single.just(host)
+    }
+
+    def "addMissingFileShares should handle null addList gracefully"() {
+        given: "Null add list"
+        def addList = null
+        def objList = []
+
+        when: "addMissingFileShares is called"
+        sync.addMissingFileShares(addList, objList)
+
+        then: "No datastores are created and volume sync proceeds"
+        0 * mockAsyncCloudService.datastore.bulkCreate(_)
+        1 * mockComputeServerService.list(_) >> []
+        1 * mockCloudService.datastore.list(_) >> []
+    }
+
+    def "addMissingFileShares should handle exception during datastore creation"() {
+        given: "Cloud item that causes an exception during processing"
+        def cloudItem = [
+                ID                     : "share-error",
+                Name                   : "ErrorShare",
+                Capacity               : "1000000",
+                FreeSpace              : "500000",
+                IsAvailableForPlacement: true,
+                ClusterAssociations    : [[HostID: "host-1"]]
+        ]
+        def addList = [cloudItem]
+        def objList = []
+
+        when: "addMissingFileShares is called"
+        sync.addMissingFileShares(addList, objList)
+
+        then: "Exception is caught and logged, no service calls are made"
+        0 * mockAsyncCloudService.datastore.bulkCreate(_)
+        0 * mockComputeServerService.list(_)
+        0 * mockCloudService.datastore.list(_)
+        // Method should not throw exception due to try-catch
+        noExceptionThrown()
+    }
+
+    def "syncVolumeForEachHosts should handle exception during host processing and log error"() {
+        given: "Host mapping and objList that will cause an exception"
+        def hostToShareMap = ["host-1": ["share-1"] as Set]
+        def objList = [[ID: "share-1", MountPoints: ["\\\\server\\share1"]]]
+
+        and: "Mock service throws exception during host list retrieval"
+        mockComputeServerService.list(_) >> { throw new RuntimeException("Database connection error") }
+
+        when: "syncVolumeForEachHosts is called"
+        sync.syncVolumeForEachHosts(hostToShareMap, objList)
+
+        then: "Exception is caught and logged with correct message"
+        noExceptionThrown()
+        // The method should complete without throwing despite the internal exception
+    }
+
+    def "updateMatchedFileShares should handle exception during bulk save and log error"() {
+        given: "Update list with valid datastore update items"
+        def existingDatastore = new Datastore(
+            id: 1L,
+            externalId: "share-1",
+            name: "OldName",
+            online: false,
+            freeSpace: 1000L,
+            storageSize: 2000L
+        )
+        def masterItem = [
+            ID: "share-1",
+            Name: "NewName",
+            IsAvailableForPlacement: true,
+            FreeSpace: "1500",
+            Capacity: "3000"
+        ]
+        def updateItem = new SyncTask.UpdateItem<Datastore, Map>(
+            existingItem: existingDatastore,
+            masterItem: masterItem
+        )
+        def updateList = [updateItem]
+        def objList = []
+
+        and: "Mock bulk save throws exception"
+        mockAsyncCloudService.datastore.bulkSave(_) >> { throw new RuntimeException("Save operation failed") }
+
+        when: "updateMatchedFileShares is called"
+        sync.updateMatchedFileShares(updateList, objList)
+
+        then: "Exception is caught and logged with correct message"
+        noExceptionThrown()
+        // The method should complete without throwing despite the bulk save failure
+    }
+
+    def "syncVolumeForEachHosts should handle exception during volume type retrieval"() {
+        given: "Valid host mapping but volume type service throws exception"
+        def host = new ComputeServer(id: 1L, externalId: "host-1")
+        def hostToShareMap = ["host-1": ["share-1"] as Set]
+        def objList = [[ID: "share-1", MountPoints: ["\\\\server\\share1"]]]
+        def datastore = new Datastore(id: 1L, externalId: "share-1", name: "TestDatastore")
+
+        and: "Mock successful host and datastore retrieval but volume type fails"
+        mockComputeServerService.list(_) >> [host]
+        mockCloudService.datastore.list(_) >> [datastore]
+        mockStorageVolumeTypeService.find(_) >> { throw new RuntimeException("Volume type lookup failed") }
+
+        when: "syncVolumeForEachHosts is called"
+        sync.syncVolumeForEachHosts(hostToShareMap, objList)
+
+        then: "Exception is caught and logged"
+        noExceptionThrown()
     }
 
 }

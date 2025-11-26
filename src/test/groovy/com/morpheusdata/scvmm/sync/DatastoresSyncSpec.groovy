@@ -25,11 +25,6 @@ import io.reactivex.rxjava3.core.Single
 import spock.lang.Specification
 import spock.lang.Unroll
 
-/**
- * Unit tests for DatastoresSync class following the pattern from ClustersSyncSpec.
- * Tests cover the main functionality including execute, updateMatchedDatastores,
- * addMissingDatastores, removeMissingDatastores, and all helper methods.
- */
 class DatastoresSyncSpec extends Specification {
 
     private DatastoresSync datastoresSync
