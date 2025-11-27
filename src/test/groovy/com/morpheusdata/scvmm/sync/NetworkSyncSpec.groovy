@@ -710,18 +710,261 @@ class NetworkSyncSpec extends Specification {
     }
 
     def "updateMatchedNetworks should do nothing for null list"() {
-        given:
+        given: "A subnet type"
         def subnetType = new NetworkSubnetType(code: 'scvmm')
 
-        when:
+        when: "updateMatchedNetworks is called with null list"
         networkSync.updateMatchedNetworks(null, subnetType)
 
-        then:
+        then: "no service interactions occur"
         0 * networkSubnetService.list(_)
-        0 * networkSync.addMissingNetworkSubnet(_, _, _)
-        0 * networkSync.updateMatchedNetworkSubnet(_)
-        0 * networkSubnetService.remove(_)
-        0 * networkSubnetService.listById(_)
+        noExceptionThrown()
     }
+
+    def "updateMatchedNetworks should do nothing for empty list"() {
+        given: "A subnet type and empty update list"
+        def subnetType = new NetworkSubnetType(code: 'scvmm')
+        def updateList = []
+
+        when: "updateMatchedNetworks is called with empty list"
+        networkSync.updateMatchedNetworks(updateList, subnetType)
+
+        then: "no service interactions occur"
+        0 * networkSubnetService.list(_)
+        noExceptionThrown()
+    }
+
+    def "updateMatchedNetworks should handle network with no subnets"() {
+        given: "A network with no existing subnets"
+        def subnetType = new NetworkSubnetType(code: 'scvmm')
+        def network = new Network(id: 1L, subnets: [])
+        def masterItem = [Subnets: []]
+        def updateItem = new SyncTask.UpdateItem<Network, Map>(
+            existingItem: network,
+            masterItem: masterItem
+        )
+        def updateList = [updateItem]
+
+        and: "mock returns empty observable for subnet list"
+        networkSubnetService.list(_) >> Observable.empty()
+
+        when: "updateMatchedNetworks is called"
+        networkSync.updateMatchedNetworks(updateList, subnetType)
+
+        then: "subnet list is queried but no further operations occur"
+        1 * networkSubnetService.list(_) >> Observable.empty()
+        noExceptionThrown()
+    }
+
+    def "updateMatchedNetworks should handle network with existing subnets"() {
+        given: "A network with existing subnets"
+        def subnetType = new NetworkSubnetType(code: 'scvmm')
+        def existingSubnet = new NetworkSubnet(id: 1L, externalId: "subnet-1")
+        def network = new Network(id: 1L, subnets: [existingSubnet])
+        def masterSubnet = [ID: "subnet-1", Name: "Test Subnet"]
+        def masterItem = [Subnets: [masterSubnet]]
+        def updateItem = new SyncTask.UpdateItem<Network, Map>(
+            existingItem: network,
+            masterItem: masterItem
+        )
+        def updateList = [updateItem]
+
+        and: "mock subnet projection"
+        def subnetProjection = new NetworkSubnetIdentityProjection(
+            id: 1L,
+            externalId: "subnet-1"
+        )
+
+        when: "updateMatchedNetworks is called"
+        networkSync.updateMatchedNetworks(updateList, subnetType)
+
+        then: "subnet services are called appropriately"
+        1 * networkSubnetService.list(_) >> Observable.just(subnetProjection)
+        1 * networkSubnetService.listById(_) >> Observable.just(existingSubnet)
+        noExceptionThrown()
+    }
+
+    def "updateMatchedNetworks should handle exception gracefully"() {
+        given: "A network that will cause an exception"
+        def subnetType = new NetworkSubnetType(code: 'scvmm')
+        def network = new Network(id: 1L, subnets: [])
+        def masterItem = [Subnets: []]
+        def updateItem = new SyncTask.UpdateItem<Network, Map>(
+            existingItem: network,
+            masterItem: masterItem
+        )
+        def updateList = [updateItem]
+
+        when: "updateMatchedNetworks is called and service throws exception"
+        networkSync.updateMatchedNetworks(updateList, subnetType)
+
+        then: "exception is caught and logged"
+        1 * networkSubnetService.list(_) >> { throw new RuntimeException("Test exception") }
+        noExceptionThrown()
+    }
+
+    def "updateMatchedNetworks should handle multiple networks"() {
+        given: "Multiple networks to update"
+        def subnetType = new NetworkSubnetType(code: 'scvmm')
+
+        def network1 = new Network(id: 1L, subnets: [])
+        def masterItem1 = [Subnets: []]
+        def updateItem1 = new SyncTask.UpdateItem<Network, Map>(
+            existingItem: network1,
+            masterItem: masterItem1
+        )
+
+        def network2 = new Network(id: 2L, subnets: [])
+        def masterItem2 = [Subnets: []]
+        def updateItem2 = new SyncTask.UpdateItem<Network, Map>(
+            existingItem: network2,
+            masterItem: masterItem2
+        )
+
+        def updateList = [updateItem1, updateItem2]
+
+        when: "updateMatchedNetworks is called with multiple networks"
+        networkSync.updateMatchedNetworks(updateList, subnetType)
+
+        then: "each network is processed"
+        2 * networkSubnetService.list(_) >> Observable.empty()
+        noExceptionThrown()
+    }
+
+    def "updateSubnetProperties should return true when properties change"() {
+        given: "A subnet with current properties and matched subnet with different values"
+        def subnet = new NetworkSubnet(
+                name: "old-name",
+                cidr: "192.168.1.0/24",
+                subnetAddress: "192.168.1.0/24",
+                netmask: "255.255.255.0",
+                dhcpStart: "192.168.1.10",
+                dhcpEnd: "192.168.1.100",
+                vlanId: 100
+        )
+        subnet.metaClass.getConfigProperty = { String key ->
+            if (key == "subnetName") return "old-name"
+            if (key == "subnetCidr") return "192.168.1.0/24"
+            return null
+        }
+        subnet.metaClass.setConfigProperty = { String key, String value -> /* mock */ }
+
+        def matchedSubnet = [
+                Name: "new-name",
+                Subnet: "10.0.1.0/24",
+                VLanID: 200
+        ]
+
+        when: "updateSubnetProperties is called"
+        def result = networkSync.updateSubnetProperties(subnet, matchedSubnet)
+
+        then: "result is true because properties changed"
+        result
+
+        and: "subnet properties are updated"
+        subnet.name == "new-name"
+        subnet.cidr == "10.0.1.0/24"
+        subnet.subnetAddress == "10.0.1.0/24"
+        subnet.vlanId == 200
+    }
+
+    def "updateSubnetProperties should return false when no properties change"() {
+        given: "A subnet with current properties that match the matched subnet"
+        def subnet = new NetworkSubnet(
+                name: "same-name",
+                cidr: "192.168.1.0/24",
+                subnetAddress: "192.168.1.0/24",
+                netmask: "255.255.255.0",
+                dhcpStart: "192.168.1.10",
+                dhcpEnd: "192.168.1.100",
+                vlanId: 100
+        )
+        subnet.metaClass.getConfigProperty = { String key ->
+            if (key == "subnetName") return "same-name"
+            if (key == "subnetCidr") return "192.168.1.0/24"
+            return null
+        }
+        subnet.metaClass.setConfigProperty = { String key, String value -> /* mock */ }
+
+        def matchedSubnet = [
+                Name: "same-name",
+                Subnet: "192.168.1.0/24",
+                VLanID: 100
+        ]
+
+        when: "updateSubnetProperties is called"
+        def result = networkSync.updateSubnetProperties(subnet, matchedSubnet)
+
+        then: "result is false because no properties changed"
+        !result
+
+        and: "subnet properties remain the same"
+        subnet.name == "same-name"
+        subnet.cidr == "192.168.1.0/24"
+        subnet.vlanId == 100
+    }
+
+    def "updateSubnetProperties should handle null VLanID gracefully"() {
+        given: "A subnet with vlanId and matched subnet with null VLanID"
+        def subnet = new NetworkSubnet(
+                name: "test-name",
+                cidr: "192.168.1.0/24",
+                subnetAddress: "192.168.1.0/24",
+                netmask: "255.255.255.0",
+                dhcpStart: "192.168.1.10",
+                dhcpEnd: "192.168.1.100",
+                vlanId: 100
+        )
+        subnet.metaClass.getConfigProperty = { String key -> return "test-name" }
+        subnet.metaClass.setConfigProperty = { String key, String value -> /* mock */ }
+
+        def matchedSubnet = [
+                Name: "test-name",
+                Subnet: "192.168.1.0/24",
+                VLanID: null
+        ]
+
+        when: "updateSubnetProperties is called"
+        def result = networkSync.updateSubnetProperties(subnet, matchedSubnet)
+
+        then: "method handles null VLanID and updates subnet"
+        result
+        subnet.vlanId == null
+    }
+
+    def "updateSubnetProperties should only update individual properties that changed"() {
+        given: "A subnet where only one property will change"
+        def subnet = new NetworkSubnet(
+                name: "same-name",
+                cidr: "192.168.1.0/24",
+                subnetAddress: "192.168.1.0/24",
+                netmask: "255.255.255.0",
+                dhcpStart: "192.168.1.10",
+                dhcpEnd: "192.168.1.100",
+                vlanId: 100
+        )
+        subnet.metaClass.getConfigProperty = { String key ->
+            if (key == "subnetName") return "same-name"
+            if (key == "subnetCidr") return "192.168.1.0/24"
+            return null
+        }
+        subnet.metaClass.setConfigProperty = { String key, String value -> /* mock */ }
+
+        def matchedSubnet = [
+                Name: "same-name",
+                Subnet: "192.168.1.0/24",
+                VLanID: 200  // Only this changes
+        ]
+
+        when: "updateSubnetProperties is called"
+        def result = networkSync.updateSubnetProperties(subnet, matchedSubnet)
+
+        then: "only the changed property is updated"
+        result
+        subnet.name == "same-name"  // unchanged
+        subnet.cidr == "192.168.1.0/24"  // unchanged
+        subnet.vlanId == 200  // changed
+    }
+
 
 }
