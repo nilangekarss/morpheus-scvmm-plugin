@@ -28,6 +28,35 @@ resource "workload-type-set" "almalinux-scvmm-9-set" {
   containerCount = 1
 }
 
+resource "workload-type" "opensuse-scvmm-15_1" {
+  code             = "opensuse-scvmm-15.1"
+  shortName        = "opensuse"
+  name             = "openSUSE 15.1"
+  ports            = [22]
+  containerVersion = "15.1"
+  repositoryImage  = null
+  entryPoint       = null
+  serverType       = "vm"
+  statTypeCode     = "vm"
+  logTypeCode      = "opensuse"
+  showServerLogs   = true
+  checkTypeCode    = "containerCheck"
+  mountPoint       = "/morpheus"
+  virtualImage     = "scvmm.image.morpheus.opensuse.15.1-v1.opensuse.15.1.amd64"
+  containerPorts   = ["opensuse.22"]
+  actions          = ["generic-remove-node"]
+  provisionType    = "scvmm"
+  backupType       = "scvmmSnapshot"
+}
+
+resource "workload-type-set" "opensuse-scvmm-15_1-set" {
+  code           = "opensuse-scvmm-15.1-set"
+  workloadType   = workload-type.opensuse-scvmm-15_1
+  priorityOrder  = 0
+  dynamicCount   = true
+  containerCount = 1
+}
+
 resource "workload-type" "centos-scvmm-9-stream" {
   code             = "centos-scvmm-9-stream"
   shortName        = "centos"
