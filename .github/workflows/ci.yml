@@ -1,5 +1,5 @@
 # Copyright 2025 Hewlett Packard Enterprise Development LP
-
+#
 name: CI
 
 on:
@@ -26,7 +26,6 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
-    if: github.ref != 'refs/heads/main'
 #    environment:
 #      name: github-pages
 #      url: ${{ steps.deployment.outputs.page_url }}
@@ -37,53 +36,121 @@ jobs:
       pages: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository and submodules
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          submodules: recursive 
+
       - uses: actions/setup-java@v4
         with:
-          java-version: '11'
+          java-version: '17'
           distribution: 'temurin'
+
       - uses: gradle/actions/setup-gradle@v4
 
-#      - name: Run tests and generate coverage report
-#        run: ./gradlew test
+      - name: Run CodeNarc
+        run: |
+          ./gradlew codenarcMain --continue || true
 
-#      - name: Run quality checks
-#        run: ./gradlew check
+      - name: Install xmllint
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
 
-      - name: Build and assemble the project artifacts
-        run: ./gradlew build
+      - name: Summarize CodeNarc Violations
+        continue-on-error: true
+        run: |
+          xml_report="build/reports/codenarc/main.xml"
 
-#      - name: Run functional tests on simulated environment
-#        run: ./gradlew functionalTest --tests runners.CucumberTestSuite
+          if [ -f "$xml_report" ]; then
+            p1=$(xmllint --xpath "count(//Violation[@priority='1'])" "$xml_report")
+            p2=$(xmllint --xpath "count(//Violation[@priority='2'])" "$xml_report")
+            p3=$(xmllint --xpath "count(//Violation[@priority='3'])" "$xml_report")
 
-#      - name: Create test reports index page
-#        run: |
-#          echo '<html><body>
-#            <h1>Reports</h1>
-#            <ul>
-#              <li><a href="tests/test">Test Results</a></li>
-#              <li><a href="tests/cucumberFunctionalTest">Functional Test Results</a></li>
-#              <li><a href="jacoco/test/html">Coverage Report</a></li>
-#              <li><a href="codenarc/main.html">Main CodeNarc Report</a></li>
-#            </ul>
-#          </body></html>' > build/reports/index.html
+            if [ "$p1" -ge 1 ]; then
+              echo "Build failed: Found $p1 Priority 1 CodeNarc violations"
+              # exit 1
+            fi
 
-#      - name: Upload test reports as artifact
-#        uses: actions/upload-pages-artifact@v3
-#        with:
-#          path: build/reports
+            if [ "$p2" -ge 10 ]; then
+              echo "Build failed: Found $p2 Priority 2 CodeNarc violations (>=10 not allowed)"
+              # exit 1
+            fi
 
-#      - name: Deploy test reports to GitHub Pages
-#        id: deployment
-#        uses: actions/deploy-pages@v4
+            if [ "$p3" -gt 20 ]; then
+              echo "::warning::Found $p3 Priority 3 CodeNarc violations (>20)"
+            fi
+          else
+            echo "No CodeNarc report found" >> $GITHUB_STEP_SUMMARY
+          fi
 
-#      - name: Verify minimum test coverage
-#        run: ./gradlew jacocoTestCoverageVerification
+      - name: Upload CodeNarc Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: codenarc-reports
+          path: |
+            build/reports/codenarc/main.xml
+            build/reports/codenarc/main.html
 
+      # Install Gitleaks
+      - name: Install Gitleaks
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz -o gitleaks.tar.gz
+          tar -xvzf gitleaks.tar.gz
+          chmod +x gitleaks
+          sudo mv gitleaks /usr/local/bin/
+          gitleaks version
+
+      - name: Run Gitleaks Scan
+        run: |
+          gitleaks detect \
+            --source . \
+            --report-format json \
+            --no-banner \
+            --report-path gitleaks-report.json \
+            --verbose
+        continue-on-error: true
+
+      - name: Upload Gitleaks Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.json
+
+      - name: Run Unit Tests
+        run: |
+          ./gradlew  test
+
+      - name: Upload Unit Test Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: build/test-results/test/
+
+      - name: Generate JaCoCo Coverage Report
+        run: |
+          ./gradlew jacocoTestReport
+
+      - name: Upload JaCoCo Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: build/reports/jacoco/test/
+
+      - name: Verify Coverage Thresholds
+        run: |
+          ./gradlew jacocoTestCoverageVerification
+
+      - name: Summarize Test Results
+        run: |
+          echo "### Test Summary" | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' | tee -a $GITHUB_STEP_SUMMARY
+          ./gradlew testSummary --console=plain -Dorg.gradle.logging.level=quiet | sed 's/\x1b\[[0-9;]*m//g' | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' | tee -a $GITHUB_STEP_SUMMARY
+        env:
+          TERM: dumb
 
   publish-to-artifactory:
+    needs: build 
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -101,3 +168,4 @@ jobs:
         env:
           ARTIFACTORY_USER: 'ci-token-forecasters'
           ARTIFACTORY_PASSWORD: ${{ secrets.CI_TOKEN_MORPHEUS }}
+
