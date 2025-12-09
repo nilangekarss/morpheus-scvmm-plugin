@@ -744,23 +744,13 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 def createResults = apiService.createServer(scvmmOpts)
                 log.debug("createResults: ${createResults}")
                 scvmmOpts.deleteDvdOnComplete = createResults.deleteDvdOnComplete
+				// Adding the deleteDvdOnComplete to the workload config for future reference in the finalize step.
+				// This is done as adding it to scvmmOpts above doesn't persist it anywhere.
+				def workloadConfig = workload.configMap
+				workloadConfig.deleteDvdOnComplete = createResults.deleteDvdOnComplete
+				workload.setConfigMap(workloadConfig)
+				context.async.workload.save(workload).blockingGet()
                 if (createResults.success == true) {
-                    def checkReadyResults = apiService.checkServerReady([waitForIp: opts.skipNetworkWait ? false : true] + scvmmOpts, createResults.server.id)
-                    if (checkReadyResults.success) {
-                        server.externalIp = checkReadyResults.server.ipAddress
-                        server.powerState = ComputeServer.PowerState.on
-                        server = saveAndGetMorpheusServer(server, true)
-                    } else {
-                        log.error "Failed to obtain ip address for server, ${checkReadyResults}"
-                        throw new Exception("Failed to obtain ip address for server")
-                    }
-                    if (scvmmOpts.deleteDvdOnComplete?.removeIsoFromDvd) {
-                        apiService.setCdrom(scvmmOpts)
-                        if (scvmmOpts.deleteDvdOnComplete?.deleteIso) {
-                            apiService.deleteIso(scvmmOpts, scvmmOpts.deleteDvdOnComplete.deleteIso)
-                        }
-                    }
-
                     node = context.services.computeServer.get(nodeId)
                     if (createResults.server) {
                         server.externalId = createResults.server.id
@@ -796,36 +786,22 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 								}
                             }
                         }
-
-                        def serverDetails = apiService.getServerDetails(scvmmOpts, server.externalId)
-                        if (serverDetails.success == true) {
-                            log.info("serverDetail: ${serverDetails}")
-							def status = provisionResponse.skipNetworkWait ? 'waiting for server status' : 'waiting for network'
-							context.process.startProcessStep(workloadRequest.process, new ProcessEvent(type: ProcessEvent.ProcessType.provisionNetwork), status).blockingGet()
-                            opts.network = applyComputeServerNetworkIp(server, serverDetails.server?.ipAddress, serverDetails.server?.ipAddress, 0, null)
-                            server.osDevice = '/dev/sda'
-                            server.dataDevice = '/dev/sda'
-                            server.lvmEnabled = false
-                            server.sshHost = server.internalIp
-                            server.managed = true
-                            server.capacityInfo = new ComputeCapacityInfo(maxCores: scvmmOpts.maxCores, maxMemory: scvmmOpts.maxMemory, maxStorage: scvmmOpts.maxTotalStorage)
-                            server.status = 'provisioned'
-                            context.async.computeServer.save(server).blockingGet()
-                            provisionResponse.success = true
-							// By default installAgent is true.
-							// 1. The below section instructs the subsequent code to
-							// 1a. skip agent installation for Linux VMs (as cloud init will take care of installing agent)
-							// 1b. If we are in a Clone scenario, we don't want to skip agent installation here.
-							if (server?.platform == 'linux' && !scvmmOpts.cloneVMId) {
-								provisionResponse.installAgent = false
-							}
-                            log.debug("provisionResponse.success: ${provisionResponse.success}")
-                        } else {
-                            server.statusMessage = 'Failed to run server'
-                            context.async.computeServer.save(server).blockingGet()
-                            provisionResponse.success = false
-                        }
-
+						server.osDevice = '/dev/sda'
+						server.dataDevice = '/dev/sda'
+						server.lvmEnabled = false
+						server.managed = true
+						server.capacityInfo = new ComputeCapacityInfo(maxCores: scvmmOpts.maxCores, maxMemory: scvmmOpts.maxMemory, maxStorage: scvmmOpts.maxTotalStorage)
+						server.status = 'provisioned'
+						context.async.computeServer.save(server).blockingGet()
+						provisionResponse.success = true
+						// By default installAgent is true.
+						// 1. The below section instructs the subsequent code to
+						// 1a. skip agent installation for Linux VMs (as cloud init will take care of installing agent)
+						// 1b. If we are in a Clone scenario, we don't want to skip agent installation here.
+						if (server?.platform == 'linux' && !scvmmOpts.cloneVMId) {
+							provisionResponse.installAgent = false
+						}
+						log.debug("provisionResponse.success: ${provisionResponse.success}")
                     } else {
                         if (createResults.server?.externalId) {
                             // we did create a vm though so we need to bind it to the server
@@ -851,6 +827,12 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 				rtn.success = true
 				rtn.data = provisionResponse
             }
+
+			if (provisionResponse.success) {
+				def status = provisionResponse.skipNetworkWait ? 'waiting for server status' : 'waiting for network'
+				context.process.startProcessStep(workloadRequest.process,
+						new ProcessEvent(type: ProcessEvent.ProcessType.provisionNetwork), status).blockingGet()
+			}
         } catch (e) {
             log.error("runWorkload error:${e}", e)
             provisionResponse.setError(e.message)
@@ -1046,7 +1028,17 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
      */
     @Override
     ServiceResponse finalizeWorkload(Workload workload) {
-        return ServiceResponse.success()
+		def scvmmOpts = getAllScvmmOpts(workload)
+		// Fetch the workload again to get the latest configMap with deleteDvdOnComplete
+		def fetchedWorkload = context.async.workload.get(workload.id).blockingGet()
+		// Handle DVD cleanup if needed
+		if (fetchedWorkload.configMap?.deleteDvdOnComplete?.removeIsoFromDvd) {
+			apiService.setCdrom(scvmmOpts)
+			if (fetchedWorkload.configMap?.deleteDvdOnComplete?.deleteIso) {
+				apiService.deleteIso(scvmmOpts, fetchedWorkload.configMap.deleteDvdOnComplete.deleteIso)
+			}
+		}
+		return ServiceResponse.success()
     }
 
     /**
@@ -1238,16 +1230,32 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     }
 
     /**
-     * Method called after a successful call to runWorkload to obtain the details of the ComputeServer. Implementations
-     * should not return until the server is successfully created in the underlying cloud or the server fails to
-     * create.
+     * Method called after a successful call to runWorkload to obtain the details of the ComputeServer.
+	 * Implementations should not return until the server is successfully created in the underlying cloud
+	 * or the server fails to create.
      * @param server to check status
-     * @return Response from API. The publicIp and privateIp set on the WorkloadResponse will be utilized to update the ComputeServer
+     * @return Response from API. The publicIp and privateIp set on the WorkloadResponse will be
+	 * utilized to update the ComputeServer
      */
     @Override
     ServiceResponse<ProvisionResponse> getServerDetails(ComputeServer server) {
-        return new ServiceResponse<ProvisionResponse>(true, null, null,
-				new ProvisionResponse(privateIp:server.internalIp, publicIp:server.externalIp, success: true))
+		def opts = fetchScvmmConnectionDetails(server)
+		opts.server = server
+		opts.waitForIp = true
+		def serverDetails = apiService.checkServerReady(opts, server.externalId)
+		if (serverDetails.success == true) {
+			server.externalIp = serverDetails.server?.ipAddress
+			server.powerState = ComputeServer.PowerState.on
+			server = saveAndGetMorpheusServer(server, true)
+			def newIpAddress = serverDetails.server?.ipAddress
+			def macAddress = serverDetails.server?.macAddress
+			applyComputeServerNetworkIp(server, newIpAddress, newIpAddress, 0, macAddress)
+			return new ServiceResponse<ProvisionResponse>(true, null, null,
+					new ProvisionResponse(privateIp: server.internalIp, publicIp: server.externalIp, success: true))
+		} else {
+			return new ServiceResponse(success: false, msg: serverDetails.message ?: 'Failed to get server details',
+					error: serverDetails.message, data: serverDetails)
+		}
     }
 
     /**
@@ -2026,11 +2034,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         def provisionResponse = new ProvisionResponse()
         ServiceResponse<ProvisionResponse> rtn = ServiceResponse.prepare(provisionResponse)
         try {
-            def config = server.getConfigMap()
-            def node = config.hostId ? context.services.computeServer.get(config.hostId.toLong()) : pickScvmmController(server.cloud)
-            def scvmmOpts = apiService.getScvmmCloudOpts(context, server.cloud, node)
-            scvmmOpts += apiService.getScvmmControllerOpts(server.cloud, node)
-            scvmmOpts += getScvmmServerOpts(server)
+			LinkedHashMap<String, Object> scvmmOpts = fetchScvmmConnectionDetails(server)
             def serverDetail = apiService.checkServerReady(scvmmOpts, server.externalId)
             if (serverDetail.success == true) {
                 provisionResponse.privateIp = serverDetail.server.ipAddress
@@ -2049,6 +2053,14 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         }
         return rtn
     }
+
+	private LinkedHashMap<String, Object> fetchScvmmConnectionDetails(ComputeServer server) {
+		def node = pickScvmmController(server.cloud)
+		def scvmmOpts = apiService.getScvmmCloudOpts(context, server.cloud, node)
+		scvmmOpts += apiService.getScvmmControllerOpts(server.cloud, node)
+		scvmmOpts += getScvmmServerOpts(server)
+		scvmmOpts
+	}
 
     @Override
     ServiceResponse finalizeHost(ComputeServer server) {

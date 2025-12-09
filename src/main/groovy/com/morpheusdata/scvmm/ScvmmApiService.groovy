@@ -284,13 +284,13 @@ class ScvmmApiService {
                 log.info("Starting Server  ${opts.name}")
                 startServer(opts, opts.externalId)
                 //get details
-                log.info("SCVMM Check for Server Ready ${opts.name}")
-                def serverDetail = checkServerReady(opts, opts.externalId)
+                //log.info("SCVMM Check for Server Ready ${opts.name}")
+                def serverDetail = getServerDetails(opts, opts.externalId)
                 if (serverDetail.success == true) {
-                    rtn.server = [name: opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId, ipAddress: serverDetail.server?.ipAddress, disks: disks]
+                    rtn.server = [name: opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId, disks: disks]
                     rtn.success = true
                 } else {
-                    rtn.server = [name: opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId, ipAddress: serverDetail.server?.ipAddress, disks: disks]
+                    rtn.server = [name: opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId, disks: disks]
                 }
             }
 
