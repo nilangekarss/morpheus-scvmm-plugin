@@ -1039,13 +1039,13 @@ class ScvmmApiServiceSpec extends Specification {
 
         where:
         scenario                                | inputOpts                                                                                  | expectedSuccess | expectedErrorCount | expectedErrorField      | expectedErrorMsg
-        "missing capability profile"            | [:]                                                                                        | false           | 2                  | "scvmmCapabilityProfile"| "You must select a capability profile"
-        "missing network"                       | [scvmmCapabilityProfile: "Hyper-V"]                                                        | false           | 1                  | "networkId"             | "Network is required"
-        "empty nodeCount"                       | [scvmmCapabilityProfile: "Hyper-V", networkId: "net-123", nodeCount: ""]                   | false           | 1                  | "nodeCount"             | "You must indicate number of hosts"
-        "valid config with networkId"           | [scvmmCapabilityProfile: "Hyper-V", networkId: "net-123"]                                  | true            | 0                  | null                    | null
-        "missing network id in interface"       | [scvmmCapabilityProfile: "Hyper-V", networkInterfaces: [[network: [:]]]]                   | false           | 1                  | "networkInterface"      | "Network is required"
-        "invalid networkInterface config"       | [scvmmCapabilityProfile: "Hyper-V", networkInterface: [network: [id: [""]]]]               | false           | 1                  | "networkInterface"      | "Network is required"
-        "static IP missing in networkInterface" | [scvmmCapabilityProfile: "Hyper-V", networkInterface: [network: [id: ["net-def"]], ipMode: ["static"], ipAddress: [null]]] | false | 1 | "networkInterface" | "You must enter an ip address"
+         "missing capability profile"            | [:]                                                                                        | false           | 2                  | "scvmmCapabilityProfile"| "You must select a capability profile"
+         "missing network"                       | [scvmmCapabilityProfile: "Hyper-V"]                                                        | false           | 1                  | "networkId"             | "Network is required"
+         "empty nodeCount"                       | [scvmmCapabilityProfile: "Hyper-V", networkId: "net-123", nodeCount: ""]                   | false           | 1                  | "nodeCount"             | "You must indicate number of hosts"
+         "valid config with networkId"           | [scvmmCapabilityProfile: "Hyper-V", networkId: "net-123"]                                  | true            | 0                  | null                    | null
+         "missing network id in interface"       | [scvmmCapabilityProfile: "Hyper-V", networkInterfaces: [[network: [:]]]]                   | false           | 1                  | "networkInterface"      | "Network is required"
+         "invalid networkInterface config"       | [scvmmCapabilityProfile: "Hyper-V", networkInterface: [network: [id: [""]], ipMode: ["static"]]]               | false           | 1                  | "networkInterface"      | "Network is required"
+         "static IP missing in networkInterface" | [scvmmCapabilityProfile: "Hyper-V", networkInterface: [network: [id: ["net-def"]], ipMode: ["static"], ipAddress: [null]]] | false | 1 | "networkInterface" | "You must enter an ip address"
     }
 
     def "test createDVD successfully creates DVD drive"() {
@@ -3181,10 +3181,10 @@ class ScvmmApiServiceSpec extends Specification {
         def opts = [name: "vm01", externalId: "vm-123"]
         def disks = [osDisk: [id: "disk-1"]]
         def rtn = [:]
-        def serverDetail = [success: true, server: [VMId: "vm-123", ipAddress: "10.0.0.1"]]
+        def serverDetail = [success: true, server: [VMId: "vm-123"]]
 
         apiService.startServer(opts, opts.externalId) >> [success: true]
-        apiService.checkServerReady(opts, opts.externalId) >> serverDetail
+        apiService.getServerDetails(opts, opts.externalId) >> serverDetail
 
         when:
         apiService.startAndCheckServer(opts, disks, rtn)
@@ -3195,7 +3195,6 @@ class ScvmmApiServiceSpec extends Specification {
                 name: "vm01",
                 id: "vm-123",
                 VMId: "vm-123",
-                ipAddress: "10.0.0.1",
                 disks: disks
         ]
     }
