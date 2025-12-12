@@ -2068,13 +2068,18 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         def provisionResponse = new ProvisionResponse()
         ServiceResponse<ProvisionResponse> rtn = ServiceResponse.prepare(provisionResponse)
         try {
+			def fetchedServer = context.async.computeServer.get(server.id).blockingGet()
 			LinkedHashMap<String, Object> scvmmOpts = fetchScvmmConnectionDetails(server)
-            def serverDetail = apiService.checkServerReady(scvmmOpts, server.externalId)
+			def agentWait = waitForAgentInstall(fetchedServer)
+			if (agentWait.success) {
+				fetchedServer = context.async.computeServer.get(server.id).blockingGet()
+			}
+            def serverDetail = apiService.checkServerReady(scvmmOpts, fetchedServer.externalId)
             if (serverDetail.success == true) {
                 provisionResponse.privateIp = serverDetail.server.ipAddress
                 provisionResponse.publicIp = serverDetail.server.ipAddress
-                provisionResponse.externalId = server.externalId
-                def finalizeResults = finalizeHost(server)
+                provisionResponse.externalId = fetchedServer.externalId
+                def finalizeResults = finalizeHost(fetchedServer)
                 if (finalizeResults.success == true) {
                     provisionResponse.success = true
                     rtn.success = true
