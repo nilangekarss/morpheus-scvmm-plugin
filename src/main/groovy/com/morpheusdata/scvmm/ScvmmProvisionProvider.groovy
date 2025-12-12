@@ -1931,8 +1931,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                     def instance = createResults.server
                     if (instance) {
                         node = context.services.computeServer.get(nodeId)
-                        server.externalId = instance.id
-                        server.parentServer = node
                         def serverDisks = createResults.server.disks
                         if (serverDisks) {
                             storageVolumes = server.volumes
@@ -1954,26 +1952,20 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                             }
                         }
 
-                        def serverDetails = apiService.getServerDetails(scvmmOpts, server.externalId)
-                        if (serverDetails.success == true) {
-                            //fill in ip address.
-                            def newIpAddress = serverDetails.server?.ipAddress ?: createResults.server?.ipAddress
-                            def macAddress = serverDetails.server?.macAddress
-                            applyComputeServerNetworkIp(server, newIpAddress, newIpAddress, 0, macAddress)
-                            server.osDevice = '/dev/sda'
-                            server.dataDevice = '/dev/sda'
-                            server.sshHost = server.internalIp
-                            server.managed = true
-                            server.capacityInfo = new ComputeCapacityInfo(maxCores: scvmmOpts.maxCores, maxMemory: scvmmOpts.memory, maxStorage: scvmmOpts.maxTotalStorage)
-                            server.status = 'provisioned'
-                            context.async.computeServer.save(server).blockingGet()
-                            provisionResponse.success = true
-                            log.debug("provisionResponse.success: ${provisionResponse.success}")
-                        } else {
-                            server.statusMessage = 'Failed to run server'
-                            context.async.computeServer.save(server).blockingGet()
-                            provisionResponse.success = false
-                        }
+						server.externalId = instance.id
+						server.parentServer = node
+						server.osDevice = '/dev/sda'
+						server.dataDevice = '/dev/sda'
+						server.managed = true
+						server.capacityInfo = new ComputeCapacityInfo(maxCores: scvmmOpts.maxCores, maxMemory: scvmmOpts.memory, maxStorage: scvmmOpts.maxTotalStorage)
+						server.status = 'provisioned'
+						context.async.computeServer.save(server).blockingGet()
+
+						// start it
+						log.info("Starting Server  ${scvmmOpts.name}")
+						apiService.startServer(scvmmOpts, scvmmOpts.externalId)
+						provisionResponse.success = true
+						log.debug("provisionResponse.success: ${provisionResponse.success}")
                     } else {
                         //no reservation
                         server.statusMessage = 'Error loading created server'
