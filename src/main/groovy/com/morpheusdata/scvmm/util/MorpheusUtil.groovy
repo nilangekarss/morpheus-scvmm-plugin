@@ -3,10 +3,12 @@ package com.morpheusdata.scvmm.util
 import com.morpheusdata.core.MorpheusContext
 import com.morpheusdata.core.data.DataQuery
 import com.morpheusdata.model.ComputeServer
-import groovy.util.logging.Slf4j
+import com.morpheusdata.scvmm.logging.LogInterface
+import com.morpheusdata.scvmm.logging.LogWrapper
 
-@Slf4j
 class MorpheusUtil {
+    private static LogInterface log = LogWrapper.instance
+
     static ComputeServer saveAndGetMorpheusServer(MorpheusContext context, ComputeServer server, Boolean fullReload = false) {
         def saveResult = context.async.computeServer.bulkSave([server]).blockingGet()
         def updatedServer
