@@ -22,6 +22,7 @@ import com.morpheusdata.response.ProvisionResponse
 import com.morpheusdata.response.ServiceResponse
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
+import com.morpheusdata.scvmm.util.MorpheusUtil
 import groovy.json.JsonSlurper
 
 class ScvmmProvisionProvider extends AbstractProvisionProvider implements WorkloadProvisionProvider, HostProvisionProvider, ProvisionProvider.HypervisorProvisionFacet, HostProvisionProvider.ResizeFacet, WorkloadProvisionProvider.ResizeFacet, ProvisionProvider.BlockDeviceNameFacet {
@@ -753,10 +754,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 if (createResults.success == true) {
                     node = context.services.computeServer.get(nodeId)
                     if (createResults.server) {
-                        server.externalId = createResults.server.id
-                        server.internalId = createResults.server.VMId
-                        server.parentServer = node
-                        /*if (server.cloud.getConfigProperty('enableVnc')) {
+						/*if (server.cloud.getConfigProperty('enableVnc')) {
                             //credentials
                             server.consoleHost = server.parentServer?.name
                             server.consoleType = 'vmrdp'
@@ -786,13 +784,21 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 								}
                             }
                         }
+						server = context.services.computeServer.get(server.id)
+						server.externalId = createResults.server.id
+						server.internalId = createResults.server.VMId
+						server.parentServer = node
 						server.osDevice = '/dev/sda'
 						server.dataDevice = '/dev/sda'
 						server.lvmEnabled = false
 						server.managed = true
 						server.capacityInfo = new ComputeCapacityInfo(maxCores: scvmmOpts.maxCores, maxMemory: scvmmOpts.maxMemory, maxStorage: scvmmOpts.maxTotalStorage)
 						server.status = 'provisioned'
-						context.async.computeServer.save(server).blockingGet()
+						MorpheusUtil.saveAndGetMorpheusServer(context, server)
+
+						// start it
+						log.info("Starting Server  ${scvmmOpts.name}")
+						apiService.startServer(scvmmOpts, scvmmOpts.externalId)
 						provisionResponse.success = true
 						// By default installAgent is true.
 						// 1. The below section instructs the subsequent code to
@@ -1239,24 +1245,52 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
      */
     @Override
     ServiceResponse<ProvisionResponse> getServerDetails(ComputeServer server) {
-		def opts = fetchScvmmConnectionDetails(server)
-		opts.server = server
+		def fetchedServer = context.async.computeServer.get(server.id).blockingGet()
+		def opts = fetchScvmmConnectionDetails(fetchedServer)
+		opts.server = fetchedServer
 		opts.waitForIp = true
-		def serverDetails = apiService.checkServerReady(opts, server.externalId)
+		def serverDetails = apiService.checkServerReady(opts, fetchedServer.externalId)
 		if (serverDetails.success == true) {
-			server.externalIp = serverDetails.server?.ipAddress
-			server.powerState = ComputeServer.PowerState.on
-			server = saveAndGetMorpheusServer(server, true)
+			def agentWait = waitForAgentInstall(fetchedServer)
+			if (agentWait.success) {
+				fetchedServer = context.async.computeServer.get(server.id).blockingGet()
+			}
+			fetchedServer.externalIp = serverDetails.server?.ipAddress
+			fetchedServer.powerState = ComputeServer.PowerState.on
+			fetchedServer = MorpheusUtil.saveAndGetMorpheusServer(context, fetchedServer, true)
 			def newIpAddress = serverDetails.server?.ipAddress
 			def macAddress = serverDetails.server?.macAddress
-			applyComputeServerNetworkIp(server, newIpAddress, newIpAddress, 0, macAddress)
+			applyComputeServerNetworkIp(fetchedServer, newIpAddress, newIpAddress, 0, macAddress)
 			return new ServiceResponse<ProvisionResponse>(true, null, null,
-					new ProvisionResponse(privateIp: server.internalIp, publicIp: server.externalIp, success: true))
+					new ProvisionResponse(privateIp: fetchedServer.internalIp, publicIp: fetchedServer.externalIp, success: true))
 		} else {
 			return new ServiceResponse(success: false, msg: serverDetails.message ?: 'Failed to get server details',
 					error: serverDetails.message, data: serverDetails)
 		}
     }
+
+	def waitForAgentInstall(ComputeServer server, int maxAttempts = 180) {
+	    def rtn = [success: false]
+	    try {
+	        int attempts = 0
+	        while (attempts < maxAttempts) {
+	            def fetchedServer = context.async.computeServer.get(server.id).blockingGet()
+	            if (fetchedServer?.agentInstalled) {
+	                rtn.success = true
+	                break
+	            } else {
+	                attempts++
+	                sleep(1000)
+	            }
+	        }
+	        if (!rtn.success) {
+	            rtn.msg = "Timed out waiting for agent connectivity from host. Verify the appliance url configuration is correct."
+	        }
+	    } catch (e) {
+	        log.error("waitForAgentInstall error: ${e}", e)
+	    }
+	    return rtn
+	}
 
     /**
      * Method called before runWorkload to allow implementers to create resources required before runWorkload is called
@@ -2014,7 +2048,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             else
                 context.async.computeServer.computeServerInterface.save([netInterface]).blockingGet()
         }
-        def savedServer = saveAndGetMorpheusServer(server, true)
+        def savedServer = MorpheusUtil.saveAndGetMorpheusServer(context, server, true)
 		rtn.netInterface = netInterface
 		rtn.server = savedServer
         return rtn

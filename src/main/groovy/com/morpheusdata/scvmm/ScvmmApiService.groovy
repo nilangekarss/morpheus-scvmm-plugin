@@ -280,11 +280,7 @@ class ScvmmApiService {
                     cloudInitIsoPath = importAndMountIso(opts.cloudConfigBytes, diskFolder, imageFolderName, opts)
                 }
 
-                //start it
-                log.info("Starting Server  ${opts.name}")
-                startServer(opts, opts.externalId)
-                //get details
-                //log.info("SCVMM Check for Server Ready ${opts.name}")
+                // get server details
                 def serverDetail = getServerDetails(opts, opts.externalId)
                 if (serverDetail.success == true) {
                     rtn.server = [name: opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId, disks: disks]
