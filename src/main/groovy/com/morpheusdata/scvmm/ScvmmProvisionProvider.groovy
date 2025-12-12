@@ -2069,13 +2069,13 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         ServiceResponse<ProvisionResponse> rtn = ServiceResponse.prepare(provisionResponse)
         try {
 			def fetchedServer = context.async.computeServer.get(server.id).blockingGet()
-			LinkedHashMap<String, Object> scvmmOpts = fetchScvmmConnectionDetails(server)
-			def agentWait = waitForAgentInstall(fetchedServer)
-			if (agentWait.success) {
-				fetchedServer = context.async.computeServer.get(server.id).blockingGet()
-			}
+			LinkedHashMap<String, Object> scvmmOpts = fetchScvmmConnectionDetails(fetchedServer)
             def serverDetail = apiService.checkServerReady(scvmmOpts, fetchedServer.externalId)
             if (serverDetail.success == true) {
+				def agentWait = waitForAgentInstall(fetchedServer)
+				if (agentWait.success) {
+					fetchedServer = context.async.computeServer.get(server.id).blockingGet()
+				}
                 provisionResponse.privateIp = serverDetail.server.ipAddress
                 provisionResponse.publicIp = serverDetail.server.ipAddress
                 provisionResponse.externalId = fetchedServer.externalId
@@ -2106,17 +2106,17 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         ServiceResponse rtn = ServiceResponse.prepare()
         log.debug("finalizeHost: ${server?.id}")
         try {
-            def config = server.getConfigMap()
-            def node = config.hostId ? context.services.computeServer.get(config.hostId.toLong()) : pickScvmmController(server.cloud)
-			def compServer = context.services.computeServer.get(server.id)
-            def scvmmOpts = apiService.getScvmmCloudOpts(context, compServer.cloud, node)
-            scvmmOpts += apiService.getScvmmControllerOpts(compServer.cloud, node)
-            scvmmOpts += getScvmmServerOpts(compServer)
-            def serverDetail = apiService.checkServerReady(scvmmOpts, compServer.externalId)
+			def fetchedServer = context.async.computeServer.get(server.id).blockingGet()
+			LinkedHashMap<String, Object> scvmmOpts = fetchScvmmConnectionDetails(fetchedServer)
+            def serverDetail = apiService.checkServerReady(scvmmOpts, fetchedServer.externalId)
             if (serverDetail.success == true) {
+				def agentWait = waitForAgentInstall(fetchedServer)
+				if (agentWait.success) {
+					fetchedServer = context.async.computeServer.get(server.id).blockingGet()
+				}
 				def newIpAddress = serverDetail.server?.ipAddress
 				def macAddress = serverDetail.server?.macAddress
-				def savedServer = applyNetworkIpAndGetServer(compServer, newIpAddress, newIpAddress, 0, macAddress)
+				def savedServer = applyNetworkIpAndGetServer(fetchedServer, newIpAddress, newIpAddress, 0, macAddress)
                 context.async.computeServer.save(savedServer).blockingGet()
                 rtn.success = true
             }
