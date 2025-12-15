@@ -11,6 +11,7 @@ import com.morpheusdata.core.MorpheusStorageVolumeTypeService
 import com.morpheusdata.core.MorpheusVirtualImageService
 import com.morpheusdata.core.MorpheusComputeServerService
 import com.morpheusdata.core.MorpheusStorageVolumeService
+import com.morpheusdata.core.MorpheusWorkloadService
 import com.morpheusdata.core.cloud.MorpheusCloudService
 import com.morpheusdata.core.compute.MorpheusComputeServerInterfaceService
 import com.morpheusdata.core.data.DataAndFilter
@@ -50,7 +51,7 @@ import org.junit.jupiter.api.BeforeEach
 import spock.lang.Specification
 import spock.lang.Unroll
 
-class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
+class ScvmmProvisionProviderSpec extends Specification {
     private MorpheusContext morpheusContext
     private ScvmmPlugin plugin
     private ScvmmProvisionProvider provisionProvider
@@ -62,6 +63,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     private MorpheusSynchronousWorkloadService workloadService
     private MorpheusSynchronousWorkloadTypeService workloadTypeService
     private MorpheusWorkloadTypeService asyncWorkloadTypeService
+    private MorpheusWorkloadService asyncWorkloadService
     private MorpheusCloudService asyncCloudService
     private MorpheusSynchronousCloudService cloudService
     private MorpheusSynchronousNetworkService networkService
@@ -85,6 +87,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         asyncCloudService = Mock(MorpheusCloudService)
         def asyncNetworkService = Mock(MorpheusNetworkService)
         workloadService = Mock(MorpheusSynchronousWorkloadService)
+        asyncWorkloadService = Mock(MorpheusWorkloadService)
         workloadTypeService = Mock(MorpheusSynchronousWorkloadTypeService)
         asyncWorkloadTypeService = Mock(MorpheusWorkloadTypeService)
         storageVolumeService = Mock(MorpheusSynchronousStorageVolumeService)
@@ -112,6 +115,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
             getVirtualImage() >> asyncVirtualImageService
             getComputeTypeSet() >> asyncComputeTypeSetService
             getWorkloadType() >> asyncWorkloadTypeService
+            getWorkload() >> asyncWorkloadService
         }
 
         // Configure context mocks
@@ -185,7 +189,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         def mockFilesSingle = Single.just(mockedCloudFiles)
 
         provisionProvider.getHostAndDatastore(_, _, _, _, _, _, _, _, _) >> {
-                return hostAndDatastoreResponse
+            return hostAndDatastoreResponse
         }
 
         provisionProvider.getDiskExternalIds(_, _) >> {
@@ -301,6 +305,10 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
 
         mockApiService.createServer(_) >> { Map servOpts ->
             return ProvisionDataHelper.runWorkload_createServerResponse()
+        }
+
+        asyncWorkloadService.save(_) >> { Workload wl ->
+            return Single.just(wl)
         }
 
         mockApiService.checkServerReady(_, _) >> { Map options, String serverId ->
@@ -493,7 +501,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
                 query.filters.any { it.name == 'datastore.id' && it.value == datastore?.id } &&
                         query.filters.any { it.name == 'volumePath' && it.operator == '!=' && it.value == null }
             }) >> {
-             return storageVolume
+                return storageVolume
             }
         } else {
             storageVolumeService.find(_) >> null
@@ -746,6 +754,9 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         morpheusContext.services.computeServer.get(200L) >> {
             return controllerServer
         }
+        provisionProvider.pickScvmmController(cloud) >> {
+            return controllerServer
+        }
         morpheusContext.services.computeServer.get(100L) >> {
             return server
         }
@@ -950,56 +961,161 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         "api exception"    | "vm-123"   | false      | true               | "API connection error" | false          | null
     }
 
-    def "getServerDetails returns response with server IP addresses"() {
-        given:
-        // Create test servers with different IP configurations
+//    def "getServerDetails returns response with server IP addresses"() {
+//        given:
+//        // Create test servers with different IP configurations
+//
+//        def serverWithBothIps = ProvisionDataHelper.getServerDetails_forComputeServer("bothIps")
+//        def serverWithOnlyInternalIp = ProvisionDataHelper.getServerDetails_forComputeServer("internalOnly")
+//        def serverWithOnlyExternalIp = ProvisionDataHelper.getServerDetails_forComputeServer("externalOnly")
+//        def serverWithNoIps = ProvisionDataHelper.getServerDetails_forComputeServer("noIps")
+//
+//        when:
+//        def responseBothIps = provisionProvider.getServerDetails(serverWithBothIps)
+//        def responseInternalOnly = provisionProvider.getServerDetails(serverWithOnlyInternalIp)
+//        def responseExternalOnly = provisionProvider.getServerDetails(serverWithOnlyExternalIp)
+//        def responseNoIps = provisionProvider.getServerDetails(serverWithNoIps)
+//
+//        then:
+//        // Test server with both IPs
+//        responseBothIps.success == true
+//        responseBothIps.data.success == true
+//        responseBothIps.data.privateIp == "192.168.1.100"
+//        responseBothIps.data.publicIp == "10.0.1.100"
+//
+//        // Test server with only internal IP
+//        responseInternalOnly.success == true
+//        responseInternalOnly.data.success == true
+//        responseInternalOnly.data.privateIp == "192.168.1.101"
+//        responseInternalOnly.data.publicIp == null
+//
+//        // Test server with only external IP
+//        responseExternalOnly.success == true
+//        responseExternalOnly.data.success == true
+//        responseExternalOnly.data.privateIp == null
+//        responseExternalOnly.data.publicIp == "10.0.1.102"
+//
+//        // Test server with no IPs
+//        responseNoIps.success == true
+//        responseNoIps.data.success == true
+//        responseNoIps.data.privateIp == null
+//        responseNoIps.data.publicIp == null
+//    }
 
-        def serverWithBothIps = ProvisionDataHelper.getServerDetails_forComputeServer("bothIps")
-        def serverWithOnlyInternalIp = ProvisionDataHelper.getServerDetails_forComputeServer("internalOnly")
-        def serverWithOnlyExternalIp = ProvisionDataHelper.getServerDetails_forComputeServer("externalOnly")
-        def serverWithNoIps = ProvisionDataHelper.getServerDetails_forComputeServer("noIps")
+    @Unroll
+    def "getServerDetails returns #scenario when checkServerReady #condition"() {
+        given:
+        def server = new ComputeServer(
+                id: 100L,
+                externalId: "vm-123",
+                internalIp: internalIp,
+                externalIp: externalIp
+        )
+        def opts = [server: server, waitForIp: true]
+
+        provisionProvider.fetchScvmmConnectionDetails(server) >> opts
+
+        def serverDetailsResponse = [
+                success: responseSuccess,
+                server: responseSuccess ? [
+                        ipAddress: serverIpAddress,
+                        macAddress: macAddress
+                ] : null,
+                message: errorMessage
+        ]
+
+        mockApiService.checkServerReady(opts, "vm-123") >> serverDetailsResponse
+
+        if (responseSuccess) {
+            provisionProvider.saveAndGetMorpheusServer(server, true) >> server
+            provisionProvider.applyComputeServerNetworkIp(server, serverIpAddress, serverIpAddress, 0, macAddress) >> new ComputeServerInterface()
+        }
 
         when:
-        def responseBothIps = provisionProvider.getServerDetails(serverWithBothIps)
-        def responseInternalOnly = provisionProvider.getServerDetails(serverWithOnlyInternalIp)
-        def responseExternalOnly = provisionProvider.getServerDetails(serverWithOnlyExternalIp)
-        def responseNoIps = provisionProvider.getServerDetails(serverWithNoIps)
+        def result = provisionProvider.getServerDetails(server)
 
         then:
-        // Test server with both IPs
-        responseBothIps.success == true
-        responseBothIps.data.success == true
-        responseBothIps.data.privateIp == "192.168.1.100"
-        responseBothIps.data.publicIp == "10.0.1.100"
+        result.success == expectedSuccess
+        if (responseSuccess) {
+            result.data.success == true
+            result.data.privateIp == expectedPrivateIp
+            result.data.publicIp == expectedPublicIp
+            server.externalIp == serverIpAddress
+            server.powerState == ComputeServer.PowerState.on
+        } else {
+            result.msg == (errorMessage ?: 'Failed to get server details')
+            result.error == errorMessage
+        }
 
-        // Test server with only internal IP
-        responseInternalOnly.success == true
-        responseInternalOnly.data.success == true
-        responseInternalOnly.data.privateIp == "192.168.1.101"
-        responseInternalOnly.data.publicIp == null
-
-        // Test server with only external IP
-        responseExternalOnly.success == true
-        responseExternalOnly.data.success == true
-        responseExternalOnly.data.privateIp == null
-        responseExternalOnly.data.publicIp == "10.0.1.102"
-
-        // Test server with no IPs
-        responseNoIps.success == true
-        responseNoIps.data.success == true
-        responseNoIps.data.privateIp == null
-        responseNoIps.data.publicIp == null
+        where:
+        scenario                    | condition         | responseSuccess | internalIp      | externalIp    | serverIpAddress | macAddress          | errorMessage      | expectedSuccess | expectedPrivateIp | expectedPublicIp
+        "success with both IPs"     | "succeeds"        | true            | "192.168.1.100" | "10.0.1.100"  | "10.0.1.100"    | "AA:BB:CC:DD:EE:FF" | null              | true            | "192.168.1.100"   | "10.0.1.100"
+        "success with internal IP"  | "succeeds"        | true            | "192.168.1.101" | null          | "192.168.1.101" | "AA:BB:CC:DD:EE:01" | null              | true            | "192.168.1.101"   | "192.168.1.101"
+        "success with external IP"  | "succeeds"        | true            | null            | "10.0.1.102"  | "10.0.1.102"    | "AA:BB:CC:DD:EE:02" | null              | true            | null              | "10.0.1.102"
+        "success with no IPs"       | "succeeds"        | true            | null            | null          | "10.0.1.103"    | "AA:BB:CC:DD:EE:03" | null              | true            | null              | "10.0.1.103"
+        "failure response"          | "fails"           | false           | "192.168.1.100" | "10.0.1.100"  | null            | null                | "Server not ready"| false           | null              | null
+        "failure with no message"   | "fails"           | false           | "192.168.1.100" | "10.0.1.100"  | null            | null                | null              | false           | null              | null
     }
 
-    def "finalizeWorkload returns success response"() {
-        given:
-        def workload = ProvisionDataHelper.getWorkloadData()
+
+//    def "finalizeWorkload returns success response"() {
+//        given:
+//        def workload = ProvisionDataHelper.getWorkloadData()
+//
+//        when:
+//        def response = provisionProvider.finalizeWorkload(workload)
+//
+//        then:
+//        response.success == true
+//    }
+
+    def "finalizeWorkload with DVD cleanup configured"() {
+        given: "a workload with DVD cleanup configuration"
+        def cloud = new Cloud(id: 1L, name: 'test-cloud')
+        def workload = new Workload(
+                id: 1L,
+                server: new ComputeServer(
+                        id: 1L,
+                        externalId: 'test-server-id',
+                        cloud: cloud
+                ),
+                configMap: [
+                        deleteDvdOnComplete: [
+                                removeIsoFromDvd: true,
+                                deleteIso: 'test-iso-path'
+                        ]
+                ]
+        )
+        def scvmmOpts = [vmId: 'test-server-id']
+
+        and: "fetched workload with the same config"
+        def fetchedWorkload = new Workload(
+                id: 1L,
+                configMap: [
+                        deleteDvdOnComplete: [
+                                removeIsoFromDvd: true,
+                                deleteIso: 'test-iso-path'
+                        ]
+                ]
+        )
 
         when:
-        def response = provisionProvider.finalizeWorkload(workload)
+        def result = provisionProvider.finalizeWorkload(workload)
 
-        then:
-        response.success == true
+        then: "getAllScvmmOpts is called"
+        1 * provisionProvider.getAllScvmmOpts(workload) >> scvmmOpts
+
+        and: "workload is fetched from context"
+        1 * asyncWorkloadService.get(1L) >> Maybe.just(fetchedWorkload)
+
+        and: "DVD is ejected"
+        1 * mockApiService.setCdrom(scvmmOpts)
+
+        and: "ISO is deleted"
+        1 * mockApiService.deleteIso(scvmmOpts, 'test-iso-path')
+
+        and: "success is returned"
+        result.success == true
     }
 
     def "createWorkloadResources returns success response"() {
@@ -1959,7 +2075,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
                 addresses: [new NetAddress(type: NetAddress.AddressType.IPV4, address: "192.168.1.100")]
         )
         asyncComputeServerInterfaceService.save(_) >> {
-           return  Single.just([savedInterface])
+            return  Single.just([savedInterface])
         }
 
 
@@ -3367,8 +3483,8 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
         provisionProvider.getVirtualImageLocation(_, _) >> location
 
         def expectedResult = [[rootVolume: true, externalId: "root-id", idx: 0],
-                          [rootVolume: false, externalId: "data-id-1", idx: 1],
-                          [rootVolume: false, externalId: "data-id-2", idx: 2]]
+                              [rootVolume: false, externalId: "data-id-1", idx: 1],
+                              [rootVolume: false, externalId: "data-id-2", idx: 2]]
         when:
         def result = provisionProvider.getDiskExternalIds(Mock(VirtualImage), Mock(Cloud))
 
@@ -3799,7 +3915,7 @@ class ScvmmProvisionProviderRunWorkloadSpec extends Specification {
     def "validateNonHypervisorHost sets success and errors based on validationResults"() {
         given:
         def opts = [networkId: 123, scvmmCapabilityProfile: "profile", nodeCount: 2]
-       // def validationOpts = [networkId: 123, scvmmCapabilityProfile: "profile", nodeCount: 2]
+        // def validationOpts = [networkId: 123, scvmmCapabilityProfile: "profile", nodeCount: 2]
         def validationResults = [success: false, errors: [error: "Invalid config"]]
         provisionProvider.extractNetworkId(_) >> { return opts.networkId }
         provisionProvider.extractCapabilityProfile(_) >> { return opts.scvmmCapabilityProfile }
