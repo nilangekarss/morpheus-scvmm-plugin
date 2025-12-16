@@ -188,7 +188,7 @@ class SCVMMpayloads:
                     "rootVolume":  volume.get("rootVolume", True),
                     "id": volume["id"],
                     "name": volume["name"],
-                    "size": 90,
+                    "size": 85,
                     "datastoreId": "auto"
                 }
             ]
