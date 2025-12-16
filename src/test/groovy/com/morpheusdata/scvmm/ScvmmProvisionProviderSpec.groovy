@@ -333,7 +333,6 @@ class ScvmmProvisionProviderSpec extends Specification {
         then:
         response.success
         response.data.success
-
     }
 
     def "getProvisionTypeCode should return scvmm"() {

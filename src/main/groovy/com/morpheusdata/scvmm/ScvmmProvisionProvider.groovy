@@ -774,8 +774,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                     controllerNode: controllerNode,
             ])
             rtn = serverCreationResult
-            if (provisionResponse.success) {
-                def status = provisionResponse.skipNetworkWait ? 'waiting for server status' : 'waiting for network'
+            if (rtn.data?.success) {
+                def status = rtn.data.skipNetworkWait ? 'waiting for server status' : 'waiting for network'
                 context.process.startProcessStep(workloadRequest.process,
                         new ProcessEvent(type: ProcessEvent.ProcessType.provisionNetwork), status).blockingGet()
             }

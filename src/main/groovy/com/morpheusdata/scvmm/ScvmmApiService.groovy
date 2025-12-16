@@ -453,6 +453,9 @@ class ScvmmApiService {
 //        //get details
 //        log.info("SCVMM Check for Server Ready ${opts.name}")
 //        def serverDetail = checkServerReady(opts, opts.externalId)
+        log.info("Starting Server  ${opts.name}")
+        startServer(opts, opts.externalId)
+        log.info("SCVMM get Server Details ${opts.name}")
         def serverDetail = getServerDetails(opts, opts.externalId)
         if (serverDetail.success == true) {
             rtn.server = [name: opts.name, id: opts.externalId, VMId: serverDetail.server?.VMId,
