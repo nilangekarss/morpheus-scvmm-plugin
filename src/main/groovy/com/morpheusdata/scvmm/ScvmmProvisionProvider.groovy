@@ -48,6 +48,10 @@ import com.morpheusdata.response.ServiceResponse
 import com.morpheusdata.scvmm.logging.LogInterface
 import com.morpheusdata.scvmm.logging.LogWrapper
 import com.morpheusdata.scvmm.util.MorpheusUtil
+import com.morpheusdata.core.providers.CloudProvider
+
+
+
 import groovy.json.JsonSlurper
 
 @SuppressWarnings(['CompileStatic', 'MethodCount', 'ClassSize'])
@@ -770,8 +774,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                     controllerNode: controllerNode,
             ])
             rtn = serverCreationResult
-            if (rtn.data?.success) {
-                def status = rtn.data.skipNetworkWait ? 'waiting for server status' : 'waiting for network'
+            if (provisionResponse.success) {
+                def status = provisionResponse.skipNetworkWait ? 'waiting for server status' : 'waiting for network'
                 context.process.startProcessStep(workloadRequest.process,
                         new ProcessEvent(type: ProcessEvent.ProcessType.provisionNetwork), status).blockingGet()
             }
@@ -782,7 +786,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             rtn.msg = e.message
             rtn.error = e.message
             rtn.data = provisionResponse
-
         } finally {
             cloneParentCleanup(scvmmOpts, rtn)
         }
@@ -1304,7 +1307,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         def node = context.services.computeServer.get(nodeId)
         if (createResults.server) {
             updateServerAfterCreation(createResults, server, node)
-            handleServerDetails(scvmmOpts, server, opts, workloadRequest, provisionResponse)
+            handleServerDetails(scvmmOpts, server, opts, workloadRequest, provisionResponse, createResults, node)
         } else {
             handleServerCreateFailure(createResults, server, provisionResponse)
         }
@@ -1360,7 +1363,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     }
 
     protected void handleServerDetails(Map scvmmOpts, ComputeServer server, Map opts,
-                                       WorkloadRequest workloadRequest, ProvisionResponse provisionResponse) {
+                                       WorkloadRequest workloadRequest, ProvisionResponse provisionResponse, Map createResults, ComputeServer node) {
 //        def serverDetails = apiService.getServerDetails(scvmmOpts, server.externalId)
 //        if (serverDetails.success == true) {
 //            log.info("serverDetail: ${serverDetails}")
@@ -1393,6 +1396,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 //            context.async.computeServer.save(server).blockingGet()
 //            provisionResponse.success = false
 //        }
+
         server = context.services.computeServer.get(server.id)
         server.externalId = createResults.server.id
         server.internalId = createResults.server.VMId
@@ -1401,10 +1405,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         server.dataDevice = '/dev/sda'
         server.lvmEnabled = false
         server.managed = true
-        server.capacityInfo = new ComputeCapacityInfo(maxCores: scvmmOpts.maxCores, maxMemory: scvmmOpts.maxMemory,
-                maxStorage: scvmmOpts.maxTotalStorage)
+        server.capacityInfo = new ComputeCapacityInfo(maxCores: scvmmOpts.maxCores, maxMemory: scvmmOpts.maxMemory, maxStorage: scvmmOpts.maxTotalStorage)
         server.status = 'provisioned'
-        //context.async.computeServer.save(server).blockingGet()
         MorpheusUtil.saveAndGetMorpheusServer(context, server)
 
         // start it
@@ -1915,18 +1917,12 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
      */
     @Override
     ServiceResponse<ProvisionResponse> getServerDetails(ComputeServer server) {
-        //def opts = fetchScvmmConnectionDetails(server)
-        //opts.server = server
         def fetchedServer = context.async.computeServer.get(server.id).blockingGet()
         def opts = fetchScvmmConnectionDetails(fetchedServer)
         opts.server = fetchedServer
         opts.waitForIp = true
-        //def serverDetails = apiService.checkServerReady(opts, server.externalId)
         def serverDetails = apiService.checkServerReady(opts, fetchedServer.externalId)
         if (serverDetails.success == true) {
-            //server.externalIp = serverDetails.server?.ipAddress
-            //server.powerState = ComputeServer.PowerState.on
-            //server = saveAndGetMorpheusServer(server, true)
             def agentWait = waitForAgentInstall(fetchedServer)
             if (agentWait.success) {
                 fetchedServer = context.async.computeServer.get(server.id).blockingGet()
@@ -1936,10 +1932,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             fetchedServer = MorpheusUtil.saveAndGetMorpheusServer(context, fetchedServer, true)
             def newIpAddress = serverDetails.server?.ipAddress
             def macAddress = serverDetails.server?.macAddress
-            //applyComputeServerNetworkIp(server, newIpAddress, newIpAddress, 0, macAddress)
             applyComputeServerNetworkIp(fetchedServer, newIpAddress, newIpAddress, 0, macAddress)
             return new ServiceResponse<ProvisionResponse>(true, null, null,
-                    //new ProvisionResponse(privateIp: server.internalIp, publicIp: server.externalIp, success: true))
                     new ProvisionResponse(privateIp: fetchedServer.internalIp, publicIp: fetchedServer.externalIp, success: true))
         } else {
             return new ServiceResponse(success: false, msg: serverDetails.message ?: 'Failed to get server details',
@@ -2778,6 +2772,16 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 if (serverDisks) {
                     updateServerVolumesAfterCreation(server, serverDisks, cloud)
                 }
+//                def serverDetails = apiService.getServerDetails(scvmmOpts, server.externalId)
+//                if (serverDetails.success == true) {
+//                    updateServerNetworkAndStatus(server, serverDetails, scvmmOpts, createResults)
+//                    context.async.computeServer.save(server).blockingGet()
+//                    provisionResponse.success = true
+//                    log.debug("provisionResponse.success: ${provisionResponse.success}")
+//                } else {
+//                    handleServerDetailsFailure(server)
+//                    provisionResponse.success = false
+//                }
                 server.externalId = instance.id
                 server.parentServer = node
                 server.osDevice = '/dev/sda'
@@ -2792,16 +2796,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 apiService.startServer(scvmmOpts, scvmmOpts.externalId)
                 provisionResponse.success = true
                 log.debug("provisionResponse.success: ${provisionResponse.success}")
-//                def serverDetails = apiService.getServerDetails(scvmmOpts, server.externalId)
-//                if (serverDetails.success == true) {
-//                    updateServerNetworkAndStatus(server, serverDetails, scvmmOpts, createResults)
-//                    context.async.computeServer.save(server).blockingGet()
-//                    provisionResponse.success = true
-//                    log.debug("provisionResponse.success: ${provisionResponse.success}")
-//                } else {
-//                    handleServerDetailsFailure(server)
-//                    provisionResponse.success = false
-//                }
             } else {
                 server.statusMessage = 'Error loading created server'
             }
@@ -2966,20 +2960,13 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         def provisionResponse = new ProvisionResponse()
         ServiceResponse<ProvisionResponse> rtn = ServiceResponse.prepare(provisionResponse)
         try {
-//            def config = server.configMap
-//            def node = config.hostId
-//                    ? context.services.computeServer.get(config.hostId.toLong())
-//                    : pickScvmmController(server.cloud)
+//            def config = server.getConfigMap()
+//            def node = config.hostId ? context.services.computeServer.get(config.hostId.toLong()) : pickScvmmController(server.cloud)
 //            def scvmmOpts = apiService.getScvmmCloudOpts(context, server.cloud, node)
 //            scvmmOpts += apiService.getScvmmControllerOpts(server.cloud, node)
 //            scvmmOpts += getScvmmServerOpts(server)
+//            def serverDetail = apiService.checkServerReady(scvmmOpts, server.externalId)
             def fetchedServer = context.async.computeServer.get(server.id).blockingGet()
-            //LinkedHashMap<String, Object> scvmmOpts = fetchScvmmConnectionDetails(server)
-            //def serverDetail = apiService.checkServerReady(scvmmOpts, server.externalId)
-            //def agentWait = waitForAgentInstall(fetchedServer)
-            //if (agentWait.success) {
-            //    fetchedServer = context.async.computeServer.get(server.id).blockingGet()
-            //}
             LinkedHashMap<String, Object> scvmmOpts = fetchScvmmConnectionDetails(fetchedServer)
             def serverDetail = apiService.checkServerReady(scvmmOpts, fetchedServer.externalId)
             if (serverDetail.success == true) {
@@ -3038,8 +3025,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 }
                 def newIpAddress = serverDetail.server?.ipAddress
                 def macAddress = serverDetail.server?.macAddress
-                def savedServer =
-                        applyNetworkIpAndGetServer(fetchedServer, newIpAddress, newIpAddress, 0, macAddress)
+                def savedServer = applyNetworkIpAndGetServer(fetchedServer, newIpAddress, newIpAddress, 0, macAddress)
                 context.async.computeServer.save(savedServer).blockingGet()
                 rtn.success = true
             }

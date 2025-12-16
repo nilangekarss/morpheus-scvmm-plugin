@@ -336,7 +336,6 @@ class ScvmmProvisionProviderSpec extends Specification {
 
     }
 
-
     def "getProvisionTypeCode should return scvmm"() {
         expect:
         provisionProvider.getProvisionTypeCode() == "scvmm"
