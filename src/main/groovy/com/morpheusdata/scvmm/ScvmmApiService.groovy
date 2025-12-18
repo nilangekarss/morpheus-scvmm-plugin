@@ -447,10 +447,10 @@ class ScvmmApiService {
     }
 
     protected void startAndCheckServer(Map opts, Map disks, Map rtn) {
-//        //start it
+//        // start it
 //        log.info("Starting Server  ${opts.name}")
 //        startServer(opts, opts.externalId)
-//        //get details
+//        // get details
 //        log.info("SCVMM Check for Server Ready ${opts.name}")
 //        def serverDetail = checkServerReady(opts, opts.externalId)
         log.info("Starting Server  ${opts.name}")
