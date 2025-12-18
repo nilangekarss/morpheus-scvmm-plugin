@@ -1200,7 +1200,15 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     @Override
     ServiceResponse restartWorkload(Workload workload) {
         // Generally a call to stopWorkLoad() and then startWorkload()
-        return ServiceResponse.success()
+		log.info("Executing restartWorkload, args: [server:${workload.name}]")
+		log.debug("Dump of params server: ${workload.dump()}")
+		log.info("Executing stopWorkload, args: [server:${workload.name}]")
+		def res = stopWorkload(workload)
+		if (res.success) {
+			log.info("Executing startWorkload, args: [server:${workload.name}]")
+			res = startWorkload(workload)
+		}
+		return res
     }
 
     /**
