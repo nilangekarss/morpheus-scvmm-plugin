@@ -766,15 +766,17 @@ class ScvmmProvisionProviderSpec extends Specification {
                 ]
         ]
 
-        provisionProvider.pickScvmmController(cloud) >> controllerServer
-        mockApiService.getScvmmCloudOpts(morpheusContext, cloud, controllerServer) >> [cloud: cloud.id]
-        mockApiService.getScvmmControllerOpts(cloud, controllerServer) >> [controller: controllerServer.id]
-        provisionProvider.getScvmmServerOpts(server) >> [server: server.id, vmId: 'vm-123']
-        mockApiService.checkServerReady(_, 'vm-123') >> serverDetail
-        computeServerService.save(server) >> server
+        provisionProvider.finalizeHost(_) >> { ComputeServer srv ->
+            srv.internalIp = '10.0.0.100'
+            srv.externalIp = '10.0.0.100'
+            srv.externalId = 'vm-123'
+            return [success: true]
+        }
+
+        provisionProvider.fetchScvmmConnectionDetails(_) >> [:]
+        mockApiService.checkServerReady(_, _) >> serverDetail
         asyncComputeServerService.get(server.id) >> Maybe.just(server)
         provisionProvider.waitForAgentInstall(_) >> [success: true]
-        provisionProvider.applyNetworkIpAndGetServer(_, _, _, _, _) >> server
 
         when:
         def response = provisionProvider.waitForHost(server)
