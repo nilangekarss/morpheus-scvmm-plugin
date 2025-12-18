@@ -1245,7 +1245,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
      */
     @Override
     ServiceResponse<ProvisionResponse> getServerDetails(ComputeServer server) {
-        startMonitoringThread(server)
 		def fetchedServer = context.async.computeServer.get(server.id).blockingGet()
 		def opts = fetchScvmmConnectionDetails(fetchedServer)
 		opts.server = fetchedServer
@@ -1268,54 +1267,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 			return new ServiceResponse(success: false, msg: serverDetails.message ?: 'Failed to get server details',
 					error: serverDetails.message, data: serverDetails)
 		}
-    }
-
-    def startMonitoringThread(ComputeServer server) {
-        Thread.start {
-            log.debug("Starting monitoring thread for server: ${server.id}")
-            def startTime = System.currentTimeMillis()
-            def timeout = 30 * 60 * 1000 // 30 minutes in milliseconds
-
-            // Get initial values
-            def fetchedServer = context.async.computeServer.get(server.id).blockingGet()
-            def lastAgentInstalled = fetchedServer?.agentInstalled
-            def lastMaxMemory = fetchedServer?.maxMemory
-            def lastCapacityMaxMemory = fetchedServer?.capacityInfo?.maxMemory
-
-            log.info("Initial values - [ ${fetchedServer.id} ${fetchedServer.name} ] AgentInstalled: ${lastAgentInstalled}, MaxMemory: ${lastMaxMemory}, CapacityInfo.MaxMemory: ${lastCapacityMaxMemory}")
-
-            while ((System.currentTimeMillis() - startTime) < timeout) {
-                try {
-                    def currentServer = context.async.computeServer.get(server.id).blockingGet()
-                    def currentAgentInstalled = currentServer?.agentInstalled
-                    def currentMaxMemory = currentServer?.maxMemory
-                    def currentCapacityMaxMemory = currentServer?.capacityInfo?.maxMemory
-
-                    // Check for changes and log them
-                    if (currentAgentInstalled != lastAgentInstalled) {
-                        log.info("AgentInstalled changed from [ ${fetchedServer.id} ${fetchedServer.name} ] ${lastAgentInstalled} to ${currentAgentInstalled}")
-                        lastAgentInstalled = currentAgentInstalled
-                    }
-
-                    if (currentMaxMemory != lastMaxMemory) {
-                        log.info("MaxMemory changed from [ ${fetchedServer.id} ${fetchedServer.name} ] ${lastMaxMemory} to ${currentMaxMemory}")
-                        lastMaxMemory = currentMaxMemory
-                    }
-
-                    if (currentCapacityMaxMemory != lastCapacityMaxMemory) {
-                        log.info("CapacityInfo.MaxMemory changed from [ ${fetchedServer.id} ${fetchedServer.name} ] ${lastCapacityMaxMemory} to ${currentCapacityMaxMemory}")
-                        lastCapacityMaxMemory = currentCapacityMaxMemory
-                    }
-
-                    Thread.sleep(5000) // Check every 5 seconds
-
-                } catch (Exception e) {
-                    log.error("Error in monitoring thread: ${e.message}", e)
-                }
-            }
-
-            log.debug("Monitoring thread for server ${server.id} terminated after 30 minutes")
-        }
     }
 
 	def waitForAgentInstall(ComputeServer server, int maxAttempts = 1800) {
