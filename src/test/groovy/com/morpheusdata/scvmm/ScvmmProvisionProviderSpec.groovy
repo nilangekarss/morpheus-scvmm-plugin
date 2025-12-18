@@ -749,7 +749,6 @@ class ScvmmProvisionProviderSpec extends Specification {
         !response.success
     }
 
-    // file: `groovy/com/morpheusdata/scvmm/ScvmmProvisionProviderSpec.groovy`
     def "waitForHost returns success when server is ready"() {
         given:
         Cloud cloud = new Cloud(id: 1L, code: 'scvmm-cloud')
@@ -1961,45 +1960,39 @@ class ScvmmProvisionProviderSpec extends Specification {
                 addresses: [new NetAddress(type: NetAddress.AddressType.IPV4, address: "192.168.1.100")]
         )
 
-        provisionProvider.applyComputeServerNetworkIp(_, _, _, _, _) >> { ComputeServer srv, String privateIp, String publicIp, Integer interfaceOrder, String mac ->
-            if (privateIp) {
-                // Update the interface with the provided IPs
-                def iface = srv.interfaces?.find { it.displayOrder == interfaceOrder } ?: srv.interfaces?.first()
-                if (iface) {
-                    iface.ipAddress = privateIp
-                    iface.publicIpAddress = publicIp
-                    iface.macAddress = mac
-                    if (iface.addresses == null) {
-                        iface.addresses = []
-                    }
-                    iface.addresses.add(new NetAddress(type: NetAddress.AddressType.IPV4, address: privateIp))
-                }
-
-                // Update server IPs
-                srv.internalIp = privateIp
-                srv.externalIp = publicIp
-                srv.sshHost = privateIp
-
-                return savedInterface
-            }
-            return null
-        }
-
         when: "privateIp is provided"
         def result1 = provisionProvider.applyComputeServerNetworkIp(server, "192.168.1.100", "10.0.0.100", 0, macAddress)
 
-        then: "interface should be updated with privateIp and publicIp"
+        then: "saveAndGetNetworkInterface is called and returns correct interface"
+        1 * provisionProvider.saveAndGetNetworkInterface(server, "192.168.1.100", "10.0.0.100", 0, macAddress) >> {
+            srv, privateIp, publicIp, interfaceOrder, mac ->
+                srv.internalIp = privateIp
+                srv.externalIp = publicIp
+                srv.sshHost = privateIp
+                srv.macAddress = mac
+
+                savedInterface.ipAddress = privateIp
+                savedInterface.publicIpAddress = publicIp
+                savedInterface.macAddress = mac
+
+                return [netInterface: savedInterface, server: srv]
+        }
+
+        and: "interface should be returned with correct properties"
+        result1 != null
         result1.ipAddress == "192.168.1.100"
         result1.publicIpAddress == "10.0.0.100"
         result1.macAddress == macAddress
-        server.internalIp == "192.168.1.100"
-        server.externalIp == "10.0.0.100"
-        server.sshHost == "192.168.1.100"
 
-        when: "privateIp is null but publicIp is provided"
+        when: "privateIp is null"
         def result2 = provisionProvider.applyComputeServerNetworkIp(server, null, "10.0.0.200", 0, macAddress)
 
-        then: "no interface should be updated"
+        then: "saveAndGetNetworkInterface is called and returns null interface"
+        1 * provisionProvider.saveAndGetNetworkInterface(server, null, "10.0.0.200", 0, macAddress) >> {
+            return [netInterface: null, server: server]
+        }
+
+        and: "no interface should be returned"
         result2 == null
     }
 
