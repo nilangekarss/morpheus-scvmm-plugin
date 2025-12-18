@@ -1816,7 +1816,15 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     @Override
     ServiceResponse restartWorkload(Workload workload) {
         // Generally a call to stopWorkLoad() and then startWorkload()
-        return ServiceResponse.success()
+        log.info("Executing restartWorkload, args: [server:${workload.name}]")
+        log.debug("Dump of params server: ${workload.dump()}")
+        log.info("Executing stopWorkload, args: [server:${workload.name}]")
+        def res = stopWorkload(workload)
+        if (res.success) {
+            log.info("Executing startWorkload, args: [server:${workload.name}]")
+            res = startWorkload(workload)
+        }
+        return res
     }
 
     /**
@@ -1885,7 +1893,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 error: serverDetails.message, data: serverDetails)
     }
 
-    Map waitForAgentInstall(ComputeServer server, int maxAttempts = 180) {
+    Map waitForAgentInstall(ComputeServer server, int maxAttempts = 1800) {
         Map rtn = [:]
         rtn.success = false
         try {
@@ -2712,8 +2720,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             def instance = createResults.server
             if (instance) {
                 def node = context.services.computeServer.get(nodeId)
-                // server.externalId = instance.id
-                // server.parentServer = node
                 def serverDisks = createResults.server.disks
                 if (serverDisks) {
                     updateServerVolumesAfterCreation(server, serverDisks, cloud)
@@ -2855,7 +2861,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 context.async.computeServer.computeServerInterface.save([netInterface]).blockingGet()
             }
         }
-        // def savedServer = saveAndGetMorpheusServer(server, true)
         def savedServer = MorpheusUtil.saveAndGetMorpheusServer(context, server, true)
         rtn.netInterface = netInterface
         rtn.server = savedServer
@@ -2888,8 +2893,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 }
                 provisionResponse.privateIp = serverDetail.server.ipAddress
                 provisionResponse.publicIp = serverDetail.server.ipAddress
-                // provisionResponse.externalId = server.externalId
-                // def finalizeResults = finalizeHost(server)
                 provisionResponse.externalId = fetchedServer.externalId
                 def finalizeResults = finalizeHost(fetchedServer)
                 if (finalizeResults.success == true) {

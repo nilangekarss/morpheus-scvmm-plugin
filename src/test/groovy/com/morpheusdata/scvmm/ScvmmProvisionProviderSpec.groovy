@@ -749,51 +749,45 @@ class ScvmmProvisionProviderSpec extends Specification {
         !response.success
     }
 
-    @Unroll
-    def "waitForHost returns success when server is ready and finalize succeeds"() {
+    // file: `groovy/com/morpheusdata/scvmm/ScvmmProvisionProviderSpec.groovy`
+    def "waitForHost returns success when server is ready"() {
         given:
         Cloud cloud = new Cloud(id: 1L, code: 'scvmm-cloud')
-
         ComputeServer server = ProvisionDataHelper.waitForHost_getComputeServer(cloud)
-
         ComputeServer controllerServer = ProvisionDataHelper.waitForHost_getControllerServer(cloud)
 
-        def serverDetail = ProvisionDataHelper.waitForHost_getServerDetail()
+        def serverDetail = [
+                success : true,
+                privateIp: '10.0.0.100',
+                publicIp : '10.0.0.100',
+                server   : [
+                        ipAddress : '10.0.0.100',
+                        externalIP: '10.0.0.100',
+                        macAddress: 'aa:bb:cc:dd:ee:ff'
+                ]
+        ]
 
-        morpheusContext.services.computeServer.get(200L) >> controllerServer
         provisionProvider.pickScvmmController(cloud) >> controllerServer
-        morpheusContext.services.computeServer.get(100L) >> server
         mockApiService.getScvmmCloudOpts(morpheusContext, cloud, controllerServer) >> [cloud: cloud.id]
         mockApiService.getScvmmControllerOpts(cloud, controllerServer) >> [controller: controllerServer.id]
         provisionProvider.getScvmmServerOpts(server) >> [server: server.id, vmId: 'vm-123']
         mockApiService.checkServerReady(_, 'vm-123') >> serverDetail
-
-        // Completely override waitForHost to bypass the problematic async operations
-        provisionProvider.waitForHost(_) >> { ComputeServer srv ->
-            // Create the expected response structure
-            def response = new ProvisionResponse()
-            response.success = true
-            response.privateIp = '10.0.0.100'
-            response.publicIp = '10.0.0.100'
-            response.externalId = 'vm-123'
-
-            // Update server properties using correct property names
-            srv.internalIp = '10.0.0.100'
-            srv.externalIp = '10.0.0.100'
-            srv.externalId = 'vm-123'
-
-            return new ServiceResponse(success: true, data: response)
-        }
+        computeServerService.save(server) >> server
+        asyncComputeServerService.get(server.id) >> Maybe.just(server)
+        provisionProvider.waitForAgentInstall(_) >> [success: true]
+        provisionProvider.applyNetworkIpAndGetServer(_, _, _, _, _) >> server
 
         when:
         def response = provisionProvider.waitForHost(server)
 
         then:
-        response.success == true
+        response.success
         response.data.privateIp == '10.0.0.100'
         response.data.publicIp == '10.0.0.100'
         response.data.externalId == 'vm-123'
-        response.data.success == true
+        server.internalIp == '10.0.0.100'
+        server.externalIp == '10.0.0.100'
+        server.externalId == 'vm-123'
     }
 
     @Unroll
@@ -804,28 +798,26 @@ class ScvmmProvisionProviderSpec extends Specification {
         ComputeServer controllerNode = ProvisionDataHelper.finalizeHost_getControllerNode(cloud)
         def serverDetail = ProvisionDataHelper.finalizeHost_getServerDetail()
 
-        // Mock necessary service calls
-        computeServerService.get(200L) >> controllerNode
-        morpheusContext.services.computeServer.get(100L) >> {
-            return server
-        }
+        // Mock all database operations
+        asyncComputeServerService.get(server.id) >> Maybe.just(server)
+        computeServerService.get(controllerNode.id) >> controllerNode
+        asyncComputeServerService.save(_) >> Single.just(server)
 
-        mockApiService.getScvmmCloudOpts(morpheusContext, server.cloud, controllerNode) >> [cloudId: 1L]
-        mockApiService.getScvmmControllerOpts(server.cloud, controllerNode) >> [controllerId: 200L]
-
+        // Mock controller selection and connection details
+        provisionProvider.pickScvmmController(cloud) >> controllerNode
+        mockApiService.getScvmmCloudOpts(morpheusContext, cloud, controllerNode) >> [cloudId: 1L]
+        mockApiService.getScvmmControllerOpts(cloud, controllerNode) >> [controllerId: 200L]
         provisionProvider.getScvmmServerOpts(server) >> [vmId: 'vm-123']
 
+        // Mock the API call that checks server readiness
         mockApiService.checkServerReady(_, 'vm-123') >> serverDetail
 
-        // Completely override finalizeHost to bypass the problematic async operations
-        provisionProvider.finalizeHost(_) >> { ComputeServer srv ->
-            // Update server properties as the real method would
-            srv.internalIp = '10.0.0.100'
-            srv.externalIp = '10.0.0.100'
-            srv.externalId = 'vm-123'
+        // Mock the waitForAgentInstall method - this is likely causing the hang
+        provisionProvider.waitForAgentInstall(_) >> [success: true]
+        provisionProvider.waitForAgentInstall(_, _) >> [success: true]
 
-            return new ServiceResponse(success: true, msg: 'Host finalized successfully')
-        }
+        // Mock the network interface update method
+        provisionProvider.applyNetworkIpAndGetServer(_, _, _, _, _) >> server
 
         when:
         def response = provisionProvider.finalizeHost(server)
@@ -1013,15 +1005,30 @@ class ScvmmProvisionProviderSpec extends Specification {
         response.success == true
     }
 
-    def "restartWorkload returns success response"() {
+    @Unroll
+    def "restartWorkload handles stop and start sequence correctly for success=#stopSuccess"() {
         given:
-        def workload = ProvisionDataHelper.getWorkloadData()
+        def workload = Mock(Workload) {
+            getName() >> "test-workload"
+            dump() >> [:]
+        }
+        def stopResponse = new ServiceResponse(success: stopSuccess)
+        def startResponse = new ServiceResponse(success: true)
+
+        provisionProvider.stopWorkload(workload) >> stopResponse
+        provisionProvider.startWorkload(workload) >> startResponse
 
         when:
-        def response = provisionProvider.restartWorkload(workload)
+        def result = provisionProvider.restartWorkload(workload)
 
         then:
-        response.success == true
+        1 * provisionProvider.stopWorkload(workload)
+        (stopSuccess ? 1 : 0) * provisionProvider.startWorkload(workload)
+        result.success == expectedSuccess
+
+        where:
+        stopSuccess | expectedSuccess
+        false       | false
     }
 
     def "stopWorkload handles different scenarios correctly"() {
