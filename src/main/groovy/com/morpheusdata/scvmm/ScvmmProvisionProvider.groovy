@@ -1277,7 +1277,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 		}
     }
 
-	def waitForAgentInstall(ComputeServer server, int maxAttempts = 180) {
+	def waitForAgentInstall(ComputeServer server, int maxAttempts = 1800) {
 	    def rtn = [success: false]
 	    try {
 	        int attempts = 0
