@@ -1281,24 +1281,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         ComputeServer server = args.server
         Long nodeId = args.nodeId
         ProvisionResponse provisionResponse = args.provisionResponse
-//        def checkReadyResults = apiService.checkServerReady(
-//                [waitForIp: opts.skipNetworkWait ? false : true] + scvmmOpts,
-//                createResults.server.id
-//        )
-//        if (checkReadyResults.success) {
-//            server.externalIp = checkReadyResults.server.ipAddress
-//            server.powerState = ComputeServer.PowerState.on
-//            server = saveAndGetMorpheusServer(server, true)
-//        } else {
-//            log.error "Failed to obtain ip address for server, ${checkReadyResults}"
-//            throw new IllegalStateException("Failed to obtain ip address for server")
-//        }
-//        if (scvmmOpts.deleteDvdOnComplete?.removeIsoFromDvd) {
-//            apiService.setCdrom(scvmmOpts)
-//            if (scvmmOpts.deleteDvdOnComplete?.deleteIso) {
-//                apiService.deleteIso(scvmmOpts, scvmmOpts.deleteDvdOnComplete.deleteIso)
-//            }
-//        }
         def node = context.services.computeServer.get(nodeId)
         if (createResults.server) {
             updateServerAfterCreation(createResults, server)
@@ -1309,9 +1291,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     }
 
     protected void updateServerAfterCreation(Map createResults, ComputeServer server) {
-        // server.externalId = createResults.server.id
-        // server.internalId = createResults.server.VMId
-        // server.parentServer = node
         def serverDisks = createResults.server.disks
         if (serverDisks && server.volumes) {
             def storageVolumes = server.volumes
@@ -1359,39 +1338,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 
     protected void handleServerDetails(Map scvmmOpts, ComputeServer server,
                                        ProvisionResponse provisionResponse, Map createResults, ComputeServer node) {
-//        def serverDetails = apiService.getServerDetails(scvmmOpts, server.externalId)
-//        if (serverDetails.success == true) {
-//            log.info("serverDetail: ${serverDetails}")
-//            def statusString = provisionResponse.skipNetworkWait
-//                    ? 'waiting for server status'
-//                    : 'waiting for network'
-//            context.process.startProcessStep(workloadRequest.process,
-//                    new ProcessEvent(type: ProcessEvent.ProcessType.provisionNetwork),
-//                    statusString).blockingGet()
-//            opts.network = applyComputeServerNetworkIp(server, serverDetails.server?.ipAddress,
-//                    serverDetails.server?.ipAddress, ZERO_INT, null)
-//            server.osDevice = DEV_SDA_PATH
-//            server.dataDevice = DEV_SDA_PATH
-//            server.lvmEnabled = false
-//            server.sshHost = server.internalIp
-//            server.with {
-//                capacityInfo = new ComputeCapacityInfo(maxCores: scvmmOpts.maxCores,
-//                        maxMemory: scvmmOpts.maxMemory, maxStorage: scvmmOpts.maxTotalStorage)
-//                status = PROVISIONED_STATUS
-//                managed = true
-//            }
-//            context.async.computeServer.save(server).blockingGet()
-//            provisionResponse.success = true
-//            if (server?.platform == LINUX_PLATFORM && !scvmmOpts.cloneVMId) {
-//                provisionResponse.installAgent = false
-//            }
-//            log.debug("provisionResponse.success: ${provisionResponse.success}")
-//        } else {
-//            server.statusMessage = FAILED_TO_RUN_SERVER_MSG
-//            context.async.computeServer.save(server).blockingGet()
-//            provisionResponse.success = false
-//        }
-
         def updatedServer = context.services.computeServer.get(server.id)
         updatedServer.with {
             externalId = createResults.server.id
@@ -2772,16 +2718,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 if (serverDisks) {
                     updateServerVolumesAfterCreation(server, serverDisks, cloud)
                 }
-//                def serverDetails = apiService.getServerDetails(scvmmOpts, server.externalId)
-//                if (serverDetails.success == true) {
-//                    updateServerNetworkAndStatus(server, serverDetails, scvmmOpts, createResults)
-//                    context.async.computeServer.save(server).blockingGet()
-//                    provisionResponse.success = true
-//                    log.debug("provisionResponse.success: ${provisionResponse.success}")
-//                } else {
-//                    handleServerDetailsFailure(server)
-//                    provisionResponse.success = false
-//                }
                 server.with {
                     externalId = instance.id
                     parentServer = node
@@ -2845,27 +2781,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             }
         }
     }
-
-//    protected void updateServerNetworkAndStatus(ComputeServer server, Map serverDetails,
-//                                                Map scvmmOpts, Map createResults) {
-//        def newIpAddress = serverDetails.server?.ipAddress ?: createResults.server?.ipAddress
-//        def macAddress = serverDetails.server?.macAddress
-//        applyComputeServerNetworkIp(server, newIpAddress, newIpAddress, 0, macAddress)
-//        server.osDevice = DEV_SDA_PATH
-//        server.dataDevice = DEV_SDA_PATH
-//        server.sshHost = server.internalIp
-//        server.managed = true
-//        server.with {
-//            status = PROVISIONED_STATUS
-//            capacityInfo = new ComputeCapacityInfo(maxCores: scvmmOpts.maxCores,
-//                    maxMemory: scvmmOpts.memory, maxStorage: scvmmOpts.maxTotalStorage)
-//        }
-//    }
-//
-//    protected void handleServerDetailsFailure(ComputeServer server) {
-//        server.statusMessage = FAILED_TO_RUN_SERVER_MSG
-//        context.async.computeServer.save(server).blockingGet()
-//    }
 
     protected void handleServerCreationFailure(Map createResults, ComputeServer server) {
         if (createResults.server?.id) {
@@ -2963,14 +2878,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         def provisionResponse = new ProvisionResponse()
         ServiceResponse<ProvisionResponse> rtn = ServiceResponse.prepare(provisionResponse)
         try {
-//            def config = server.getConfigMap()
-//            def node = config.hostId
-//                    ? context.services.computeServer.get(config.hostId.toLong())
-//                    : pickScvmmController(server.cloud)
-//            def scvmmOpts = apiService.getScvmmCloudOpts(context, server.cloud, node)
-//            scvmmOpts += apiService.getScvmmControllerOpts(server.cloud, node)
-//            scvmmOpts += getScvmmServerOpts(server)
-//            def serverDetail = apiService.checkServerReady(scvmmOpts, server.externalId)
             def fetchedServer = context.async.computeServer.get(server.id).blockingGet()
             Map<String, Object> scvmmOpts = fetchScvmmConnectionDetails(fetchedServer)
             def serverDetail = apiService.checkServerReady(scvmmOpts, fetchedServer.externalId)
@@ -3011,15 +2918,6 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         ServiceResponse rtn = ServiceResponse.prepare()
         log.debug("finalizeHost: ${server?.id}")
         try {
-//            def config = server.configMap
-//            def node = config.hostId
-//                    ? context.services.computeServer.get(config.hostId.toLong())
-//                    : pickScvmmController(server.cloud)
-//            def compServer = context.services.computeServer.get(server.id)
-//            def scvmmOpts = apiService.getScvmmCloudOpts(context, compServer.cloud, node)
-//            scvmmOpts += apiService.getScvmmControllerOpts(compServer.cloud, node)
-//            scvmmOpts += getScvmmServerOpts(compServer)
-//            def serverDetail = apiService.checkServerReady(scvmmOpts, compServer.externalId)
             def fetchedServer = context.async.computeServer.get(server.id).blockingGet()
             Map<String, Object> scvmmOpts = fetchScvmmConnectionDetails(fetchedServer)
             def serverDetail = apiService.checkServerReady(scvmmOpts, fetchedServer.externalId)

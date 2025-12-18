@@ -952,61 +952,6 @@ class ScvmmProvisionProviderSpec extends Specification {
         "api exception"    | "vm-123"   | false      | true               | "API connection error" | false          | null
     }
 
-//    def "getServerDetails returns response with server IP addresses"() {
-//        given:
-//        // Create test servers with different IP configurations
-//
-//        def serverWithBothIps = ProvisionDataHelper.getServerDetails_forComputeServer("bothIps")
-//        def serverWithOnlyInternalIp = ProvisionDataHelper.getServerDetails_forComputeServer("internalOnly")
-//        def serverWithOnlyExternalIp = ProvisionDataHelper.getServerDetails_forComputeServer("externalOnly")
-//        def serverWithNoIps = ProvisionDataHelper.getServerDetails_forComputeServer("noIps")
-//
-//        when:
-//        def responseBothIps = provisionProvider.getServerDetails(serverWithBothIps)
-//        def responseInternalOnly = provisionProvider.getServerDetails(serverWithOnlyInternalIp)
-//        def responseExternalOnly = provisionProvider.getServerDetails(serverWithOnlyExternalIp)
-//        def responseNoIps = provisionProvider.getServerDetails(serverWithNoIps)
-//
-//        then:
-//        // Test server with both IPs
-//        responseBothIps.success == true
-//        responseBothIps.data.success == true
-//        responseBothIps.data.privateIp == "192.168.1.100"
-//        responseBothIps.data.publicIp == "10.0.1.100"
-//
-//        // Test server with only internal IP
-//        responseInternalOnly.success == true
-//        responseInternalOnly.data.success == true
-//        responseInternalOnly.data.privateIp == "192.168.1.101"
-//        responseInternalOnly.data.publicIp == null
-//
-//        // Test server with only external IP
-//        responseExternalOnly.success == true
-//        responseExternalOnly.data.success == true
-//        responseExternalOnly.data.privateIp == null
-//        responseExternalOnly.data.publicIp == "10.0.1.102"
-//
-//        // Test server with no IPs
-//        responseNoIps.success == true
-//        responseNoIps.data.success == true
-//        responseNoIps.data.privateIp == null
-//        responseNoIps.data.publicIp == null
-//    }
-
-
-
-
-//    def "finalizeWorkload returns success response"() {
-//        given:
-//        def workload = ProvisionDataHelper.getWorkloadData()
-//
-//        when:
-//        def response = provisionProvider.finalizeWorkload(workload)
-//
-//        then:
-//        response.success == true
-//    }
-
     def "finalizeWorkload with DVD cleanup configured"() {
         given: "a workload with DVD cleanup configuration"
         def cloud = new Cloud(id: 1L, name: 'test-cloud')
@@ -2009,7 +1954,6 @@ class ScvmmProvisionProviderSpec extends Specification {
                 addresses: [new NetAddress(type: NetAddress.AddressType.IPV4, address: "192.168.1.100")]
         )
 
-        // Completely override applyComputeServerNetworkIp to bypass all problematic async operations
         provisionProvider.applyComputeServerNetworkIp(_, _, _, _, _) >> { ComputeServer srv, String privateIp, String publicIp, Integer interfaceOrder, String mac ->
             if (privateIp) {
                 // Update the interface with the provided IPs
@@ -3803,7 +3747,6 @@ class ScvmmProvisionProviderSpec extends Specification {
     def "validateNonHypervisorHost sets success and errors based on validationResults"() {
         given:
         def opts = [networkId: 123, scvmmCapabilityProfile: "profile", nodeCount: 2]
-        // def validationOpts = [networkId: 123, scvmmCapabilityProfile: "profile", nodeCount: 2]
         def validationResults = [success: false, errors: [error: "Invalid config"]]
         provisionProvider.extractNetworkId(_) >> { return opts.networkId }
         provisionProvider.extractCapabilityProfile(_) >> { return opts.scvmmCapabilityProfile }
@@ -4313,6 +4256,4 @@ class ScvmmProvisionProviderSpec extends Specification {
         then:
         response.success == false
     }
-
-
 }
