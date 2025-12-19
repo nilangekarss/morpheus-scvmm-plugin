@@ -1901,6 +1901,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             }
 
             if (imageId) {
+				virtualImage = context.async.virtualImage.get(virtualImage.id).blockingGet()
                 server.sourceImage = virtualImage
                 server.externalId = scvmmOpts.name
                 server.serverOs = server.serverOs ?: virtualImage.osType
