@@ -842,14 +842,23 @@ class ScvmmProvisionProviderSpec extends Specification {
         provisionProvider.waitForAgentInstall(_) >> [success: true]
         provisionProvider.waitForAgentInstall(_, _) >> [success: true]
 
+        // Mock the network IP application
+        provisionProvider.applyComputeServerNetworkIp(_,_,_,_,_) >> {
+            return ProvisionDataHelper.finalizeHost_applyComputeServerNetworkIpResponse()
+        }
+
         // Mock the network interface update method
         provisionProvider.applyNetworkIpAndGetServer(_, _, _, _, _) >> server
+
+        def serverSingle = Single.just(server)
+        asyncComputeServerService.save(server) >> serverSingle
 
         when:
         def response = provisionProvider.finalizeHost(server)
 
         then:
         response.success == true
+        1 * asyncComputeServerService.save(server) >> serverSingle
     }
 
     @Unroll
