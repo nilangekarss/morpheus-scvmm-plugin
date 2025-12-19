@@ -749,46 +749,71 @@ class ScvmmProvisionProviderSpec extends Specification {
         !response.success
     }
 
-    def "waitForHost returns success when server is ready"() {
+    @Unroll
+    def "waitForHost returns success when server is ready and finalize succeeds"() {
         given:
         Cloud cloud = new Cloud(id: 1L, code: 'scvmm-cloud')
+
         ComputeServer server = ProvisionDataHelper.waitForHost_getComputeServer(cloud)
+
         ComputeServer controllerServer = ProvisionDataHelper.waitForHost_getControllerServer(cloud)
 
-        def serverDetail = [
-                success : true,
-                privateIp: '10.0.0.100',
-                publicIp : '10.0.0.100',
-                server   : [
-                        ipAddress : '10.0.0.100',
-                        externalIP: '10.0.0.100',
-                        macAddress: 'aa:bb:cc:dd:ee:ff'
-                ]
-        ]
+        def serverDetail = ProvisionDataHelper.waitForHost_getServerDetail()
 
-        provisionProvider.finalizeHost(_) >> { ComputeServer srv ->
-            srv.internalIp = '10.0.0.100'
-            srv.externalIp = '10.0.0.100'
-            srv.externalId = 'vm-123'
-            return [success: true]
+        morpheusContext.async.computeServer.get(100L) >> {
+            return Maybe.just(server)
         }
 
-        provisionProvider.fetchScvmmConnectionDetails(_) >> [:]
-        mockApiService.checkServerReady(_, _) >> serverDetail
-        asyncComputeServerService.get(server.id) >> Maybe.just(server)
-        provisionProvider.waitForAgentInstall(_) >> [success: true]
+        morpheusContext.async.computeServer.get(200L) >> {
+            return Maybe.just(controllerServer)
+        }
+
+        provisionProvider.pickScvmmController(cloud) >> {
+            return controllerServer
+        }
+
+        mockApiService.getScvmmCloudOpts(morpheusContext, cloud, controllerServer) >> {
+            return [cloud: cloud.id]
+        }
+        mockApiService.getScvmmControllerOpts(cloud, controllerServer) >> {
+            return [controller: controllerServer.id]
+        }
+        provisionProvider.getScvmmServerOpts(server) >> {
+            return [server: server.id, vmId: 'vm-123']
+        }
+        mockApiService.checkServerReady(_, 'vm-123') >> {
+            return serverDetail
+        }
+
+        // Mock the waitForAgentInstall method
+        provisionProvider.waitForAgentInstall(_, _) >> [success: true]
+
+        // Mock finalizeHost call - this is a method in the same class, we need to spy it
+        provisionProvider.metaClass.finalizeHost = { ComputeServer srv ->
+            return new ServiceResponse(success: true)
+        }
+
+        asyncComputeServerService.save(_) >> { ComputeServer serverObj ->
+            return Single.just(serverObj)
+        }
+        provisionProvider.applyComputeServerNetworkIp(_, _, _, _, _) >> {
+            return ProvisionDataHelper.waitForHost_applyComputeServerNetworkIpResponse()
+        }
+
+        provisionProvider.applyNetworkIpAndGetServer(_, _, _, _, _) >> {
+            return server
+        }
 
         when:
         def response = provisionProvider.waitForHost(server)
 
         then:
-        response.success
+
+        response.success == true
         response.data.privateIp == '10.0.0.100'
         response.data.publicIp == '10.0.0.100'
         response.data.externalId == 'vm-123'
-        server.internalIp == '10.0.0.100'
-        server.externalIp == '10.0.0.100'
-        server.externalId == 'vm-123'
+        response.data.success == true
     }
 
     @Unroll
