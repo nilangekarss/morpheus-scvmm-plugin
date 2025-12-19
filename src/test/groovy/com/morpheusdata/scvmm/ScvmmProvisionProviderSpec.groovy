@@ -1041,6 +1041,26 @@ class ScvmmProvisionProviderSpec extends Specification {
     }
 
     @Unroll
+    def "restartWorkload handles stop and start sequence correctly when both operations succeed"() {
+        given:
+        def workload = Mock(Workload) {
+            getName() >> "test-workload"
+            dump() >> [:]
+        }
+        def stopResponse = new ServiceResponse(success: true)
+        def startResponse = new ServiceResponse(success: true)
+
+        provisionProvider.stopWorkload(workload) >> stopResponse
+        provisionProvider.startWorkload(workload) >> startResponse
+
+        when:
+        def result = provisionProvider.restartWorkload(workload)
+
+        then:
+        result.success == true
+    }
+
+    @Unroll
     def "restartWorkload handles stop and start sequence correctly for success=#stopSuccess"() {
         given:
         def workload = Mock(Workload) {
