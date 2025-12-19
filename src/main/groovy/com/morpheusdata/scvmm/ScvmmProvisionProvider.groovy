@@ -2666,8 +2666,10 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         return null
     }
 
+    @SuppressWarnings('ParameterReassignment')
     protected void prepareServerForProvision(ComputeServer server, VirtualImage virtualImage, Map scvmmOpts,
                                              ComputeServer node, String imageId) {
+        virtualImage = context.async.virtualImage.get(virtualImage.id).blockingGet()
         assignSourceImageAndExternalId(server, virtualImage, scvmmOpts)
         assignServerOsType(server, virtualImage)
         assignParentServer(server, node)

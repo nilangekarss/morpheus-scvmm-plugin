@@ -2535,7 +2535,8 @@ class ScvmmProvisionProviderSpec extends Specification {
         def rootVolume = new StorageVolume(id: 100L)
         def maxStorage = 100000L
         def hostDatastoreInfo = [datastore: new Datastore(id: 200L), node: new ComputeServer(id: 21L)]
-        def imageInfo = [imageId: "img-1", virtualImage: new VirtualImage(id: 300L)]
+        def virtualImage = new VirtualImage(id: 300L)  // Add this line
+        def imageInfo = [imageId: "img-1", virtualImage: virtualImage]
         def createResults = [success: true]
         def provisionResponse = new ProvisionResponse(success: true)
 
@@ -2570,6 +2571,8 @@ class ScvmmProvisionProviderSpec extends Specification {
         }
         provisionProvider.handleServerCreation(createResults, server, hostDatastoreInfo.node.id,
                 cloud, _ as Map) >> provisionResponse
+
+        asyncVirtualImageService.get(300L) >> Maybe.just(virtualImage)
 
         when:
         def result = provisionProvider.runHost(server, hostRequest, opts)
