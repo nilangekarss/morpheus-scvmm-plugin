@@ -1996,59 +1996,70 @@ class ScvmmProvisionProviderSpec extends Specification {
     def "test applyComputeServerNetworkIp with different IP configurations"() {
         given:
         def server = new ComputeServer(id: 100L, name: "test-server")
-        def existingInterface = new ComputeServerInterface(
-                id: 1L,
-                name: "eth0",
-                primaryInterface: true,
-                displayOrder: 1
-        )
+        def existingInterface = new ComputeServerInterface(id: 1L, name: "eth0", primaryInterface: true)
         server.interfaces = [existingInterface]
-        def macAddress = "00:11:22:33:44:55"
 
-        def savedInterface = new ComputeServerInterface(
+        def macAddress = "00:11:22:33:44:55"
+        def netInterface = new ComputeServerInterface(
                 id: 1L,
-                name: "eth0",
                 ipAddress: "192.168.1.100",
                 publicIpAddress: "10.0.0.100",
-                macAddress: macAddress,
-                primaryInterface: true,
-                displayOrder: 1,
-                addresses: [new NetAddress(type: NetAddress.AddressType.IPV4, address: "192.168.1.100")]
+                macAddress: macAddress
         )
+        def updatedServer = new ComputeServer(id: 100L)
+        def mockSyncComputeServerService = Mock(MorpheusSynchronousComputeServerService)
 
-        when: "privateIp is provided"
-        def result1 = provisionProvider.applyComputeServerNetworkIp(server, "192.168.1.100", "10.0.0.100", 0, macAddress)
+        // Mock async compute server service (for bulkSave, interface create/save)
+        def mockAsyncComputeServer = Mock(MorpheusComputeServerService)
+        def mockComputeServerInterface = Mock(MorpheusComputeServerInterfaceService)
 
-        then: "saveAndGetNetworkInterface is called and returns correct interface"
-        1 * provisionProvider.saveAndGetNetworkInterface(server, "192.168.1.100", "10.0.0.100", 0, macAddress) >> {
-            srv, privateIp, publicIp, interfaceOrder, mac ->
-                srv.internalIp = privateIp
-                srv.externalIp = publicIp
-                srv.sshHost = privateIp
-                srv.macAddress = mac
+        mockAsyncComputeServer.computeServerInterface >> mockComputeServerInterface
+        mockComputeServerInterface.create(_, _) >> Single.just([netInterface])
+        mockComputeServerInterface.save(_) >> Single.just([netInterface])
 
-                savedInterface.ipAddress = privateIp
-                savedInterface.publicIpAddress = publicIp
-                savedInterface.macAddress = mac
+        // Mock BulkSaveResult
+        def bulkSaveResult = Mock(BulkSaveResult) {
+            getSuccess() >> true
+            getPersistedItems() >> [server]
+            getFailedItems() >> []
+        }
+        mockAsyncComputeServer.bulkSave(_) >> Single.just(bulkSaveResult)
 
-                return [netInterface: savedInterface, server: srv]
+        // Mock async services
+        def mockAsyncServices = Mock(MorpheusAsyncServices) {
+            getComputeServer() >> mockAsyncComputeServer
         }
 
-        and: "interface should be returned with correct properties"
-        result1 != null
+        // Mock MorpheusServices
+        def mockServices = Mock(MorpheusServices) {
+            getComputeServer() >> mockSyncComputeServerService
+        }
+
+        // Mock MorpheusContext
+        def mockContext = Mock(MorpheusContext) {
+            getServices() >> mockServices
+            getAsync() >> mockAsyncServices
+        }
+
+        def provisionProvider = Spy(ScvmmProvisionProvider, constructorArgs: [plugin, mockContext])
+        provisionProvider.apiService = mockApiService
+        provisionProvider.saveAndGetMorpheusServer(_, true) >> updatedServer
+
+        when:
+        def result1 = provisionProvider.applyComputeServerNetworkIp(server, "192.168.1.100", "10.0.0.100", 0, macAddress)
+
+        then:
         result1.ipAddress == "192.168.1.100"
         result1.publicIpAddress == "10.0.0.100"
         result1.macAddress == macAddress
+        server.internalIp == "192.168.1.100"
+        server.externalIp == "10.0.0.100"
+        server.sshHost == "192.168.1.100"
 
-        when: "privateIp is null"
+        when:
         def result2 = provisionProvider.applyComputeServerNetworkIp(server, null, "10.0.0.200", 0, macAddress)
 
-        then: "saveAndGetNetworkInterface is called and returns null interface"
-        1 * provisionProvider.saveAndGetNetworkInterface(server, null, "10.0.0.200", 0, macAddress) >> {
-            return [netInterface: null, server: server]
-        }
-
-        and: "no interface should be returned"
+        then:
         result2 == null
     }
 
