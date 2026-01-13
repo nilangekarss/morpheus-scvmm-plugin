@@ -507,7 +507,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
      */
     @Override
     ServiceResponse<ProvisionResponse> runWorkload(Workload workload, WorkloadRequest workloadRequest, Map opts) {
-        log.debug "runWorkload: ${workload} ${workloadRequest} ${opts}"
+        log.info "runWorkload: ${workload} ${workloadRequest} ${opts}"
 		ProvisionResponse provisionResponse = new ProvisionResponse(
 				success: true,
 				installAgent: !opts?.noAgent,
@@ -531,7 +531,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 
             scvmmOpts.controllerServerId = controllerNode.id
             def externalPoolId
-            if (containerConfig.resourcePool) {
+            log.info("runWorkload: containerConfig.resourcePool: ${containerConfig?.resourcePool} server.resourcePool: ${server?.resourcePool?.code}")
+            if (containerConfig.resourcePool || opts.cloneContainerId && workloadRequest.hasProperty("config")  && workloadRequest?.config?.resourcePoolId) {
                 try {
                     def resourcePool = server.resourcePool
                     externalPoolId = resourcePool?.externalId
@@ -539,7 +540,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                     externalPoolId = containerConfig.resourcePool
                 }
             }
-            log.debug("externalPoolId: ${externalPoolId}")
+            log.info("externalPoolId: ${externalPoolId}")
 
             // host, datastore configuration
             ComputeServer node
@@ -561,7 +562,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
 
                 scvmmOpts.volumePaths = []
 
-                (node, datastore, volumePath, highlyAvailable) = getHostAndDatastore(cloud, server.account, externalPoolId, containerConfig.hostId, rootVolume?.datastore, rootVolume?.datastoreOption, maxStorage, workload.instance.site?.id, maxMemory)
+                (node, datastore, volumePath, highlyAvailable) = getHostAndDatastore(cloud, server.account, externalPoolId, containerConfig.hostId, rootVolume?.datastore, rootVolume?.datastoreOption, maxStorage, workload.instance.site?.id, maxMemory, true)
                 nodeId = node?.id
                 scvmmOpts.datastoreId = datastore?.externalId
                 scvmmOpts.hostExternalId = node?.externalId
@@ -578,7 +579,7 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
                 storageVolumes?.each { vol ->
                     if (!vol.rootVolume) {
                         def tmpNode, tmpDatastore, tmpVolumePath, tmpHighlyAvailable
-                        (tmpNode, tmpDatastore, tmpVolumePath, tmpHighlyAvailable) = getHostAndDatastore(cloud, server.account, externalPoolId, containerConfig.hostId, vol?.datastore, vol?.datastoreOption, maxStorage, workload.instance.site?.id, maxMemory)
+                        (tmpNode, tmpDatastore, tmpVolumePath, tmpHighlyAvailable) = getHostAndDatastore(cloud, server.account, externalPoolId, containerConfig.hostId, vol?.datastore, vol?.datastoreOption, maxStorage, workload.instance.site?.id, maxMemory, true)
                         vol.datastore = tmpDatastore
                         if (tmpVolumePath) {
                             vol.volumePath = tmpVolumePath
@@ -1679,8 +1680,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
     }
 
 
-    def getHostAndDatastore(Cloud cloud, account, clusterId, hostId, Datastore datastore, datastoreOption, size, siteId = null, maxMemory) {
-        log.debug "clusterId: ${clusterId}, hostId: ${hostId}, datastore: ${datastore}, datastoreOption: ${datastoreOption}, size: ${size}, siteId: ${siteId}, maxMemory ${maxMemory}"
+    def getHostAndDatastore(Cloud cloud, account, clusterId, hostId, Datastore datastore, datastoreOption, size, siteId = null, maxMemory, isClone=false) {
+        log.info "getHostAndDatastore : clusterId: ${clusterId}, hostId: ${hostId}, datastore: ${datastore}, datastoreOption: ${datastoreOption}, size: ${size}, siteId: ${siteId}, maxMemory ${maxMemory}"
         ComputeServer node
         def volumePath
         def highlyAvailable = false
@@ -1747,6 +1748,9 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
             // Return the first one
             if (dsList.size() > 0) {
                 datastore = dsList[0]
+                log.info("Selected datastore: ${datastore?.name} (${datastore?.id})")
+            } else {
+                log.warn("No datastore found with query: ${dsQuery}")
             }
         }
 
@@ -1771,7 +1775,8 @@ class ScvmmProvisionProvider extends AbstractProvisionProvider implements Worklo
         volumePath = getVolumePathForDatastore(datastore)
 
         // Highly Available (in the Failover Cluster Manager) if we are in a cluster and the datastore is a shared volume
-        if (clusterId && datastore?.zonePool) {
+        log.info("Determining HA: clusterId: ${clusterId}, datastore.zonePool: ${datastore?.zonePool}")
+        if (clusterId && (datastore?.zonePool || isClone)) {
             // datastore found above MUST be part of a shared volume because it has a zonepool
             highlyAvailable = true
         }
